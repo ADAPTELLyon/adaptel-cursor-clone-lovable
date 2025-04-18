@@ -369,49 +369,43 @@ export default function Parametrages() {
   };
 
   const addUtilisateur = async (values) => {
-    // Create user in auth
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: values.email,
-      password: values.password,
-      email_confirm: true
-    });
-    
-    if (authError) {
+    try {
+      // Call the Edge Function to create user with service role
+      const response = await fetch(`https://jnfmuvtpdmwjemgoford.supabase.co/functions/v1/create-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.auth.getSession().then(res => res.data.session?.access_token)}`
+        },
+        body: JSON.stringify({
+          prenom: values.prenom,
+          nom: values.nom,
+          email: values.email,
+          password: values.password,
+          actif: values.actif
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Une erreur est survenue');
+      }
+      
+      toast({
+        title: "Succès",
+        description: "Utilisateur ajouté avec succès",
+      });
+      
+      fetchUtilisateurs();
+      setOpenDialogUtilisateur(false);
+    } catch (error) {
       toast({
         title: "Erreur",
-        description: "Impossible de créer l'utilisateur dans Supabase Auth: " + authError.message,
+        description: error.message || "Impossible d'ajouter l'utilisateur",
         variant: "destructive",
       });
-      return;
     }
-    
-    // Add user to utilisateurs table
-    const { error } = await supabase
-      .from('utilisateurs')
-      .insert([{ 
-        id: authData.user.id,
-        prenom: values.prenom,
-        nom: values.nom,
-        email: values.email,
-        actif: values.actif
-      }]);
-    
-    if (error) {
-      toast({
-        title: "Erreur",
-        description: "Impossible d'ajouter l'utilisateur dans la table utilisateurs",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    toast({
-      title: "Succès",
-      description: "Utilisateur ajouté avec succès",
-    });
-    
-    fetchUtilisateurs();
-    setOpenDialogUtilisateur(false);
   };
 
   const updateUtilisateur = async (values) => {
@@ -446,39 +440,54 @@ export default function Parametrages() {
   };
 
   const deleteUtilisateur = async (id) => {
-    // Delete user from auth
-    const { error: authError } = await supabase.auth.admin.deleteUser(id);
-    
-    if (authError) {
-      toast({
-        title: "Erreur",
-        description: "Impossible de supprimer l'utilisateur de Supabase Auth",
-        variant: "destructive",
+    try {
+      // Call the Edge Function to delete user with service role
+      const response = await fetch(`https://jnfmuvtpdmwjemgoford.supabase.co/functions/v1/create-user`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabase.auth.getSession().then(res => res.data.session?.access_token)}`
+        },
+        body: JSON.stringify({
+          userId: id
+        })
       });
-      return;
-    }
-    
-    // Delete user from utilisateurs table
-    const { error } = await supabase
-      .from('utilisateurs')
-      .delete()
-      .eq('id', id);
-    
-    if (error) {
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Une erreur est survenue');
+      }
+      
       toast({
-        title: "Erreur",
-        description: "Impossible de supprimer l'utilisateur de la table utilisateurs",
-        variant: "destructive",
+        title: "Succès",
+        description: "Utilisateur supprimé avec succès",
       });
-      return;
+      
+      fetchUtilisateurs();
+    } catch (error) {
+      // Fallback to just delete from the database if edge function fails
+      const { error: dbError } = await supabase
+        .from('utilisateurs')
+        .delete()
+        .eq('id', id);
+      
+      if (dbError) {
+        toast({
+          title: "Erreur",
+          description: "Impossible de supprimer l'utilisateur",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      toast({
+        title: "Avertissement",
+        description: "Utilisateur supprimé de la base de données, mais pas de l'authentification",
+        variant: "default",
+      });
+      
+      fetchUtilisateurs();
     }
-    
-    toast({
-      title: "Succès",
-      description: "Utilisateur supprimé avec succès",
-    });
-    
-    fetchUtilisateurs();
   };
 
   const renderServiceDialog = () => {
@@ -488,6 +497,13 @@ export default function Parametrages() {
         { valeur: editingItem.valeur } : 
         { valeur: "" }
     });
+
+    // Reset form when dialog opens
+    useEffect(() => {
+      if (openDialogService) {
+        form.reset(editingItem ? { valeur: editingItem.valeur } : { valeur: "" });
+      }
+    }, [openDialogService, form, editingItem]);
 
     const onSubmit = (values) => {
       if (editingItem) {
@@ -535,6 +551,13 @@ export default function Parametrages() {
         { valeur: editingItem.valeur } : 
         { valeur: "" }
     });
+
+    // Reset form when dialog opens
+    useEffect(() => {
+      if (openDialogGroupe) {
+        form.reset(editingItem ? { valeur: editingItem.valeur } : { valeur: "" });
+      }
+    }, [openDialogGroupe, form, editingItem]);
 
     const onSubmit = (values) => {
       if (editingItem) {
@@ -588,6 +611,16 @@ export default function Parametrages() {
           description: ""
         }
     });
+
+    // Reset form when dialog opens
+    useEffect(() => {
+      if (openDialogTenue) {
+        form.reset(editingItem ? 
+          { valeur: editingItem.valeur, description: editingItem.description || "" } : 
+          { valeur: "", description: "" }
+        );
+      }
+    }, [openDialogTenue, form, editingItem]);
 
     const onSubmit = (values) => {
       if (editingItem) {
@@ -663,6 +696,27 @@ export default function Parametrages() {
           actif: true
         }
     });
+
+    // Reset form when dialog opens
+    useEffect(() => {
+      if (openDialogUtilisateur) {
+        form.reset(editingItem ? 
+          { 
+            prenom: editingItem.prenom,
+            nom: editingItem.nom,
+            email: editingItem.email,
+            actif: editingItem.actif
+          } : 
+          { 
+            prenom: "",
+            nom: "",
+            email: "",
+            password: "",
+            actif: true
+          }
+        );
+      }
+    }, [openDialogUtilisateur, form, editingItem]);
 
     const onSubmit = (values) => {
       if (editingItem) {
