@@ -1,5 +1,5 @@
 
-import { Link } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import {
   NavigationMenu,
   NavigationMenuItem,
@@ -7,7 +7,9 @@ import {
 } from "@/components/ui/navigation-menu"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/contexts/auth-context"
-import { Home, Box, Calendar, Users, User, Settings } from "lucide-react"
+import { Home, Box, Calendar, Users, User, Settings, LogOut } from "lucide-react"
+import { signOut } from "@/lib/auth"
+import { useToast } from "@/hooks/use-toast"
 
 const routes = [
   {
@@ -43,20 +45,47 @@ const routes = [
 ]
 
 export function MainNav() {
-  const { user } = useAuth()
-  
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const handleSignOut = async () => {
+    const { error } = await signOut();
+    
+    if (error) {
+      toast({
+        title: 'Erreur',
+        description: 'Erreur lors de la déconnexion',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    toast({
+      title: 'Déconnexion réussie',
+      description: 'Vous avez été déconnecté avec succès',
+    });
+    
+    navigate('/login');
+  };
+
   return (
     <div className="flex h-16 items-center px-4 border-b bg-white">
       <Link to="/" className="mr-6 flex items-center space-x-2">
+        <img 
+          src="/lovable-uploads/aef96993-219b-4605-9395-ee7283fbf87d.png"
+          alt="Adaptel Logo"
+          className="h-8 w-8"
+        />
         <span className="text-xl font-bold text-adaptel">ADAPTEL</span>
         <span className="text-xl font-semibold text-gray-800">Lyon</span>
       </Link>
 
-      <span className="ml-auto mr-6 text-sm text-gray-500">
+      <span className="text-sm text-gray-500">
         {user?.email}
       </span>
 
-      <NavigationMenu>
+      <NavigationMenu className="ml-auto">
         <NavigationMenuList>
           {routes.map(({ title, href, icon: Icon }) => (
             <NavigationMenuItem key={href}>
@@ -73,6 +102,14 @@ export function MainNav() {
           ))}
         </NavigationMenuList>
       </NavigationMenu>
+
+      <button
+        onClick={handleSignOut}
+        className="ml-4 p-2 rounded-md hover:bg-accent"
+        aria-label="Se déconnecter"
+      >
+        <LogOut className="h-5 w-5 text-gray-500" />
+      </button>
     </div>
   )
 }
