@@ -77,13 +77,8 @@ export function MainNav() {
           alt="Adaptel Logo"
           className="h-8 w-8"
         />
-        <span className="text-xl font-bold text-adaptel">ADAPTEL</span>
-        <span className="text-xl font-semibold text-gray-800">Lyon</span>
+        <span className="text-xl font-bold" style={{color: "#840404"}}>ADAPTEL Lyon</span>
       </Link>
-
-      <span className="text-sm text-gray-500">
-        {user?.email}
-      </span>
 
       <NavigationMenu className="ml-auto">
         <NavigationMenuList>
