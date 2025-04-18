@@ -1,8 +1,7 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { CandidateForm } from "@/components/candidates/candidate-form"
+import { CandidateForm, formSchema } from "@/components/candidates/candidate-form"
 import type { z } from "zod"
-import type { formSchema } from "@/components/candidates/candidate-form"
 
 type CandidateFormTabsProps = {
   initialData?: z.infer<typeof formSchema>
