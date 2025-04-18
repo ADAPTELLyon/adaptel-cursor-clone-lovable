@@ -72,8 +72,8 @@ export function ClientForm({
       }
 
       return data.map(item => ({
-        value: item.valeur,
-        label: item.valeur
+        value: item.valeur || `service-${item.id}`, // Ensure value is never empty
+        label: item.valeur || "Service sans nom"
       }))
     }
   })
@@ -93,8 +93,8 @@ export function ClientForm({
       }
 
       return data.map(item => ({
-        value: item.valeur,
-        label: item.valeur
+        value: item.valeur || `groupe-${item.id}`, // Ensure value is never empty
+        label: item.valeur || "Groupe sans nom"
       }))
     }
   })
@@ -106,6 +106,16 @@ export function ClientForm({
     { value: "plonge", label: "🍷 Plonge" },
     { value: "reception", label: "🛎 Réception" }
   ]
+
+  // Filter out any services with empty values
+  const filteredServices = services.filter(service => 
+    service.value && service.value.trim() !== ""
+  )
+
+  // Filter out any groupes with empty values
+  const filteredGroupes = groupes.filter(groupe => 
+    groupe.value && groupe.value.trim() !== ""
+  )
 
   return (
     <Form {...form}>
@@ -159,12 +169,23 @@ export function ClientForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="">Aucun</SelectItem>
-                    {services.map(service => (
-                      <SelectItem key={service.value} value={service.value}>
-                        {service.label}
-                      </SelectItem>
-                    ))}
+                    {filteredServices.length > 0 ? (
+                      <>
+                        <SelectItem value="aucun">Aucun</SelectItem>
+                        {filteredServices.map(service => (
+                          <SelectItem 
+                            key={service.value} 
+                            value={service.value}
+                          >
+                            {service.label}
+                          </SelectItem>
+                        ))}
+                      </>
+                    ) : (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        Aucun service disponible
+                      </div>
+                    )}
                   </SelectContent>
                 </Select>
               </FormItem>
@@ -187,12 +208,23 @@ export function ClientForm({
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    <SelectItem value="">Aucun</SelectItem>
-                    {groupes.map(groupe => (
-                      <SelectItem key={groupe.value} value={groupe.value}>
-                        {groupe.label}
-                      </SelectItem>
-                    ))}
+                    {filteredGroupes.length > 0 ? (
+                      <>
+                        <SelectItem value="aucun">Aucun</SelectItem>
+                        {filteredGroupes.map(groupe => (
+                          <SelectItem 
+                            key={groupe.value} 
+                            value={groupe.value}
+                          >
+                            {groupe.label}
+                          </SelectItem>
+                        ))}
+                      </>
+                    ) : (
+                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                        Aucun groupe disponible
+                      </div>
+                    )}
                   </SelectContent>
                 </Select>
               </FormItem>
