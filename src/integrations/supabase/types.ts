@@ -9,6 +9,63 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      candidats: {
+        Row: {
+          actif: boolean | null
+          adresse: string | null
+          code_postal: string | null
+          commentaire: string | null
+          created_at: string | null
+          date_naissance: string | null
+          email: string | null
+          id: string
+          nom: string
+          prenom: string
+          prioritaire: boolean | null
+          secteurs: string[] | null
+          telephone: string | null
+          updated_at: string | null
+          vehicule: boolean | null
+          ville: string | null
+        }
+        Insert: {
+          actif?: boolean | null
+          adresse?: string | null
+          code_postal?: string | null
+          commentaire?: string | null
+          created_at?: string | null
+          date_naissance?: string | null
+          email?: string | null
+          id?: string
+          nom: string
+          prenom: string
+          prioritaire?: boolean | null
+          secteurs?: string[] | null
+          telephone?: string | null
+          updated_at?: string | null
+          vehicule?: boolean | null
+          ville?: string | null
+        }
+        Update: {
+          actif?: boolean | null
+          adresse?: string | null
+          code_postal?: string | null
+          commentaire?: string | null
+          created_at?: string | null
+          date_naissance?: string | null
+          email?: string | null
+          id?: string
+          nom?: string
+          prenom?: string
+          prioritaire?: boolean | null
+          secteurs?: string[] | null
+          telephone?: string | null
+          updated_at?: string | null
+          vehicule?: boolean | null
+          ville?: string | null
+        }
+        Relationships: []
+      }
       parametrages: {
         Row: {
           categorie: string
