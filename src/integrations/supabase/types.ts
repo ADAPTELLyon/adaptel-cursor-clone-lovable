@@ -66,6 +66,54 @@ export type Database = {
         }
         Relationships: []
       }
+      clients: {
+        Row: {
+          actif: boolean | null
+          adresse: string | null
+          code_postal: string | null
+          created_at: string | null
+          created_by: string | null
+          groupe: string | null
+          id: string
+          nom: string
+          secteurs: string[] | null
+          service: string | null
+          telephone: string | null
+          updated_at: string | null
+          ville: string | null
+        }
+        Insert: {
+          actif?: boolean | null
+          adresse?: string | null
+          code_postal?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          groupe?: string | null
+          id?: string
+          nom: string
+          secteurs?: string[] | null
+          service?: string | null
+          telephone?: string | null
+          updated_at?: string | null
+          ville?: string | null
+        }
+        Update: {
+          actif?: boolean | null
+          adresse?: string | null
+          code_postal?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          groupe?: string | null
+          id?: string
+          nom?: string
+          secteurs?: string[] | null
+          service?: string | null
+          telephone?: string | null
+          updated_at?: string | null
+          ville?: string | null
+        }
+        Relationships: []
+      }
       parametrages: {
         Row: {
           categorie: string
