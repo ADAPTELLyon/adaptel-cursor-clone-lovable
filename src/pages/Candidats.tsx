@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Plus, Search } from "lucide-react"
@@ -10,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useToast } from "@/hooks/use-toast"
 import { CandidateForm } from "@/components/candidates/candidate-form"
 import { CandidateList } from "@/components/candidates/candidate-list"
+import { CandidateFormTabs } from "@/components/candidates/candidate-form-tabs"
 
 export default function Candidats() {
   const { toast } = useToast()
@@ -151,7 +151,7 @@ export default function Candidats() {
                 {editingCandidate ? "Modifier le candidat" : "Ajouter un candidat"}
               </DialogTitle>
             </DialogHeader>
-            <CandidateForm
+            <CandidateFormTabs
               initialData={editingCandidate}
               onSubmit={handleSubmit}
               onCancel={() => {

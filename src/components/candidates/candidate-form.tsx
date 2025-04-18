@@ -1,4 +1,3 @@
-
 import * as z from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -59,7 +58,11 @@ type CandidateFormProps = {
   onCancel: () => void
 }
 
-export function CandidateForm({ initialData, onSubmit, onCancel }: CandidateFormProps) {
+export function CandidateForm({
+  initialData,
+  onSubmit,
+  onCancel,
+}: CandidateFormProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: initialData || {
@@ -226,7 +229,7 @@ export function CandidateForm({ initialData, onSubmit, onCancel }: CandidateForm
                         )}
                       >
                         {field.value ? (
-                          format(field.value, "P")
+                          format(field.value, "dd/MM/yyyy")
                         ) : (
                           <span>Choisir une date</span>
                         )}
@@ -235,6 +238,28 @@ export function CandidateForm({ initialData, onSubmit, onCancel }: CandidateForm
                     </FormControl>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
+                    <Input
+                      type="text"
+                      placeholder="jj/mm/aaaa"
+                      className="border-b rounded-t-lg rounded-b-none"
+                      onChange={(e) => {
+                        const value = e.target.value
+                        const [day, month, year] = value.split("/")
+                        const date = new Date(
+                          parseInt(year),
+                          parseInt(month) - 1,
+                          parseInt(day)
+                        )
+                        if (!isNaN(date.getTime())) {
+                          field.onChange(date)
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                        }
+                      }}
+                    />
                     <Calendar
                       mode="single"
                       selected={field.value}
@@ -243,7 +268,10 @@ export function CandidateForm({ initialData, onSubmit, onCancel }: CandidateForm
                         date > new Date() || date < new Date("1900-01-01")
                       }
                       initialFocus
-                      className="pointer-events-auto"
+                      className={cn("p-3 pointer-events-auto")}
+                      captionLayout="dropdown-buttons"
+                      fromYear={1900}
+                      toYear={new Date().getFullYear()}
                     />
                   </PopoverContent>
                 </Popover>
