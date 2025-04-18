@@ -5,7 +5,6 @@ import * as React from "react"
 import { X, Check } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command"
-import { Command as CommandPrimitive } from "cmdk"
 import { useClickOutside } from "@/hooks/use-click-outside"
 
 type Option = {
@@ -28,29 +27,37 @@ export function MultiSelect({
 }: MultiSelectProps) {
   const containerRef = React.useRef<HTMLDivElement>(null)
   const [open, setOpen] = React.useState(false)
-  const [selected, setSelected] = React.useState<string[]>(value)
+  const [selected, setSelected] = React.useState<string[]>(value || [])
   const [inputValue, setInputValue] = React.useState("")
 
   useClickOutside(containerRef, () => setOpen(false))
 
   React.useEffect(() => {
-    setSelected(value)
+    // Ensure value is never undefined or null
+    setSelected(value || [])
   }, [value])
 
   const handleSelect = (option: string) => {
-    const updatedValue = selected.includes(option)
-      ? selected.filter((item) => item !== option)
-      : [...selected, option]
+    // Ensure we're working with arrays
+    const currentSelected = selected || []
+    const updatedValue = currentSelected.includes(option)
+      ? currentSelected.filter((item) => item !== option)
+      : [...currentSelected, option]
     
     setSelected(updatedValue)
     onChange?.(updatedValue)
   }
 
   const handleRemove = (option: string) => {
-    const updatedValue = selected.filter((item) => item !== option)
+    // Ensure we're working with arrays
+    const currentSelected = selected || []
+    const updatedValue = currentSelected.filter((item) => item !== option)
     setSelected(updatedValue)
     onChange?.(updatedValue)
   }
+
+  // Ensure we have a valid array of options
+  const safeOptions = options || []
 
   return (
     <div className="relative" ref={containerRef}>
@@ -59,8 +66,8 @@ export function MultiSelect({
         onClick={() => setOpen(true)}
       >
         <div className="flex flex-wrap gap-1.5">
-          {selected.map((option) => {
-            const selectedOption = options.find((o) => o.value === option)
+          {(selected || []).map((option) => {
+            const selectedOption = safeOptions.find((o) => o.value === option)
             return (
               <Badge
                 key={option}
@@ -89,11 +96,11 @@ export function MultiSelect({
               </Badge>
             )
           })}
-          {selected.length === 0 && (
+          {!selected || selected.length === 0 ? (
             <span className="text-muted-foreground text-sm">
               {placeholder}
             </span>
-          )}
+          ) : null}
         </div>
       </div>
       {open && (
@@ -109,8 +116,8 @@ export function MultiSelect({
               Aucun résultat trouvé
             </CommandEmpty>
             <CommandGroup className="max-h-60 overflow-auto">
-              {options.map((option) => {
-                const isSelected = selected.includes(option.value)
+              {safeOptions.map((option) => {
+                const isSelected = (selected || []).includes(option.value)
                 return (
                   <CommandItem
                     key={option.value}

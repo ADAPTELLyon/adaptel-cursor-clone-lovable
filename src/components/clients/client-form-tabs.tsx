@@ -16,14 +16,16 @@ export function ClientFormTabs({
 }: ClientFormTabsProps) {
   return (
     <Tabs defaultValue="informations" className="w-full">
-      <TabsList className="grid w-full grid-cols-6">
-        <TabsTrigger value="informations">Informations</TabsTrigger>
-        <TabsTrigger value="contacts">Contacts</TabsTrigger>
-        <TabsTrigger value="missions">Infos missions</TabsTrigger>
-        <TabsTrigger value="priorites">Priorités/Interdictions</TabsTrigger>
-        <TabsTrigger value="historique">Historique</TabsTrigger>
-        <TabsTrigger value="statistiques">Statistiques</TabsTrigger>
-      </TabsList>
+      <div className="overflow-x-auto pb-2">
+        <TabsList className="w-full min-w-max">
+          <TabsTrigger value="informations" className="min-w-[120px]">Informations</TabsTrigger>
+          <TabsTrigger value="contacts" className="min-w-[120px]">Contacts</TabsTrigger>
+          <TabsTrigger value="missions" className="min-w-[120px]">Infos missions</TabsTrigger>
+          <TabsTrigger value="priorites" className="min-w-[120px]">Priorités/Interdictions</TabsTrigger>
+          <TabsTrigger value="historique" className="min-w-[120px]">Historique</TabsTrigger>
+          <TabsTrigger value="statistiques" className="min-w-[120px]">Statistiques</TabsTrigger>
+        </TabsList>
+      </div>
       <TabsContent value="informations" className="max-h-[calc(100vh-200px)] overflow-y-auto">
         <ClientForm
           initialData={initialData}
