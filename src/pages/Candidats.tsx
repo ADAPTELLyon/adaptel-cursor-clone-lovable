@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Plus, Search } from "lucide-react"
@@ -7,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
-import { CandidateForm } from "@/components/candidates/candidate-form"
 import { CandidateList } from "@/components/candidates/candidate-list"
 import { CandidateFormTabs } from "@/components/candidates/candidate-form-tabs"
 
@@ -47,14 +47,24 @@ export default function Candidats() {
   }, [search, refetch])
 
   const handleSubmit = async (data: any) => {
+    // Convert date_naissance from dd/mm/yyyy to ISO format if it exists
+    const formattedData = { ...data }
+    if (formattedData.date_naissance) {
+      const [day, month, year] = formattedData.date_naissance.split('/');
+      if (day && month && year) {
+        const isoDate = `${year}-${month}-${day}`;
+        formattedData.date_naissance = isoDate;
+      }
+    }
+
     const { error } = editingCandidate
       ? await supabase
           .from("candidats")
-          .update(data)
+          .update(formattedData)
           .eq("id", editingCandidate.id)
       : await supabase
           .from("candidats")
-          .insert([data])
+          .insert([formattedData])
 
     if (error) {
       toast({

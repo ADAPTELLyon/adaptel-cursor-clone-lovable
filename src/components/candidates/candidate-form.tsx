@@ -1,4 +1,3 @@
-
 import * as z from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -27,7 +26,7 @@ export const formSchema = z.object({
   adresse: z.string().optional(),
   code_postal: z.string().optional(),
   ville: z.string().optional(),
-  date_naissance: z.date().optional(),
+  date_naissance: z.string().optional(),
 })
 
 export const secteurOptions = [
@@ -49,25 +48,42 @@ export function CandidateForm({
   onSubmit,
   onCancel,
 }: CandidateFormProps) {
+  // Format the initialData if it exists, especially the date
+  const formattedInitialData = initialData
+    ? {
+        ...initialData,
+        // Ensure date_naissance is a string in the format dd/mm/yyyy or empty string
+        date_naissance: initialData.date_naissance 
+          ? formatDateString(initialData.date_naissance)
+          : ""
+      }
+    : {
+        nom: "",
+        prenom: "",
+        email: "",
+        telephone: "",
+        vehicule: false,
+        actif: true,
+        secteurs: [],
+        adresse: "",
+        code_postal: "",
+        ville: "",
+        date_naissance: "",
+      }
+  
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: initialData || {
-      nom: "",
-      prenom: "",
-      email: "",
-      telephone: "",
-      vehicule: false,
-      actif: true,
-      secteurs: [],
-      adresse: "",
-      code_postal: "",
-      ville: "",
-    },
+    defaultValues: formattedInitialData,
   })
+
+  // Function to format a submission before sending to the server
+  const handleFormSubmit = (data: z.infer<typeof formSchema>) => {
+    onSubmit(data)
+  }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4">
         <CandidatePersonalInfo form={form} />
         <CandidateContactInfo form={form} />
         <CandidateAddressInfo form={form} />
@@ -78,6 +94,32 @@ export function CandidateForm({
       </form>
     </Form>
   )
+}
+
+// Helper function to format date string from any format to dd/mm/yyyy
+function formatDateString(dateStr: string): string {
+  // If it's already in the dd/mm/yyyy format, return it
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+    return dateStr;
+  }
+  
+  try {
+    // Try to create a date object from the string
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      return "";
+    }
+    
+    // Format as dd/mm/yyyy
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+    
+    return `${day}/${month}/${year}`;
+  } catch (error) {
+    console.error("Error parsing date:", error);
+    return "";
+  }
 }
 
 // Personal Information Component
@@ -209,28 +251,7 @@ function CandidateDateInfo({ form }: { form: any }) {
               <Input
                 type="text"
                 placeholder="jj/mm/aaaa"
-                onChange={(e) => {
-                  const value = e.target.value;
-                  if (value === "") {
-                    field.onChange(undefined);
-                    return;
-                  }
-                  
-                  const [day, month, year] = value.split("/");
-                  if (day && month && year) {
-                    const date = new Date(
-                      parseInt(year),
-                      parseInt(month) - 1,
-                      parseInt(day)
-                    );
-                    if (!isNaN(date.getTime())) {
-                      field.onChange(date);
-                    }
-                  }
-                }}
-                defaultValue={field.value ? 
-                  `${field.value.getDate().toString().padStart(2, '0')}/${(field.value.getMonth() + 1).toString().padStart(2, '0')}/${field.value.getFullYear()}` : 
-                  ''}
+                {...field}
               />
             </FormControl>
             <FormMessage />
