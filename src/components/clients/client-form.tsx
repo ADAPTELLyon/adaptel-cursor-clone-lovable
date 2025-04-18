@@ -2,6 +2,8 @@
 import * as z from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { useQuery } from "@tanstack/react-query"
+import { supabase } from "@/integrations/supabase/client"
 import { 
   Form, 
   FormControl, 
@@ -15,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { MultiSelect } from "@/components/ui/multi-select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export const formSchema = z.object({
   nom: z.string().min(2, { message: "Le nom doit contenir au moins 2 caractères" }),
@@ -54,6 +57,48 @@ export function ClientForm({
     }
   })
 
+  const { data: services = [] } = useQuery({
+    queryKey: ["parametrages", "service"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("parametrages")
+        .select("id, valeur")
+        .eq("categorie", "service")
+        .order("valeur")
+
+      if (error) {
+        console.error("Erreur chargement services:", error)
+        return []
+      }
+
+      return data.map(item => ({
+        value: item.valeur,
+        label: item.valeur
+      }))
+    }
+  })
+
+  const { data: groupes = [] } = useQuery({
+    queryKey: ["parametrages", "groupe"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("parametrages")
+        .select("id, valeur")
+        .eq("categorie", "groupe")
+        .order("valeur")
+
+      if (error) {
+        console.error("Erreur chargement groupes:", error)
+        return []
+      }
+
+      return data.map(item => ({
+        value: item.valeur,
+        label: item.valeur
+      }))
+    }
+  })
+
   const secteurOptions = [
     { value: "etages", label: "🛏 Étages" },
     { value: "cuisine", label: "👨‍🍳 Cuisine" },
@@ -64,7 +109,7 @@ export function ClientForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 p-3">
         <FormField
           control={form.control}
           name="nom"
@@ -88,38 +133,72 @@ export function ClientForm({
               <FormControl>
                 <MultiSelect
                   options={secteurOptions}
-                  {...field}
+                  value={field.value || []}
+                  onChange={field.onChange}
+                  placeholder="Sélectionner des secteurs"
                 />
               </FormControl>
             </FormItem>
           )}
         />
 
-        <FormField
-          control={form.control}
-          name="service"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Service</FormLabel>
-              <FormControl>
-                <Input placeholder="Service" {...field} />
-              </FormControl>
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="groupe"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Groupe</FormLabel>
-              <FormControl>
-                <Input placeholder="Groupe" {...field} />
-              </FormControl>
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="service"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Service</FormLabel>
+                <Select 
+                  onValueChange={field.onChange} 
+                  defaultValue={field.value}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner un service" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="">Aucun</SelectItem>
+                    {services.map(service => (
+                      <SelectItem key={service.value} value={service.value}>
+                        {service.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+          
+          <FormField
+            control={form.control}
+            name="groupe"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Groupe</FormLabel>
+                <Select 
+                  onValueChange={field.onChange} 
+                  defaultValue={field.value}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner un groupe" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="">Aucun</SelectItem>
+                    {groupes.map(groupe => (
+                      <SelectItem key={groupe.value} value={groupe.value}>
+                        {groupe.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
+        </div>
 
         <FormField
           control={form.control}
@@ -190,7 +269,7 @@ export function ClientForm({
           )}
         />
 
-        <div className="flex justify-end space-x-2">
+        <div className="flex justify-end space-x-2 pt-4">
           <Button type="button" variant="outline" onClick={onCancel}>
             Annuler
           </Button>

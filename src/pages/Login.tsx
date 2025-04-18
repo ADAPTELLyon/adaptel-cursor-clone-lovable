@@ -1,6 +1,6 @@
 
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AdaptelLogo } from '@/components/adaptel-logo';
 import { EyeIcon, EyeOffIcon } from 'lucide-react';
+import { useAuth } from '@/contexts/auth-context';
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Adresse email invalide' }),
@@ -21,9 +22,19 @@ type LoginForm = z.infer<typeof loginSchema>;
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
+  const { isAuthenticated } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      const from = location.state?.from?.pathname || '/clients';
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, navigate, location]);
 
   const {
     register,
@@ -56,6 +67,7 @@ export default function Login() {
           description: errorMessage,
           variant: 'destructive',
         });
+        setIsSubmitting(false);
         return;
       }
       
@@ -64,7 +76,8 @@ export default function Login() {
           title: 'Connexion réussie',
           description: 'Vous êtes maintenant connecté',
         });
-        navigate('/commandes');
+        // Force navigation after login - this should work even if the auth context hasn't updated yet
+        navigate('/clients', { replace: true });
       }
     } catch (err) {
       console.error('Login error:', err);
@@ -73,7 +86,6 @@ export default function Login() {
         description: 'Une erreur est survenue lors de la connexion',
         variant: 'destructive',
       });
-    } finally {
       setIsSubmitting(false);
     }
   };

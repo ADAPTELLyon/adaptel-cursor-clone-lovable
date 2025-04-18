@@ -18,7 +18,7 @@ export default function Clients() {
   const [editingClient, setEditingClient] = useState<any>(null)
 
   const { data: clients = [], refetch } = useQuery({
-    queryKey: ["clients"],
+    queryKey: ["clients", search],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("clients")
@@ -40,34 +40,43 @@ export default function Clients() {
   })
 
   const handleSubmit = async (data: any) => {
-    const { error } = editingClient
-      ? await supabase
-          .from("clients")
-          .update(data)
-          .eq("id", editingClient.id)
-      : await supabase
-          .from("clients")
-          .insert([data])
+    try {
+      const { error } = editingClient
+        ? await supabase
+            .from("clients")
+            .update(data)
+            .eq("id", editingClient.id)
+        : await supabase
+            .from("clients")
+            .insert([data])
 
-    if (error) {
+      if (error) {
+        toast({
+          title: "Erreur",
+          description: "Impossible de sauvegarder le client",
+          variant: "destructive",
+        })
+        return
+      }
+
+      toast({
+        title: "Succès",
+        description: editingClient
+          ? "Client modifié avec succès"
+          : "Client ajouté avec succès",
+      })
+
+      setDialogOpen(false)
+      setEditingClient(null)
+      refetch()
+    } catch (err) {
+      console.error("Error saving client:", err)
       toast({
         title: "Erreur",
-        description: "Impossible de sauvegarder le client",
+        description: "Une erreur s'est produite lors de l'enregistrement",
         variant: "destructive",
       })
-      return
     }
-
-    toast({
-      title: "Succès",
-      description: editingClient
-        ? "Client modifié avec succès"
-        : "Client ajouté avec succès",
-    })
-
-    setDialogOpen(false)
-    setEditingClient(null)
-    refetch()
   }
 
   const handleEdit = async (id: string) => {
@@ -137,8 +146,11 @@ export default function Clients() {
           />
         </div>
 
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="max-w-2xl">
+        <Dialog 
+          open={dialogOpen} 
+          onOpenChange={setDialogOpen}
+        >
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
             <DialogHeader>
               <DialogTitle>
                 {editingClient ? "Modifier le client" : "Ajouter un client"}

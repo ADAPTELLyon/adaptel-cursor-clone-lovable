@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -26,9 +27,9 @@ export function MultiSelect({
   placeholder = "Sélectionner...",
 }: MultiSelectProps) {
   const containerRef = React.useRef<HTMLDivElement>(null)
-  const inputRef = React.useRef<HTMLInputElement>(null)
   const [open, setOpen] = React.useState(false)
   const [selected, setSelected] = React.useState<string[]>(value)
+  const [inputValue, setInputValue] = React.useState("")
 
   useClickOutside(containerRef, () => setOpen(false))
 
@@ -53,7 +54,10 @@ export function MultiSelect({
 
   return (
     <div className="relative" ref={containerRef}>
-      <div className="relative flex min-h-[42px] w-full items-center gap-1.5 rounded-md border border-input bg-background p-1.5 text-sm ring-offset-background">
+      <div 
+        className="relative flex min-h-[42px] w-full items-center gap-1.5 rounded-md border border-input bg-background p-1.5 text-sm ring-offset-background cursor-pointer"
+        onClick={() => setOpen(true)}
+      >
         <div className="flex flex-wrap gap-1.5">
           {selected.map((option) => {
             const selectedOption = options.find((o) => o.value === option)
@@ -75,32 +79,32 @@ export function MultiSelect({
                     e.preventDefault()
                     e.stopPropagation()
                   }}
-                  onClick={() => handleRemove(option)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleRemove(option)
+                  }}
                 >
                   <X className="h-3 w-3" />
                 </button>
               </Badge>
             )
           })}
+          {selected.length === 0 && (
+            <span className="text-muted-foreground text-sm">
+              {placeholder}
+            </span>
+          )}
         </div>
-        <CommandPrimitive onKeyDown={(e) => {
-          if (e.key === "Backspace" && !e.currentTarget.value && selected.length > 0) {
-            handleRemove(selected[selected.length - 1])
-          }
-        }}>
-          <div className="flex-1">
-            <CommandInput
-              ref={inputRef}
-              placeholder={placeholder}
-              className="h-8 w-full border-0 bg-transparent p-0 text-sm outline-none placeholder:text-muted-foreground focus:outline-none focus:ring-0"
-              onFocus={() => setOpen(true)}
-            />
-          </div>
-        </CommandPrimitive>
       </div>
-      <div className="relative mt-1">
-        {open && (
-          <Command className="absolute top-0 z-10 w-full rounded-md border bg-popover text-popover-foreground shadow-md outline-none animate-in">
+      {open && (
+        <div className="absolute mt-1 w-full z-10">
+          <Command className="rounded-md border bg-popover text-popover-foreground shadow-md animate-in">
+            <CommandInput 
+              placeholder="Rechercher..." 
+              value={inputValue}
+              onValueChange={setInputValue}
+              className="h-9"
+            />
             <CommandEmpty className="py-2 px-4 text-sm text-muted-foreground">
               Aucun résultat trouvé
             </CommandEmpty>
@@ -126,8 +130,8 @@ export function MultiSelect({
               })}
             </CommandGroup>
           </Command>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
