@@ -30,28 +30,31 @@ export function MultiSelect({
   onChange,
   placeholder = "Sélectionner...",
 }: MultiSelectProps) {
-  // Ensure value is always a valid array
-  const [selected, setSelected] = React.useState<string[]>(Array.isArray(value) ? value : [])
+  // Initialize with empty array if value is null or undefined
+  const [selected, setSelected] = React.useState<string[]>(value || [])
+  const [open, setOpen] = React.useState(false)
   
-  // Update local state when prop changes
+  // Synchronize with external value changes
   React.useEffect(() => {
     if (Array.isArray(value)) {
       setSelected(value)
     }
   }, [value])
 
-  const handleSelect = (option: string) => {
-    const updatedValue = selected.includes(option)
-      ? selected.filter((item) => item !== option)
-      : [...selected, option]
+  const handleSelect = (optionValue: string) => {
+    const updatedValue = selected.includes(optionValue)
+      ? selected.filter((item) => item !== optionValue)
+      : [...selected, optionValue]
     
     setSelected(updatedValue)
     onChange?.(updatedValue)
   }
 
-  const handleRemove = (option: string, e?: React.MouseEvent) => {
+  const handleRemove = (optionValue: string, e?: React.MouseEvent) => {
+    e?.preventDefault()
     e?.stopPropagation()
-    const updatedValue = selected.filter((item) => item !== option)
+    
+    const updatedValue = selected.filter((item) => item !== optionValue)
     setSelected(updatedValue)
     onChange?.(updatedValue)
   }
@@ -60,7 +63,7 @@ export function MultiSelect({
   const safeOptions = options || []
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -69,18 +72,18 @@ export function MultiSelect({
         >
           <div className="flex flex-wrap gap-1.5 py-0.5">
             {selected.length > 0 ? (
-              selected.map((option) => {
-                const selectedOption = safeOptions.find((o) => o.value === option)
+              selected.map((optionValue) => {
+                const selectedOption = safeOptions.find((o) => o.value === optionValue)
                 return (
                   <Badge
-                    key={option}
+                    key={optionValue}
                     variant="secondary"
                     className="rounded-sm px-1 font-normal"
                   >
-                    {selectedOption?.label || option}
+                    {selectedOption?.label || optionValue}
                     <button
                       className="ml-1.5 rounded-sm hover:bg-muted"
-                      onClick={(e) => handleRemove(option, e)}
+                      onClick={(e) => handleRemove(optionValue, e)}
                       type="button"
                     >
                       <X className="h-3 w-3" />
@@ -107,8 +110,14 @@ export function MultiSelect({
                 <Checkbox
                   checked={selected.includes(option.value)}
                   className="pointer-events-none"
+                  id={`option-${option.value}`}
                 />
-                <span>{option.label}</span>
+                <label 
+                  htmlFor={`option-${option.value}`}
+                  className="cursor-pointer flex-grow"
+                >
+                  {option.label}
+                </label>
               </div>
             ))
           ) : (
