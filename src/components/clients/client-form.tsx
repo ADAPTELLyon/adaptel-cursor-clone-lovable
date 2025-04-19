@@ -2,6 +2,7 @@ import * as z from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useQuery } from "@tanstack/react-query"
+import { Utensils, Chair, Reception, Layers } from "lucide-react"
 import { supabase } from "@/integrations/supabase/client"
 import { 
   Form, 
@@ -15,7 +16,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { MultiSelect } from "@/components/ui/multi-select"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export const formSchema = z.object({
@@ -36,11 +37,15 @@ type ClientFormProps = {
   onCancel: () => void
 }
 
-export function ClientForm({ 
-  initialData, 
-  onSubmit, 
-  onCancel 
-}: ClientFormProps) {
+const secteurs = [
+  { value: "cuisine", label: "Cuisine", icon: Utensils },
+  { value: "salle", label: "Salle", icon: Chair },
+  { value: "plonge", label: "Plonge", icon: Utensils },
+  { value: "reception", label: "Réception", icon: Reception },
+  { value: "etages", label: "Étages", icon: Layers },
+]
+
+export function ClientForm({ initialData, onSubmit, onCancel }: ClientFormProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: initialData || {
@@ -100,14 +105,6 @@ export function ClientForm({
     }
   })
 
-  const secteurOptions = [
-    { value: "etages", label: "🛏 Étages" },
-    { value: "cuisine", label: "👨‍🍳 Cuisine" },
-    { value: "salle", label: "🍴 Salle" },
-    { value: "plonge", label: "🍷 Plonge" },
-    { value: "reception", label: "🛎 Réception" }
-  ]
-
   const filteredServices = services.filter(service => 
     service.value && service.value.trim() !== ""
   )
@@ -139,14 +136,28 @@ export function ClientForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Secteurs</FormLabel>
-              <FormControl>
-                <MultiSelect
-                  options={secteurOptions}
-                  value={field.value || []}
-                  onChange={field.onChange}
-                  placeholder="Sélectionner des secteurs"
-                />
-              </FormControl>
+              <div className="grid gap-3">
+                {secteurs.map((secteur) => {
+                  const Icon = secteur.icon
+                  return (
+                    <div key={secteur.value} className="flex items-center space-x-3">
+                      <Checkbox
+                        checked={field.value?.includes(secteur.value)}
+                        onCheckedChange={(checked) => {
+                          const updatedValue = checked
+                            ? [...(field.value || []), secteur.value]
+                            : (field.value || []).filter((value) => value !== secteur.value)
+                          field.onChange(updatedValue)
+                        }}
+                      />
+                      <div className="flex items-center space-x-2">
+                        <Icon className="h-4 w-4" />
+                        <span>{secteur.label}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
               <FormMessage />
             </FormItem>
           )}
