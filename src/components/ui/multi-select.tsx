@@ -30,37 +30,53 @@ export function MultiSelect({
   onChange,
   placeholder = "Sélectionner...",
 }: MultiSelectProps) {
-  // Initialize with empty array if value is null or undefined
-  const [selected, setSelected] = React.useState<string[]>(value || [])
+  // Initialize with value or empty array
+  const [selected, setSelected] = React.useState<string[]>(Array.isArray(value) ? value : [])
   const [open, setOpen] = React.useState(false)
   
-  // Synchronize with external value changes
+  // Update local state when prop changes
   React.useEffect(() => {
     if (Array.isArray(value)) {
       setSelected(value)
     }
   }, [value])
 
+  // Handle item selection
   const handleSelect = (optionValue: string) => {
+    // Create a new array to ensure React detects the change
     const updatedValue = selected.includes(optionValue)
-      ? selected.filter((item) => item !== optionValue)
+      ? selected.filter(item => item !== optionValue)
       : [...selected, optionValue]
     
+    // Update local state
     setSelected(updatedValue)
-    onChange?.(updatedValue)
-  }
-
-  const handleRemove = (optionValue: string, e?: React.MouseEvent) => {
-    e?.preventDefault()
-    e?.stopPropagation()
     
-    const updatedValue = selected.filter((item) => item !== optionValue)
-    setSelected(updatedValue)
-    onChange?.(updatedValue)
+    // Call onChange callback with updated values
+    if (onChange) {
+      onChange(updatedValue)
+    }
   }
 
-  // Ensure we have valid options
+  // Handle item removal via badge click
+  const handleRemove = (optionValue: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const updatedValue = selected.filter(item => item !== optionValue)
+    setSelected(updatedValue)
+    
+    if (onChange) {
+      onChange(updatedValue)
+    }
+  }
+
+  // Make sure options is always an array
   const safeOptions = options || []
+
+  // Get labels for selected items
+  const selectedLabels = selected
+    .map(value => safeOptions.find(option => option.value === value)?.label || value)
+    .join(", ")
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -68,19 +84,19 @@ export function MultiSelect({
         <Button
           variant="outline"
           role="combobox"
-          className="w-full justify-between h-auto min-h-[42px]"
+          className="w-full justify-between h-auto min-h-10 px-3 py-2"
         >
-          <div className="flex flex-wrap gap-1.5 py-0.5">
-            {selected.length > 0 ? (
-              selected.map((optionValue) => {
-                const selectedOption = safeOptions.find((o) => o.value === optionValue)
+          {selected.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 py-0.5">
+              {selected.map((optionValue) => {
+                const option = safeOptions.find(o => o.value === optionValue)
                 return (
                   <Badge
                     key={optionValue}
                     variant="secondary"
                     className="rounded-sm px-1 font-normal"
                   >
-                    {selectedOption?.label || optionValue}
+                    {option?.label || optionValue}
                     <button
                       className="ml-1.5 rounded-sm hover:bg-muted"
                       onClick={(e) => handleRemove(optionValue, e)}
@@ -90,11 +106,11 @@ export function MultiSelect({
                     </button>
                   </Badge>
                 )
-              })
-            ) : (
-              <span className="text-muted-foreground text-sm">{placeholder}</span>
-            )}
-          </div>
+              })}
+            </div>
+          ) : (
+            <span className="text-muted-foreground text-sm">{placeholder}</span>
+          )}
           <span className="sr-only">Toggle menu</span>
         </Button>
       </PopoverTrigger>

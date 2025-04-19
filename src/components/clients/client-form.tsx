@@ -1,4 +1,3 @@
-
 import * as z from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -57,6 +56,8 @@ export function ClientForm({
     }
   })
 
+  console.log("Current form values:", form.watch())
+
   const { data: services = [] } = useQuery({
     queryKey: ["parametrages", "service"],
     queryFn: async () => {
@@ -107,12 +108,10 @@ export function ClientForm({
     { value: "reception", label: "🛎 Réception" }
   ]
 
-  // Filter out any services with empty values
   const filteredServices = services.filter(service => 
     service.value && service.value.trim() !== ""
   )
 
-  // Filter out any groupes with empty values
   const filteredGroupes = groupes.filter(groupe => 
     groupe.value && groupe.value.trim() !== ""
   )
@@ -148,6 +147,7 @@ export function ClientForm({
                   placeholder="Sélectionner des secteurs"
                 />
               </FormControl>
+              <FormMessage />
             </FormItem>
           )}
         />
