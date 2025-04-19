@@ -31,10 +31,9 @@ export default function Login() {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      const from = location.state?.from?.pathname || '/clients';
-      navigate(from, { replace: true });
+      navigate('/commandes', { replace: true });
     }
-  }, [isAuthenticated, navigate, location]);
+  }, [isAuthenticated, navigate]);
 
   const {
     register,
@@ -76,8 +75,9 @@ export default function Login() {
           title: 'Connexion réussie',
           description: 'Vous êtes maintenant connecté',
         });
-        // Force navigation after login - this should work even if the auth context hasn't updated yet
-        navigate('/clients', { replace: true });
+        
+        // Force navigation after login
+        navigate('/commandes', { replace: true });
       }
     } catch (err) {
       console.error('Login error:', err);
@@ -86,6 +86,7 @@ export default function Login() {
         description: 'Une erreur est survenue lors de la connexion',
         variant: 'destructive',
       });
+    } finally {
       setIsSubmitting(false);
     }
   };

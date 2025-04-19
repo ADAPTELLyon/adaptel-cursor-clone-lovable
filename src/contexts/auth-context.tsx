@@ -1,8 +1,9 @@
 
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
-import { User } from '@supabase/supabase-js';
+import { User, Session } from '@supabase/supabase-js';
 import { getSession, getUser } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/lib/supabase';
 
 type AuthContextType = {
   user: User | null;
@@ -22,6 +23,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
 
   useEffect(() => {
+    // Set up auth state change listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        console.log('Auth state changed:', event, session?.user?.id);
+        setUser(session?.user ?? null);
+      }
+    );
+
+    // Check for existing session
     async function loadUserData() {
       try {
         const { session, error: sessionError } = await getSession();
@@ -56,6 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     loadUserData();
+
+    // Cleanup subscription on component unmount
+    return () => {
+      subscription.unsubscribe();
+    };
   }, [toast]);
 
   const value = {

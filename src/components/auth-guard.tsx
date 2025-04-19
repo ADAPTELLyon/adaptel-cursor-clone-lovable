@@ -10,7 +10,8 @@ export function withAuthGuard<P extends object>(Component: React.ComponentType<P
 
     useEffect(() => {
       if (!isLoading && !isAuthenticated) {
-        navigate('/login');
+        console.log('User not authenticated, redirecting to login');
+        navigate('/login', { replace: true });
       }
     }, [isAuthenticated, isLoading, navigate]);
 
@@ -22,6 +23,7 @@ export function withAuthGuard<P extends object>(Component: React.ComponentType<P
       );
     }
 
+    // Only render the component if the user is authenticated
     return isAuthenticated ? <Component {...props} /> : null;
   };
 }
