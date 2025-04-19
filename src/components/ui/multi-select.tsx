@@ -26,6 +26,7 @@ export function MultiSelect({
   placeholder = "Sélectionner...",
 }: MultiSelectProps) {
   const containerRef = React.useRef<HTMLDivElement>(null)
+  const commandRef = React.useRef<HTMLDivElement>(null)
   const [open, setOpen] = React.useState(false)
   const [selected, setSelected] = React.useState<string[]>(value || [])
   const [inputValue, setInputValue] = React.useState("")
@@ -104,7 +105,7 @@ export function MultiSelect({
         </div>
       </div>
       {open && (
-        <div className="absolute mt-1 w-full z-10">
+        <div ref={commandRef} className="absolute mt-1 w-full z-10">
           <Command className="rounded-md border bg-popover text-popover-foreground shadow-md animate-in">
             <CommandInput 
               placeholder="Rechercher..." 
