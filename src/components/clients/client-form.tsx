@@ -1,8 +1,9 @@
+
 import * as z from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useQuery } from "@tanstack/react-query"
-import { Utensils, Chair, Reception, Layers } from "lucide-react"
+import { Utensils, Sofa, ShowerHead, Reception, Stairs } from "lucide-react"
 import { supabase } from "@/integrations/supabase/client"
 import { 
   Form, 
@@ -21,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 export const formSchema = z.object({
   nom: z.string().min(2, { message: "Le nom doit contenir au moins 2 caractères" }),
-  secteurs: z.array(z.string()).optional(),
+  secteurs: z.array(z.string()).min(1, { message: "Sélectionnez au moins un secteur" }),
   service: z.string().optional(),
   groupe: z.string().optional(),
   adresse: z.string().optional(),
@@ -39,10 +40,10 @@ type ClientFormProps = {
 
 const secteurs = [
   { value: "cuisine", label: "Cuisine", icon: Utensils },
-  { value: "salle", label: "Salle", icon: Chair },
-  { value: "plonge", label: "Plonge", icon: Utensils },
-  { value: "reception", label: "Réception", icon: Reception },
-  { value: "etages", label: "Étages", icon: Layers },
+  { value: "salle", label: "Salle", icon: Sofa },
+  { value: "plonge", label: "Plonge", icon: ShowerHead },
+  { value: "reception", label: "Réception", icon: Stairs },
+  { value: "etages", label: "Étages", icon: Stairs }
 ]
 
 export function ClientForm({ initialData, onSubmit, onCancel }: ClientFormProps) {
@@ -136,7 +137,7 @@ export function ClientForm({ initialData, onSubmit, onCancel }: ClientFormProps)
           render={({ field }) => (
             <FormItem>
               <FormLabel>Secteurs</FormLabel>
-              <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                 {secteurs.map((secteur) => {
                   const Icon = secteur.icon
                   return (
