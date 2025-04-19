@@ -3,7 +3,7 @@ import * as z from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useQuery } from "@tanstack/react-query"
-import { Utensils, Sofa, ShowerHead, Reception, Stairs } from "lucide-react"
+import { Utensils, Sofa, ShowerHead, Building, Star } from "lucide-react"
 import { supabase } from "@/integrations/supabase/client"
 import { 
   Form, 
@@ -42,8 +42,8 @@ const secteurs = [
   { value: "cuisine", label: "Cuisine", icon: Utensils },
   { value: "salle", label: "Salle", icon: Sofa },
   { value: "plonge", label: "Plonge", icon: ShowerHead },
-  { value: "reception", label: "Réception", icon: Stairs },
-  { value: "etages", label: "Étages", icon: Stairs }
+  { value: "reception", label: "Réception", icon: Building },
+  { value: "etages", label: "Étages", icon: Star }
 ]
 
 export function ClientForm({ initialData, onSubmit, onCancel }: ClientFormProps) {
