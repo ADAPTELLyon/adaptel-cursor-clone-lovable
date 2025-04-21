@@ -1,0 +1,130 @@
+.
+├── README.md
+├── bun.lockb
+├── components.json
+├── eslint.config.js
+├── index.html
+├── package-lock.json
+├── package.json
+├── pnpm-lock.yaml
+├── postcss.config.js
+├── public
+│   ├── favicon.ico
+│   ├── lovable-uploads
+│   │   └── aef96993-219b-4605-9395-ee7283fbf87d.png
+│   ├── placeholder.svg
+│   └── robots.txt
+├── src
+│   ├── App.css
+│   ├── App.tsx
+│   ├── components
+│   │   ├── adaptel-logo.tsx
+│   │   ├── auth-guard.tsx
+│   │   ├── candidates
+│   │   │   ├── candidate-form-tabs.tsx
+│   │   │   ├── candidate-form.tsx
+│   │   │   └── candidate-list.tsx
+│   │   ├── clients
+│   │   │   ├── ClientContactsTab.tsx
+│   │   │   ├── client-form-tabs.tsx
+│   │   │   ├── client-form.tsx
+│   │   │   └── client-list.tsx
+│   │   ├── main-layout.tsx
+│   │   ├── main-nav.tsx
+│   │   └── ui
+│   │       ├── accordion.tsx
+│   │       ├── alert-dialog.tsx
+│   │       ├── alert.tsx
+│   │       ├── aspect-ratio.tsx
+│   │       ├── avatar.tsx
+│   │       ├── badge.tsx
+│   │       ├── breadcrumb.tsx
+│   │       ├── button.tsx
+│   │       ├── calendar.tsx
+│   │       ├── card.tsx
+│   │       ├── carousel.tsx
+│   │       ├── chart.tsx
+│   │       ├── checkbox.tsx
+│   │       ├── collapsible.tsx
+│   │       ├── command.tsx
+│   │       ├── context-menu.tsx
+│   │       ├── dialog.tsx
+│   │       ├── drawer.tsx
+│   │       ├── dropdown-menu.tsx
+│   │       ├── form.tsx
+│   │       ├── hover-card.tsx
+│   │       ├── input-otp.tsx
+│   │       ├── input.tsx
+│   │       ├── label.tsx
+│   │       ├── menubar.tsx
+│   │       ├── multi-select.tsx
+│   │       ├── navigation-menu.tsx
+│   │       ├── pagination.tsx
+│   │       ├── popover.tsx
+│   │       ├── progress.tsx
+│   │       ├── radio-group.tsx
+│   │       ├── resizable.tsx
+│   │       ├── scroll-area.tsx
+│   │       ├── select.tsx
+│   │       ├── separator.tsx
+│   │       ├── sheet.tsx
+│   │       ├── sidebar.tsx
+│   │       ├── skeleton.tsx
+│   │       ├── slider.tsx
+│   │       ├── sonner.tsx
+│   │       ├── switch.tsx
+│   │       ├── table.tsx
+│   │       ├── tabs.tsx
+│   │       ├── textarea.tsx
+│   │       ├── toast.tsx
+│   │       ├── toaster.tsx
+│   │       ├── toggle-group.tsx
+│   │       ├── toggle.tsx
+│   │       ├── tooltip.tsx
+│   │       └── use-toast.ts
+│   ├── constants
+│   │   └── secteurs.ts
+│   ├── contexts
+│   │   └── auth-context.tsx
+│   ├── hooks
+│   │   ├── use-click-outside.ts
+│   │   ├── use-mobile.tsx
+│   │   └── use-toast.ts
+│   ├── index.css
+│   ├── integrations
+│   │   └── supabase
+│   │       ├── client.ts
+│   │       └── types.ts
+│   ├── lib
+│   │   ├── auth.ts
+│   │   ├── supabase.ts
+│   │   └── utils.ts
+│   ├── main.tsx
+│   ├── pages
+│   │   ├── BackOffice.tsx
+│   │   ├── Candidats.tsx
+│   │   ├── Clients.tsx
+│   │   ├── Commandes.tsx
+│   │   ├── Index.tsx
+│   │   ├── Login.tsx
+│   │   ├── NotFound.tsx
+│   │   ├── Parametrages.tsx
+│   │   └── Planning.tsx
+│   ├── types
+│   │   └── supabase.ts
+│   └── vite-env.d.ts
+├── structure.txt
+├── supabase
+│   ├── config.toml
+│   └── functions
+│       ├── create-user
+│       │   └── index.ts
+│       └── delete-user
+│           └── index.ts
+├── tailwind.config.ts
+├── tsconfig.app.json
+├── tsconfig.json
+├── tsconfig.node.json
+└── vite.config.ts
+
+20 directories, 108 files

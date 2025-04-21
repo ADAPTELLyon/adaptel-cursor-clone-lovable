@@ -1,7 +1,7 @@
-
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Plus, Search } from "lucide-react"
+import { v4 as uuidv4 } from "uuid"
 import { supabase } from "@/integrations/supabase/client"
 import MainLayout from "@/components/main-layout"
 import { Button } from "@/components/ui/button"
@@ -35,45 +35,52 @@ export default function Clients() {
         return []
       }
 
-      return data
+      return data.map(client => ({
+        ...client,
+        services: Array.isArray(client.services)
+          ? client.services
+          : typeof client.services === "string"
+          ? client.services.split(",")
+          : [],
+        secteurs: Array.isArray(client.secteurs)
+          ? client.secteurs
+          : typeof client.secteurs === "string"
+          ? client.secteurs.split(",")
+          : [],
+      }))
     },
   })
 
   const handleSubmit = async (data: any) => {
     try {
-      const { error } = editingClient
-        ? await supabase
-            .from("clients")
-            .update(data)
-            .eq("id", editingClient.id)
-        : await supabase
-            .from("clients")
-            .insert([data])
-
-      if (error) {
-        toast({
-          title: "Erreur",
-          description: "Impossible de sauvegarder le client",
-          variant: "destructive",
-        })
-        return
+      const toSave = {
+        ...data,
+        services: Array.isArray(data.services) ? data.services : [],
+        secteurs: Array.isArray(data.secteurs) ? data.secteurs : [],
       }
 
-      toast({
-        title: "Succès",
-        description: editingClient
-          ? "Client modifié avec succès"
-          : "Client ajouté avec succès",
-      })
+      if (!editingClient) {
+        toSave.id = uuidv4()
+        const { error } = await supabase.from("clients").insert([toSave])
+        if (error) throw error
+        toast({ title: "Succès", description: "Client ajouté avec succès" })
+      } else {
+        const { error } = await supabase
+          .from("clients")
+          .update(toSave)
+          .eq("id", editingClient.id)
+        if (error) throw error
+        toast({ title: "Succès", description: "Client modifié avec succès" })
+      }
 
       setDialogOpen(false)
       setEditingClient(null)
       refetch()
-    } catch (err) {
-      console.error("Error saving client:", err)
+    } catch (error) {
+      console.error("Erreur lors de l'enregistrement", error)
       toast({
         title: "Erreur",
-        description: "Une erreur s'est produite lors de l'enregistrement",
+        description: "Impossible de sauvegarder le client",
         variant: "destructive",
       })
     }
@@ -95,7 +102,20 @@ export default function Clients() {
       return
     }
 
-    setEditingClient(data)
+    setEditingClient({
+      ...data,
+      services: Array.isArray(data.services)
+        ? data.services
+        : typeof data.services === "string"
+        ? data.services.split(",")
+        : [],
+      secteurs: Array.isArray(data.secteurs)
+        ? data.secteurs
+        : typeof data.secteurs === "string"
+        ? data.secteurs.split(",")
+        : [],
+    })
+
     setDialogOpen(true)
   }
 
@@ -122,7 +142,12 @@ export default function Clients() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">Clients</h1>
-          <Button onClick={() => setDialogOpen(true)}>
+          <Button
+            onClick={() => {
+              setEditingClient(null)
+              setDialogOpen(true)
+            }}
+          >
             <Plus className="mr-2 h-4 w-4" />
             Ajouter
           </Button>
@@ -146,10 +171,7 @@ export default function Clients() {
           />
         </div>
 
-        <Dialog 
-          open={dialogOpen} 
-          onOpenChange={setDialogOpen}
-        >
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
             <DialogHeader>
               <DialogTitle>
@@ -157,7 +179,8 @@ export default function Clients() {
               </DialogTitle>
             </DialogHeader>
             <ClientFormTabs
-              initialData={editingClient}
+              initialData={editingClient ?? undefined}
+              selectedServices={editingClient?.services || []}
               onSubmit={handleSubmit}
               onCancel={() => {
                 setDialogOpen(false)

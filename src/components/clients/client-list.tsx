@@ -1,9 +1,6 @@
-
-import { useState } from "react"
 import { Edit } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Switch } from "@/components/ui/switch"
 import {
   Table,
   TableBody,
@@ -24,8 +21,8 @@ const secteurIcons: Record<string, string> = {
 type Client = {
   id: string
   nom: string
-  secteurs: string[]
-  groupe?: string
+  secteurs?: string[]
+  services?: string[]
   actif: boolean
 }
 
@@ -42,33 +39,56 @@ export function ClientList({ clients, onEdit, onToggleActive }: ClientListProps)
         <TableRow>
           <TableHead>Nom</TableHead>
           <TableHead>Secteurs</TableHead>
-          <TableHead>Groupe</TableHead>
-          <TableHead>Actif</TableHead>
-          <TableHead className="w-[100px]">Actions</TableHead>
+          <TableHead>Services</TableHead>
+          <TableHead>Statut</TableHead>
+          <TableHead className="w-[80px]">Actions</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {clients.map((client) => (
           <TableRow key={client.id}>
-            <TableCell className="font-medium">
-              {client.nom}
-            </TableCell>
+            <TableCell className="font-medium">{client.nom}</TableCell>
+
             <TableCell>
               <div className="flex flex-wrap gap-1">
-                {client.secteurs.map((secteur) => (
-                  <Badge key={secteur} variant="outline">
-                    {secteurIcons[secteur]} {secteur}
-                  </Badge>
-                ))}
+                {Array.isArray(client.secteurs) && client.secteurs.length > 0 ? (
+                  client.secteurs.map((secteur) => (
+                    <Badge key={secteur} variant="outline">
+                      {secteurIcons[secteur.trim()] || "🏷"} {secteur.trim()}
+                    </Badge>
+                  ))
+                ) : (
+                  <span className="text-sm text-muted-foreground">Aucun secteur</span>
+                )}
               </div>
             </TableCell>
-            <TableCell>{client.groupe || "-"}</TableCell>
+
             <TableCell>
-              <Switch
-                checked={client.actif}
-                onCheckedChange={(checked) => onToggleActive(client.id, checked)}
-              />
+              <div className="flex flex-wrap gap-1">
+                {Array.isArray(client.services) && client.services.length > 0 ? (
+                  client.services.map((srv) => (
+                    <Badge key={srv} variant="secondary">{srv}</Badge>
+                  ))
+                ) : (
+                  <span className="text-sm text-muted-foreground">Aucun</span>
+                )}
+              </div>
             </TableCell>
+
+            <TableCell>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onToggleActive(client.id, !client.actif)}
+              >
+                {client.actif ? (
+                  <Badge className="bg-green-100 text-green-800">Actif</Badge>
+                ) : (
+                  <Badge className="bg-red-100 text-red-800">Inactif</Badge>
+                )}
+              </Button>
+            </TableCell>
+
             <TableCell>
               <Button
                 variant="ghost"
