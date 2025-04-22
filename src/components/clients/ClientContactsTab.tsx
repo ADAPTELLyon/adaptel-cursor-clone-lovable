@@ -4,9 +4,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { supabase } from "@/integrations/supabase/client"
 import { toast } from "@/hooks/use-toast"
+import { MultiSelect } from "@/components/ui/multi-select"
 
 interface Contact {
   id: string
@@ -17,6 +17,7 @@ interface Contact {
   telephone?: string
   secteur?: string
   actif: boolean
+  services: string[]
   client_id: string
   created_at?: string
 }
@@ -29,8 +30,7 @@ interface ClientContactsTabProps {
 function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProps) {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [newContact, setNewContact] = useState<Partial<Contact>>({})
-  const [selectedService, setSelectedService] = useState<string>("tous")
+  const [newContact, setNewContact] = useState<Partial<Contact>>({ actif: true, services: [] })
 
   const loadContacts = async () => {
     const { data, error } = await supabase
@@ -44,7 +44,12 @@ function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProp
       return
     }
 
-    setContacts(data as Contact[])
+    const safeData = (data || []).map((c) => ({
+      ...c,
+      services: c.services ?? [],
+    })) as Contact[]
+
+    setContacts(safeData)
   }
 
   useEffect(() => {
@@ -59,27 +64,29 @@ function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProp
       return
     }
 
-    const insertPayload: Omit<Contact, "id" | "created_at"> = {
+    const insertPayload = {
       nom: newContact.nom,
       prénom: newContact.prénom || "",
       fonction: newContact.fonction || "",
       email: newContact.email || "",
       telephone: newContact.telephone || "",
-      secteur: selectedService === "tous" ? null : selectedService,
-      actif: true,
+      secteur: newContact.secteur || "",
+      actif: newContact.actif ?? true,
       client_id: clientId,
+      services: newContact.services || [],
     }
 
-    const { error } = await supabase.from("contacts_clients").insert(insertPayload)
+    const { error } = await supabase.from("contacts_clients").insert([insertPayload])
 
     if (error) {
+      console.error(error)
       toast({ title: "Erreur", description: "Création échouée", variant: "destructive" })
       return
     }
 
     toast({ title: "Contact ajouté" })
     setDialogOpen(false)
-    setNewContact({})
+    setNewContact({ actif: true, services: [] })
     loadContacts()
   }
 
@@ -117,8 +124,8 @@ function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProp
               <div className="text-sm text-muted-foreground">{contact.fonction}</div>
               <div className="text-sm">📧 {contact.email || "-"}</div>
               <div className="text-sm">📞 {contact.telephone || "-"}</div>
-              <div className="flex items-center mt-2">
-                <span className="text-sm mr-2">Actif</span>
+              <div className="flex justify-between items-center mt-2">
+                <span className="text-sm">Actif</span>
                 <Switch checked={contact.actif} onCheckedChange={() => handleToggleActif(contact)} />
               </div>
             </li>
@@ -135,8 +142,8 @@ function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProp
                 <li key={contact.id} className="border rounded p-2 opacity-60">
                   <div className="text-sm">{contact.nom} {contact.prénom}</div>
                   <div className="text-xs text-muted-foreground">{contact.email} – {contact.telephone}</div>
-                  <div className="flex items-center mt-1">
-                    <span className="text-xs mr-2">Actif</span>
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="text-xs">Actif</span>
                     <Switch checked={contact.actif} onCheckedChange={() => handleToggleActif(contact)} />
                   </div>
                 </li>
@@ -171,23 +178,32 @@ function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProp
               <Label>Téléphone</Label>
               <Input value={newContact.telephone || ""} onChange={(e) => setNewContact({ ...newContact, telephone: e.target.value })} />
             </div>
-            {selectedServices.length > 0 && (
+
+            {selectedServices.length > 0 ? (
               <div>
-                <Label>Service</Label>
-                <Select value={selectedService} onValueChange={setSelectedService}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un service" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="tous">Tous</SelectItem>
-                    {selectedServices.map((service) => (
-                      <SelectItem key={service} value={service}>{service}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Services</Label>
+                <MultiSelect
+                  options={selectedServices}
+                  selected={newContact.services || []}
+                  onChange={(values) => setNewContact({ ...newContact, services: values })}
+                  placeholder="Sélectionner les services"
+                />
+              </div>
+            ) : (
+              <div className="text-sm text-muted-foreground italic">
+                Aucun service défini pour ce client.
               </div>
             )}
-            <div className="flex justify-end">
+
+            <div className="flex justify-between items-center pt-2">
+              <Label className="text-sm">Actif</Label>
+              <Switch
+                checked={newContact.actif ?? true}
+                onCheckedChange={(checked) => setNewContact({ ...newContact, actif: checked })}
+              />
+            </div>
+
+            <div className="flex justify-end pt-4">
               <Button onClick={handleCreate}>Créer</Button>
             </div>
           </div>

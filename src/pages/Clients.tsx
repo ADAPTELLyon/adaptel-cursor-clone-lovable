@@ -6,27 +6,53 @@ import { supabase } from "@/integrations/supabase/client"
 import MainLayout from "@/components/main-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { ClientList } from "@/components/clients/client-list"
 import { ClientFormTabs } from "@/components/clients/client-form-tabs"
+import { z } from "zod"
+import { formSchema } from "@/components/clients/client-form"
+
+// ✅ Type strict basé sur ta table clients
+type Client = {
+  id: string
+  nom: string
+  adresse?: string
+  code_postal?: string
+  ville?: string
+  groupe?: string
+  telephone?: string
+  services: string[]
+  secteurs: string[]
+  actif: boolean
+  created_by?: string
+  created_at?: string
+  updated_at?: string
+}
+
+type ClientFormType = z.infer<typeof formSchema> & { id: string }
 
 export default function Clients() {
   const { toast } = useToast()
   const [search, setSearch] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingClient, setEditingClient] = useState<any>(null)
+  const [editingClient, setEditingClient] = useState<ClientFormType | null>(null)
 
   const { data: clients = [], refetch } = useQuery({
     queryKey: ["clients", search],
-    queryFn: async () => {
+    queryFn: async (): Promise<Client[]> => {
       const { data, error } = await supabase
         .from("clients")
         .select("*")
         .ilike("nom", `%${search}%`)
         .order("nom")
 
-      if (error) {
+      if (error || !data) {
         toast({
           title: "Erreur",
           description: "Impossible de charger les clients",
@@ -35,55 +61,79 @@ export default function Clients() {
         return []
       }
 
-      return data.map(client => ({
-        ...client,
-        services: Array.isArray(client.services)
-          ? client.services
-          : typeof client.services === "string"
-          ? client.services.split(",")
-          : [],
-        secteurs: Array.isArray(client.secteurs)
-          ? client.secteurs
-          : typeof client.secteurs === "string"
-          ? client.secteurs.split(",")
-          : [],
-      }))
+      return data.map((client): Client => {
+        const rawServices = client.services as string[] | string | null | undefined
+        let services: string[] = []
+
+        if (Array.isArray(rawServices)) {
+          services = rawServices
+        } else if (typeof rawServices === "string") {
+          services = rawServices.split(",").map((s) => s.trim())
+        }
+
+        return {
+          id: client.id,
+          nom: client.nom || "",
+          adresse: client.adresse || "",
+          code_postal: client.code_postal || "",
+          ville: client.ville || "",
+          groupe: client.groupe || "",
+          telephone: client.telephone || "",
+          services,
+          secteurs: client.secteurs ?? [],
+          actif: client.actif ?? true,
+          created_at: client.created_at ?? "",
+          created_by: client.created_by ?? "",
+          updated_at: client.updated_at ?? "",
+        }
+      })
     },
   })
 
-  const handleSubmit = async (data: any) => {
-    try {
-      const toSave = {
-        ...data,
-        services: Array.isArray(data.services) ? data.services : [],
-        secteurs: Array.isArray(data.secteurs) ? data.secteurs : [],
-      }
+  const handleSubmit = async (data: z.infer<typeof formSchema>) => {
+    const clientToSave = {
+      nom: data.nom || "",
+      adresse: data.adresse || "",
+      code_postal: data.code_postal || "",
+      ville: data.ville || "",
+      groupe: data.groupe || "",
+      telephone: data.telephone || "",
+      services: data.services ?? [],
+      secteurs: data.secteurs ?? [],
+      actif: data.actif ?? true,
+    }
 
-      if (!editingClient) {
-        toSave.id = uuidv4()
-        const { error } = await supabase.from("clients").insert([toSave])
-        if (error) throw error
-        toast({ title: "Succès", description: "Client ajouté avec succès" })
-      } else {
-        const { error } = await supabase
+    const { error } = editingClient
+      ? await supabase
           .from("clients")
-          .update(toSave)
+          .update(clientToSave)
           .eq("id", editingClient.id)
-        if (error) throw error
-        toast({ title: "Succès", description: "Client modifié avec succès" })
-      }
+      : await supabase.from("clients").insert([
+          {
+            ...clientToSave,
+            id: uuidv4(),
+          },
+        ])
 
-      setDialogOpen(false)
-      setEditingClient(null)
-      refetch()
-    } catch (error) {
-      console.error("Erreur lors de l'enregistrement", error)
+    if (error) {
       toast({
         title: "Erreur",
         description: "Impossible de sauvegarder le client",
         variant: "destructive",
       })
+      return
     }
+
+    toast({
+      title: "Succès",
+      description: editingClient
+        ? "Client modifié avec succès"
+        : "Client ajouté avec succès",
+    })
+
+    setDialogOpen(false)
+    setEditingClient(null)
+    refetch()
   }
 
   const handleEdit = async (id: string) => {
@@ -93,7 +143,7 @@ export default function Clients() {
       .eq("id", id)
       .single()
 
-    if (error) {
+    if (error || !data) {
       toast({
         title: "Erreur",
         description: "Impossible de charger le client",
@@ -102,20 +152,23 @@ export default function Clients() {
       return
     }
 
+    const rawServices = data.services as string[] | string | null | undefined
+    let services: string[] = []
+
+    if (Array.isArray(rawServices)) {
+      services = rawServices
+    } else if (typeof rawServices === "string") {
+      services = rawServices.split(",").map((s) => s.trim())
+    }
+
     setEditingClient({
       ...data,
-      services: Array.isArray(data.services)
-        ? data.services
-        : typeof data.services === "string"
-        ? data.services.split(",")
-        : [],
-      secteurs: Array.isArray(data.secteurs)
-        ? data.secteurs
-        : typeof data.secteurs === "string"
-        ? data.secteurs.split(",")
-        : [],
+      id: data.id,
+      nom: data.nom || "",
+      services,
+      secteurs: data.secteurs ?? [],
+      actif: data.actif ?? true,
     })
-
     setDialogOpen(true)
   }
 
@@ -179,13 +232,13 @@ export default function Clients() {
               </DialogTitle>
             </DialogHeader>
             <ClientFormTabs
-              initialData={editingClient ?? undefined}
-              selectedServices={editingClient?.services || []}
+              initialData={editingClient || undefined}
               onSubmit={handleSubmit}
               onCancel={() => {
                 setDialogOpen(false)
                 setEditingClient(null)
               }}
+              selectedServices={editingClient?.services || []}
             />
           </DialogContent>
         </Dialog>

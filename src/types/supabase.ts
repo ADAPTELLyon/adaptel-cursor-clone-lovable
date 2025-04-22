@@ -77,7 +77,7 @@ export type Database = {
           id: string
           nom: string
           secteurs: string[] | null
-          service: string | null
+          services: string[] | null
           telephone: string | null
           updated_at: string | null
           ville: string | null
@@ -92,7 +92,7 @@ export type Database = {
           id?: string
           nom: string
           secteurs?: string[] | null
-          service?: string | null
+          services?: string[] | null
           telephone?: string | null
           updated_at?: string | null
           ville?: string | null
@@ -107,7 +107,7 @@ export type Database = {
           id?: string
           nom?: string
           secteurs?: string[] | null
-          service?: string | null
+          services?: string[] | null
           telephone?: string | null
           updated_at?: string | null
           ville?: string | null
@@ -161,7 +161,7 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
-          },
+          }
         ]
       }
       parametrages: {
