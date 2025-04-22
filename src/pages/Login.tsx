@@ -1,39 +1,37 @@
-
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { signIn } from '@/lib/auth';
-import { useToast } from '@/hooks/use-toast';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { AdaptelLogo } from '@/components/adaptel-logo';
-import { EyeIcon, EyeOffIcon } from 'lucide-react';
-import { useAuth } from '@/contexts/auth-context';
+import React, { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { signIn } from '@/lib/auth'
+import { useToast } from '@/hooks/use-toast'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { EyeIcon, EyeOffIcon } from 'lucide-react'
+import { useAuth } from '@/contexts/auth-context'
+import { AdaptelLogoFull } from '@/components/ui/AdaptelLogoFull'
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Adresse email invalide' }),
   password: z.string().min(6, { message: 'Le mot de passe doit contenir au moins 6 caractères' }),
-});
+})
 
-type LoginForm = z.infer<typeof loginSchema>;
+type LoginForm = z.infer<typeof loginSchema>
 
 export default function Login() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const { toast } = useToast();
-  const { isAuthenticated } = useAuth();
-  const [showPassword, setShowPassword] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { toast } = useToast()
+  const { isAuthenticated } = useAuth()
+  const [showPassword, setShowPassword] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/commandes', { replace: true });
+      navigate('/commandes', { replace: true })
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate])
 
   const {
     register,
@@ -45,66 +43,63 @@ export default function Login() {
       email: '',
       password: '',
     },
-  });
+  })
 
   const onSubmit = async (data: LoginForm) => {
-    setIsSubmitting(true);
+    setIsSubmitting(true)
     try {
-      const { user, error } = await signIn(data.email, data.password);
-      
+      const { user, error } = await signIn(data.email, data.password)
+
       if (error) {
-        let errorMessage = 'Échec de connexion';
-        
+        let errorMessage = 'Échec de connexion'
         if (error.message.includes('Invalid login credentials')) {
-          errorMessage = 'Email ou mot de passe incorrect';
+          errorMessage = 'Email ou mot de passe incorrect'
         } else if (error.message.includes('Email not confirmed')) {
-          errorMessage = 'Email non confirmé';
+          errorMessage = 'Email non confirmé'
         }
-        
+
         toast({
           title: 'Erreur',
           description: errorMessage,
           variant: 'destructive',
-        });
-        setIsSubmitting(false);
-        return;
+        })
+        setIsSubmitting(false)
+        return
       }
-      
+
       if (user) {
         toast({
           title: 'Connexion réussie',
           description: 'Vous êtes maintenant connecté',
-        });
-        
-        // Force navigation after login
-        navigate('/commandes', { replace: true });
+        })
+        navigate('/commandes', { replace: true })
       }
     } catch (err) {
-      console.error('Login error:', err);
+      console.error('Login error:', err)
       toast({
         title: 'Erreur',
         description: 'Une erreur est survenue lors de la connexion',
         variant: 'destructive',
-      });
+      })
     } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false)
     }
-  };
+  }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
       <div className="w-full max-w-md space-y-8">
         <div className="flex flex-col items-center justify-center text-center">
-          <AdaptelLogo className="mb-4" />
-          <h2 className="mt-4 text-3xl font-bold text-gray-900">
+          <AdaptelLogoFull className="mb-4" />
+          <h2 className="mt-2 text-2xl font-bold text-gray-800">
             Portail de connexion
           </h2>
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="mt-1 text-sm text-gray-600">
             Connectez-vous pour accéder à votre espace
           </p>
         </div>
 
-        <div className="mt-8">
+        <div className="mt-6">
           <div className="rounded-xl bg-white p-8 shadow-sm ring-1 ring-gray-200">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
               <div className="space-y-2">
@@ -165,5 +160,5 @@ export default function Login() {
         </div>
       </div>
     </div>
-  );
+  )
 }

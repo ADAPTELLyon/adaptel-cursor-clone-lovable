@@ -17,9 +17,9 @@ interface Contact {
   telephone?: string
   secteur?: string
   actif: boolean
-  services: string[]
   client_id: string
   created_at?: string
+  // Le champ services est présent mais pas dans le type : on contourne dans le .map
 }
 
 interface ClientContactsTabProps {
@@ -30,7 +30,7 @@ interface ClientContactsTabProps {
 function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProps) {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [newContact, setNewContact] = useState<Partial<Contact>>({ actif: true, services: [] })
+  const [newContact, setNewContact] = useState<Partial<Contact> & { services?: string[] }>({ actif: true, services: [] })
 
   const loadContacts = async () => {
     const { data, error } = await supabase
@@ -45,9 +45,9 @@ function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProp
     }
 
     const safeData = (data || []).map((c) => ({
-      ...c,
-      services: c.services ?? [],
-    })) as Contact[]
+      ...(c as Contact),
+      services: (c as any).services ?? [],
+    }))
 
     setContacts(safeData)
   }
@@ -66,7 +66,7 @@ function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProp
 
     const insertPayload = {
       nom: newContact.nom,
-      prénom: newContact.prénom || "",
+      "prénom": newContact.prénom || "",
       fonction: newContact.fonction || "",
       email: newContact.email || "",
       telephone: newContact.telephone || "",
@@ -75,6 +75,8 @@ function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProp
       client_id: clientId,
       services: newContact.services || [],
     }
+
+    console.log("Insert payload contact", insertPayload)
 
     const { error } = await supabase.from("contacts_clients").insert([insertPayload])
 
