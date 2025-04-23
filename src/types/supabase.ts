@@ -12,11 +12,8 @@ export type Database = {
       candidats: {
         Row: {
           actif: boolean | null
-          adresse: string | null
-          code_postal: string | null
           commentaire: string | null
-          created_at: string | null
-          date_naissance: string | null
+          created_at: string
           email: string | null
           id: string
           nom: string
@@ -24,17 +21,13 @@ export type Database = {
           prioritaire: boolean | null
           secteurs: string[] | null
           telephone: string | null
-          updated_at: string | null
+          updated_at: string
           vehicule: boolean | null
-          ville: string | null
         }
         Insert: {
           actif?: boolean | null
-          adresse?: string | null
-          code_postal?: string | null
           commentaire?: string | null
-          created_at?: string | null
-          date_naissance?: string | null
+          created_at?: string
           email?: string | null
           id?: string
           nom: string
@@ -42,17 +35,13 @@ export type Database = {
           prioritaire?: boolean | null
           secteurs?: string[] | null
           telephone?: string | null
-          updated_at?: string | null
+          updated_at?: string
           vehicule?: boolean | null
-          ville?: string | null
         }
         Update: {
           actif?: boolean | null
-          adresse?: string | null
-          code_postal?: string | null
           commentaire?: string | null
-          created_at?: string | null
-          date_naissance?: string | null
+          created_at?: string
           email?: string | null
           id?: string
           nom?: string
@@ -60,24 +49,64 @@ export type Database = {
           prioritaire?: boolean | null
           secteurs?: string[] | null
           telephone?: string | null
-          updated_at?: string | null
+          updated_at?: string
           vehicule?: boolean | null
-          ville?: string | null
         }
         Relationships: []
+      }
+      candidats_logs: {
+        Row: {
+          candidat_id: string
+          created_at: string
+          created_by: string | null
+          details: string | null
+          id: string
+          type_action: string | null
+        }
+        Insert: {
+          candidat_id: string
+          created_at?: string
+          created_by?: string | null
+          details?: string | null
+          id?: string
+          type_action?: string | null
+        }
+        Update: {
+          candidat_id?: string
+          created_at?: string
+          created_by?: string | null
+          details?: string | null
+          id?: string
+          type_action?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "candidats_logs_candidat_id_fkey1"
+            columns: ["candidat_id"]
+            isOneToOne: false
+            referencedRelation: "candidats_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "candidats_logs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "utilisateurs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       clients: {
         Row: {
           actif: boolean | null
           adresse: string | null
-          code_postal: string | null
           created_at: string | null
-          created_by: string | null
-          groupe: string | null
+          email: string | null
+          groupe_client: string | null
           id: string
           nom: string
-          secteurs: string[] | null
-          services: string[] | null
+          secteur: string | null
+          service: string | null
           telephone: string | null
           updated_at: string | null
           ville: string | null
@@ -85,14 +114,13 @@ export type Database = {
         Insert: {
           actif?: boolean | null
           adresse?: string | null
-          code_postal?: string | null
           created_at?: string | null
-          created_by?: string | null
-          groupe?: string | null
+          email?: string | null
+          groupe_client?: string | null
           id?: string
           nom: string
-          secteurs?: string[] | null
-          services?: string[] | null
+          secteur?: string | null
+          service?: string | null
           telephone?: string | null
           updated_at?: string | null
           ville?: string | null
@@ -100,59 +128,155 @@ export type Database = {
         Update: {
           actif?: boolean | null
           adresse?: string | null
-          code_postal?: string | null
           created_at?: string | null
-          created_by?: string | null
-          groupe?: string | null
+          email?: string | null
+          groupe_client?: string | null
           id?: string
           nom?: string
-          secteurs?: string[] | null
-          services?: string[] | null
+          secteur?: string | null
+          service?: string | null
           telephone?: string | null
           updated_at?: string | null
           ville?: string | null
         }
         Relationships: []
       }
+      commande_jours: {
+        Row: {
+          candidat: string | null
+          commande_id: string | null
+          couleur_fond: string | null
+          couleur_texte: string | null
+          created_at: string
+          creneaux: string[] | null
+          id: string
+          jour_date: string
+          jour_semaine: number
+          statut: string | null
+          updated_at: string
+        }
+        Insert: {
+          candidat?: string | null
+          commande_id?: string | null
+          couleur_fond?: string | null
+          couleur_texte?: string | null
+          created_at?: string
+          creneaux?: string[] | null
+          id?: string
+          jour_date: string
+          jour_semaine: number
+          statut?: string | null
+          updated_at?: string
+        }
+        Update: {
+          candidat?: string | null
+          commande_id?: string | null
+          couleur_fond?: string | null
+          couleur_texte?: string | null
+          created_at?: string
+          creneaux?: string[] | null
+          id?: string
+          jour_date?: string
+          jour_semaine?: number
+          statut?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commande_jours_commande_id_fkey"
+            columns: ["commande_id"]
+            isOneToOne: false
+            referencedRelation: "commandes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commandes: {
+        Row: {
+          annee: number
+          client_id: string | null
+          client_nom: string
+          created_at: string
+          id: string
+          secteur: string | null
+          semaine: number
+          statut: string
+          updated_at: string
+        }
+        Insert: {
+          annee: number
+          client_id?: string | null
+          client_nom: string
+          created_at?: string
+          id?: string
+          secteur?: string | null
+          semaine: number
+          statut: string
+          updated_at?: string
+        }
+        Update: {
+          annee?: number
+          client_id?: string | null
+          client_nom?: string
+          created_at?: string
+          id?: string
+          secteur?: string | null
+          semaine?: number
+          statut?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commandes_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts_clients: {
         Row: {
-          actif: boolean
-          client_id: string
-          created_at: string
+          client_id: string | null
+          created_at: string | null
           created_by: string | null
           email: string | null
           fonction: string | null
           id: string
-          nom: string
-          prénom: string | null
-          secteur: string | null
+          nom: string | null
+          portable: string | null
+          prenom: string | null
           telephone: string | null
+          updated_at: string | null
+          updated_by: string | null
         }
         Insert: {
-          actif?: boolean
-          client_id: string
-          created_at?: string
+          client_id?: string | null
+          created_at?: string | null
           created_by?: string | null
           email?: string | null
           fonction?: string | null
           id?: string
-          nom: string
-          prénom?: string | null
-          secteur?: string | null
+          nom?: string | null
+          portable?: string | null
+          prenom?: string | null
           telephone?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
         }
         Update: {
-          actif?: boolean
-          client_id?: string
-          created_at?: string
+          client_id?: string | null
+          created_at?: string | null
           created_by?: string | null
           email?: string | null
           fonction?: string | null
           id?: string
-          nom?: string
-          prénom?: string | null
-          secteur?: string | null
+          nom?: string | null
+          portable?: string | null
+          prenom?: string | null
           telephone?: string | null
+          updated_at?: string | null
+          updated_by?: string | null
         }
         Relationships: [
           {
@@ -161,63 +285,63 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
-          }
+          },
         ]
       }
       parametrages: {
         Row: {
-          categorie: string
-          created_at: string
+          categorie: string | null
+          created_at: string | null
           description: string | null
           id: string
-          updated_at: string
-          valeur: string
+          updated_at: string | null
+          valeur: string | null
         }
         Insert: {
-          categorie: string
-          created_at?: string
+          categorie?: string | null
+          created_at?: string | null
           description?: string | null
           id?: string
-          updated_at?: string
-          valeur: string
+          updated_at?: string | null
+          valeur?: string | null
         }
         Update: {
-          categorie?: string
-          created_at?: string
+          categorie?: string | null
+          created_at?: string | null
           description?: string | null
           id?: string
-          updated_at?: string
-          valeur?: string
+          updated_at?: string | null
+          valeur?: string | null
         }
         Relationships: []
       }
       utilisateurs: {
         Row: {
-          actif: boolean
-          created_at: string
-          email: string
+          actif: boolean | null
+          created_at: string | null
+          email: string | null
           id: string
-          nom: string
-          prenom: string
-          updated_at: string
+          nom: string | null
+          prenom: string | null
+          updated_at: string | null
         }
         Insert: {
-          actif?: boolean
-          created_at?: string
-          email: string
+          actif?: boolean | null
+          created_at?: string | null
+          email?: string | null
           id?: string
-          nom: string
-          prenom: string
-          updated_at?: string
+          nom?: string | null
+          prenom?: string | null
+          updated_at?: string | null
         }
         Update: {
-          actif?: boolean
-          created_at?: string
-          email?: string
+          actif?: boolean | null
+          created_at?: string | null
+          email?: string | null
           id?: string
-          nom?: string
-          prenom?: string
-          updated_at?: string
+          nom?: string | null
+          prenom?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
