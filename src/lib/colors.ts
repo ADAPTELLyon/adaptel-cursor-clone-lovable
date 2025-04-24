@@ -37,8 +37,9 @@ export const statutColors = {
   
   export const indicateurColors = {
     "Demandées": "#8ea9db",    // Bleu pour missions demandées (section fixe)
-    "Validé": "#a9d08e",        // Réutilisé pour coche verte
+    "Validées": "#a9d08e",        // Réutilisé pour coche verte
     "En recherche": "#fdba74",  // Pour pastilles avec nombre
+    "Non pourvue": "#ef5350",   // Rouge
   }
   
   export const disponibiliteColors = {

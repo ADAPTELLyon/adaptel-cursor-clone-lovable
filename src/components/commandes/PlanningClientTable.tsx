@@ -1,19 +1,17 @@
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
-import { Pencil, CheckCircle, Plus, Building2 } from "lucide-react"
+import { Pencil, Check, Plus } from "lucide-react"
 import { supabase } from "@/integrations/supabase/client"
 import { format, parseISO } from "date-fns"
 import { fr } from "date-fns/locale"
 import { statutColors, indicateurColors } from "@/lib/colors"
-import type { Database } from "@/types/supabase"
-
-type Commande = Database["public"]["Tables"]["commandes"]["Row"] & {
-  clients?: { nom: string }
-  candidats?: { nom: string; prenom: string }
-}
+import { secteursList } from "@/lib/secteurs"
+import type { Commande } from "@/types"
 
 export function PlanningClientTable() {
   const [commandes, setCommandes] = useState<Commande[]>([])
+  const [editId, setEditId] = useState<string | null>(null)
+  const [heureTemp, setHeureTemp] = useState<Record<string, string>>({})
 
   useEffect(() => {
     const fetchCommandes = async () => {
@@ -27,7 +25,7 @@ export function PlanningClientTable() {
         return
       }
 
-      setCommandes(data || [])
+      setCommandes(data as unknown as Commande[])
     }
 
     fetchCommandes()
@@ -39,6 +37,13 @@ export function PlanningClientTable() {
     acc[semaine].push(commande)
     return acc
   }, {} as Record<string, Commande[]>)
+
+  const formatHeure = (val: string) => {
+    const digits = val.replace(/\D/g, "")
+    if (digits.length === 4) return `${digits.slice(0, 2)}:${digits.slice(2)}`
+    if (digits.length === 3) return `0${digits[0]}:${digits.slice(1)}`
+    return val
+  }
 
   return (
     <div className="space-y-8 mt-8">
@@ -71,7 +76,6 @@ export function PlanningClientTable() {
 
         return (
           <div key={semaine} className="border rounded-lg overflow-hidden shadow-sm">
-            {/* EN-TÊTE UNIQUE */}
             <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
               <div className="p-3 border-r flex items-center justify-center">{semaineTexte}</div>
               {jours.map((jour, index) => {
@@ -95,10 +99,9 @@ export function PlanningClientTable() {
                       </div>
                     ) : (
                       <div className="absolute top-1 right-1">
-                        <CheckCircle
-                          className="h-4 w-4"
-                          style={{ color: indicateurColors["Validé"] }}
-                        />
+                        <div className="h-5 w-5 rounded-full bg-[#48bb78] flex items-center justify-center">
+                          <Check className="w-4 h-4 text-white" />
+                        </div>
                       </div>
                     )}
                   </div>
@@ -106,10 +109,10 @@ export function PlanningClientTable() {
               })}
             </div>
 
-            {/* LIGNES CLIENTS */}
             {groupesTries.map(([cle, lignes]) => {
               const { clients, secteur, service } = lignes[0]
               const client_nom = clients?.nom || ""
+              const secteurInfo = secteursList.find((s) => s.value === secteur)
 
               return (
                 <div key={cle} className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm">
@@ -119,16 +122,18 @@ export function PlanningClientTable() {
                       <Pencil className="h-4 w-4 text-gray-400 cursor-pointer" />
                     </div>
                     <div className="flex items-start gap-2 flex-wrap text-sm">
-                      <div className="text-[13px] px-2 py-1 rounded bg-gray-100 text-gray-800 flex items-center gap-1">
-                        <Building2 className="h-3 w-3" /> {secteur}
-                      </div>
+                      {secteurInfo && (
+                        <div className="text-[13px] px-2 py-1 rounded bg-gray-100 text-gray-800 flex items-center gap-1">
+                          <secteurInfo.icon className="h-3 w-3" /> {secteurInfo.label}
+                        </div>
+                      )}
                       {service && (
                         <div className="text-[13px] px-2 py-1 rounded bg-gray-100 text-gray-800 italic">
                           {service}
                         </div>
                       )}
                     </div>
-                    <div className="text-[11px] text-gray-500">{semaineTexte}</div>
+                    <div className="text-[13px] text-gray-500">{semaineTexte}</div>
                   </div>
 
                   {jours.map((jour, index) => {
@@ -136,7 +141,7 @@ export function PlanningClientTable() {
                     const commande = commandesJour[0]
 
                     return (
-                      <div key={index} className="border-r p-2 h-24 relative">
+                      <div key={index} className="border-r p-2 h-28 relative">
                         {!commande ? (
                           <div className="h-full bg-gray-100 rounded flex items-center justify-center">
                             <Plus className="h-4 w-4 text-gray-400" />
@@ -144,34 +149,80 @@ export function PlanningClientTable() {
                         ) : (
                           <div
                             className={cn(
-                              "h-full rounded p-2 text-xs flex flex-col justify-between border relative"
+                              "h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative"
                             )}
                             style={{
                               backgroundColor: statutColors[commande.statut]?.bg || "#e5e7eb",
                               color: statutColors[commande.statut]?.text || "#000000",
                             }}
                           >
-                            {commande.statut === "Validé" &&
-                            commande.candidats?.nom &&
-                            commande.candidats?.prenom ? (
-                              <div className="leading-tight font-semibold">
-                                <span>{commande.candidats.nom}</span>
-                                <span className="block text-xs font-normal">{commande.candidats.prenom}</span>
-                              </div>
-                            ) : (
-                              <div className="font-medium">{commande.statut}</div>
-                            )}
+                            <div className="leading-tight font-semibold">
+                              {commande.statut === "Validé" &&
+                              commande.candidats?.nom &&
+                              commande.candidats?.prenom ? (
+                                <>
+                                  <span>{commande.candidats.nom}</span>
+                                  <span className="block text-xs font-normal">
+                                    {commande.candidats.prenom}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="font-medium">{commande.statut}</span>
+                              )}
+                            </div>
 
-                            <div className="text-[11px] space-y-0.5">
-                              {commande.heure_debut_matin && commande.heure_fin_matin && (
-                                <div>{commande.heure_debut_matin.slice(0, 5)} - {commande.heure_fin_matin.slice(0, 5)}</div>
-                              )}
-                              {commande.heure_debut_soir && commande.heure_fin_soir && (
-                                <div>{commande.heure_debut_soir.slice(0, 5)} - {commande.heure_fin_soir.slice(0, 5)}</div>
-                              )}
-                              {commande.heure_debut_nuit && commande.heure_fin_nuit && (
-                                <div>{commande.heure_debut_nuit.slice(0, 5)} - {commande.heure_fin_nuit.slice(0, 5)}</div>
-                              )}
+                            <div className="text-[13px] font-semibold mt-1 space-y-1">
+                              {["matin", "soir"].map((creneau) => {
+                                const heureDebut = commande[`heure_debut_${creneau}` as keyof Commande] as string | null
+                                const heureFin = commande[`heure_fin_${creneau}` as keyof Commande] as string | null
+                                const keyDebut = `${commande.id}-${creneau}-debut`
+                                const keyFin = `${commande.id}-${creneau}-fin`
+
+                                return (
+                                  <div key={creneau} className="flex gap-1 items-center">
+                                    {[keyDebut, keyFin].map((key, idx) => (
+                                      editId === key ? (
+                                        <input
+                                          key={key}
+                                          type="text"
+                                          autoFocus
+                                          value={heureTemp[key] || ""}
+                                          onChange={(e) =>
+                                            setHeureTemp({
+                                              ...heureTemp,
+                                              [key]: formatHeure(e.target.value),
+                                            })
+                                          }
+                                          onBlur={() => setEditId(null)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                              setEditId(null)
+                                            }
+                                          }}
+                                          className="w-12 text-[13px] px-1 border rounded bg-white text-black"
+                                        />
+                                      ) : (
+                                        <span
+                                          key={key}
+                                          onClick={() => {
+                                            setEditId(key)
+                                            setHeureTemp((prev) => ({
+                                              ...prev,
+                                              [key]:
+                                                key.includes("debut")
+                                                  ? heureDebut?.slice(0, 5) || ""
+                                                  : heureFin?.slice(0, 5) || "",
+                                            }))
+                                          }}
+                                          className="cursor-pointer hover:underline"
+                                        >
+                                          {(key.includes("debut") ? heureDebut : heureFin)?.slice(0, 5) || "–"}
+                                        </span>
+                                      )
+                                    ))}
+                                  </div>
+                                )
+                              })}
                             </div>
 
                             <div className="absolute top-1 right-1">

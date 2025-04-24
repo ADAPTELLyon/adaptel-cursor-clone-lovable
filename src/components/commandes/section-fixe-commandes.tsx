@@ -1,89 +1,121 @@
-import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
 import { Plus, CalendarCheck, AlertCircle, RotateCcw } from "lucide-react"
+import { indicateurColors } from "@/lib/colors"
+import { secteursList } from "@/lib/secteurs"
 
-const secteurs = ["Étages", "Cuisine", "Salle", "Plonge", "Réception"]
-
-export function SectionFixeCommandes() {
-  const [selectedSecteur, setSelectedSecteur] = useState("Étages")
-  const [semaineEnCours, setSemaineEnCours] = useState(true)
-  const [enRecherche, setEnRecherche] = useState(false)
-  const [toutAfficher, setToutAfficher] = useState(false)
-  const [semaine, setSemaine] = useState("")
-  const [client, setClient] = useState("")
-  const [search, setSearch] = useState("")
-
-  const [stats, setStats] = useState({
-    demandées: 0,
-    validées: 0,
-    enRecherche: 0,
-    nonPourvue: 0,
-  })
-
-  const taux = stats.demandées > 0 ? Math.round((stats.validées / stats.demandées) * 100) : 0
-
-  useEffect(() => {
-    // TODO: Récupérer dynamiquement les données à partir du store ou props
-  }, [])
-
+export default function SectionFixeCommandes({
+  selectedSecteurs,
+  setSelectedSecteurs,
+  stats,
+  taux,
+  semaine,
+  setSemaine,
+  client,
+  setClient,
+  search,
+  setSearch,
+  toutAfficher,
+  setToutAfficher,
+  enRecherche,
+  setEnRecherche,
+  semaineEnCours,
+  setSemaineEnCours,
+  resetFiltres,
+}: {
+  selectedSecteurs: string[]
+  setSelectedSecteurs: (val: string[]) => void
+  stats: {
+    demandées: number
+    validées: number
+    enRecherche: number
+    nonPourvue: number
+  }
+  taux: number
+  semaine: string
+  setSemaine: (s: string) => void
+  client: string
+  setClient: (s: string) => void
+  search: string
+  setSearch: (s: string) => void
+  toutAfficher: boolean
+  setToutAfficher: (b: boolean) => void
+  enRecherche: boolean
+  setEnRecherche: (b: boolean) => void
+  semaineEnCours: boolean
+  setSemaineEnCours: (b: boolean) => void
+  resetFiltres: () => void
+}) {
   return (
     <div className="sticky top-0 z-10 bg-white shadow-sm p-4 space-y-6">
       <div className="grid grid-cols-4 gap-2">
-        <div className="rounded-xl bg-blue-100 p-3">
-          <div className="text-xs text-blue-700">Demandées</div>
-          <div className="text-2xl font-bold text-blue-900">{stats.demandées}</div>
-        </div>
-        <div className="rounded-xl bg-green-100 p-3">
-          <div className="text-xs text-green-700">Validées</div>
-          <div className="text-2xl font-bold text-green-900">{stats.validées}</div>
-        </div>
-        <div className="rounded-xl bg-orange-100 p-3">
-          <div className="text-xs text-orange-700">En recherche</div>
-          <div className="text-2xl font-bold text-orange-900">{stats.enRecherche}</div>
-        </div>
-        <div className="rounded-xl bg-red-100 p-3">
-          <div className="text-xs text-red-700">Non pourvue</div>
-          <div className="text-2xl font-bold text-red-900">{stats.nonPourvue}</div>
-        </div>
+        {["Demandées", "Validées", "En recherche", "Non pourvue"].map((label) => (
+          <div
+            key={label}
+            className="rounded-xl p-3"
+            style={{ backgroundColor: indicateurColors[label] }}
+          >
+            <div className="text-xs text-white">{label}</div>
+            <div className="text-2xl font-bold text-white">
+              {stats[label.toLowerCase().replace(" ", "")] || 0}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="relative">
         <div className="h-6 w-full rounded bg-gray-200 overflow-hidden">
           <div
-            className="h-full text-xs flex items-center justify-center text-white font-medium"
-            style={{ width: `${taux}%`, backgroundColor: taux === 100 ? '#84cc16' : '#fb923c' }}
+            className="h-full text-xs flex items-center justify-center text-white font-medium transition-all duration-300"
+            style={{
+              width: `${taux}%`,
+              backgroundColor: taux === 100 ? indicateurColors["Validées"] : indicateurColors["En recherche"],
+            }}
           >
-            {taux === 100 ? "Tout validé" : `${taux}% validé`}
+            {`${taux}%`}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-5 gap-2">
-        {secteurs.map((secteur) => (
-          <Button
-            key={secteur}
-            className={cn(
-              "py-2 h-10 w-full text-sm font-medium",
-              secteur === selectedSecteur
-                ? "bg-[#840404] text-white hover:bg-[#750303]"
-                : "bg-gray-100 text-black hover:bg-gray-200"
-            )}
-            onClick={() => setSelectedSecteur(secteur)}
-          >
-            {secteur}
-          </Button>
-        ))}
+        {secteursList.map(({ label, icon: Icon }) => {
+          const selected = selectedSecteurs.includes(label)
+          return (
+            <Button
+              key={label}
+              className={cn(
+                "py-2 h-10 w-full text-sm font-medium",
+                selected
+                  ? "bg-[#840404] text-white hover:bg-[#750303]"
+                  : "bg-gray-100 text-black hover:bg-gray-200"
+              )}
+              onClick={() => {
+                if (toutAfficher) setToutAfficher(false)
+                setSelectedSecteurs([label])
+              }}
+            >
+              <Icon className="h-4 w-4 mr-1" />
+              {label}
+            </Button>
+          )
+        })}
       </div>
 
       <div className="flex flex-wrap items-center gap-6">
         <div className="flex items-center gap-2">
           <Switch
             checked={semaineEnCours}
-            onCheckedChange={setSemaineEnCours}
+            onCheckedChange={(val) => {
+              setSemaineEnCours(val)
+              if (val) {
+                const today = new Date()
+                const monday = new Date(today.setDate(today.getDate() - today.getDay() + 1))
+                const iso = monday.toISOString().slice(0, 10)
+                setSemaine(iso)
+              }
+            }}
             className="data-[state=checked]:bg-[#840404]"
           />
           <span className="text-sm">Semaine en cours</span>
@@ -99,7 +131,11 @@ export function SectionFixeCommandes() {
         <div className="flex items-center gap-2">
           <Switch
             checked={toutAfficher}
-            onCheckedChange={setToutAfficher}
+            onCheckedChange={(val) => {
+              setToutAfficher(val)
+              if (val) setSelectedSecteurs(secteursList.map((s) => s.label))
+              else setSelectedSecteurs(["Étages"])
+            }}
             className="data-[state=checked]:bg-[#840404]"
           />
           <span className="text-sm">Tout afficher</span>
@@ -136,15 +172,7 @@ export function SectionFixeCommandes() {
           variant="outline"
           size="sm"
           className="flex items-center gap-1 text-muted-foreground"
-          onClick={() => {
-            setSemaineEnCours(true)
-            setSemaine("")
-            setClient("")
-            setSelectedSecteur("Étages")
-            setToutAfficher(false)
-            setEnRecherche(false)
-            setSearch("")
-          }}
+          onClick={resetFiltres}
         >
           <RotateCcw size={16} /> Réinitialiser
         </Button>
