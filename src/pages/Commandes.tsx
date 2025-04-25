@@ -26,14 +26,6 @@ export default function Commandes() {
     setSemaineDates(dates)
   }, [semaine])
 
-  // 🔁 Synchronise la semaine en cours dans la liste déroulante au chargement
-  useEffect(() => {
-    if (semaineEnCours) {
-      const currentWeek = getWeek(new Date()).toString()
-      setSelectedSemaine(currentWeek)
-    }
-  }, [semaineEnCours])
-
   useEffect(() => {
     const fetchPlanning = async () => {
       const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
@@ -111,24 +103,17 @@ export default function Commandes() {
     })
 
     if (toutAfficher) {
-      const allVisible = Object.entries(planning).reduce((acc, [client, jours]) => {
-        // ✅ Ne conserve que les jours futurs
+      const allVisible = Object.entries(planning).reduce((acc, [clientNom, jours]) => {
+        const matchClient = client ? clientNom === client : true
         const joursFuturs = jours.filter((j) => getWeek(new Date(j.date)) >= semaineActuelle)
-
-        // ✅ Parmi ces jours futurs, garde uniquement ceux ayant une commande "en recherche" si enRecherche actif
-        const joursFiltrés = enRecherche
-          ? joursFuturs.filter((j) =>
-              j.commandes.some((cmd) => cmd.statut?.toLowerCase() === "en recherche")
-            )
-          : joursFuturs
-
-        if (joursFiltrés.length > 0) {
-          acc[client] = joursFiltrés
+        const hasEnRecherche = joursFuturs.some((j) =>
+          j.commandes.some((cmd) => cmd.statut?.toLowerCase() === "en recherche")
+        )
+        if (matchClient && joursFuturs.length > 0 && (!enRecherche || hasEnRecherche)) {
+          acc[clientNom] = joursFuturs
         }
-
         return acc
       }, {} as Record<string, JourPlanning[]>)
-
       setFilteredPlanning(allVisible)
     } else {
       setFilteredPlanning(newFiltered)
@@ -172,6 +157,8 @@ export default function Commandes() {
     )
   ).sort((a, b) => parseInt(a) - parseInt(b))
 
+  const clientsDisponibles = Object.keys(planning)
+
   return (
     <MainLayout>
       <SectionFixeCommandes
@@ -195,7 +182,7 @@ export default function Commandes() {
         setSemaineEnCours={setSemaineEnCours}
         resetFiltres={resetFiltres}
         semainesDisponibles={semainesDisponibles}
-        clientsDisponibles={[]} // à compléter si besoin
+        clientsDisponibles={clientsDisponibles}
       />
       <PlanningClientTable
         planning={filteredPlanning}

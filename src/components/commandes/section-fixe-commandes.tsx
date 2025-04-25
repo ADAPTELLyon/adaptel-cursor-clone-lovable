@@ -5,9 +5,6 @@ import { cn } from "@/lib/utils"
 import { Plus, CalendarCheck, AlertCircle, RotateCcw } from "lucide-react"
 import { indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
-import { getWeek } from "date-fns"
-
-const semaineActuelle = getWeek(new Date())
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -57,10 +54,11 @@ export function SectionFixeCommandes({
   setSemaineEnCours: (b: boolean) => void
   resetFiltres: () => void
   semainesDisponibles: string[]
-  clientsDisponibles: any[]
+  clientsDisponibles: string[]
 }) {
   return (
     <div className="sticky top-0 z-10 bg-white shadow-sm p-4 space-y-6">
+      {/* Indicateurs */}
       <div className="grid grid-cols-4 gap-2">
         {["Demandées", "Validées", "En recherche", "Non pourvue"].map((label) => (
           <div
@@ -76,6 +74,7 @@ export function SectionFixeCommandes({
         ))}
       </div>
 
+      {/* Barre de progression */}
       <div className="relative">
         <div className="h-6 w-full rounded bg-gray-200 overflow-hidden">
           <div
@@ -90,6 +89,7 @@ export function SectionFixeCommandes({
         </div>
       </div>
 
+      {/* Filtres Secteurs */}
       <div className="grid grid-cols-5 gap-2">
         {secteursList.map(({ label, icon: Icon }) => {
           const selected = selectedSecteurs.includes(label)
@@ -103,7 +103,7 @@ export function SectionFixeCommandes({
                   : "bg-gray-100 text-black hover:bg-gray-200"
               )}
               onClick={() => {
-                setToutAfficher(false)
+                if (toutAfficher) setToutAfficher(false)
                 setSelectedSecteurs([label])
               }}
             >
@@ -114,6 +114,7 @@ export function SectionFixeCommandes({
         })}
       </div>
 
+      {/* Interrupteurs */}
       <div className="flex flex-wrap items-center gap-6">
         <div className="flex items-center gap-2">
           <Switch
@@ -125,7 +126,7 @@ export function SectionFixeCommandes({
                 const monday = new Date(today.setDate(today.getDate() - today.getDay() + 1))
                 const iso = monday.toISOString().slice(0, 10)
                 setSemaine(iso)
-                setSelectedSemaine(semaineActuelle.toString())
+                setSelectedSemaine(getWeekNumber(monday).toString())
               } else {
                 setSelectedSemaine("Toutes")
               }
@@ -154,9 +155,6 @@ export function SectionFixeCommandes({
                 setSemaineEnCours(false)
               } else {
                 setSelectedSecteurs(["Étages"])
-                setClient("")
-                setSelectedSemaine(semaineActuelle.toString())
-                setSemaineEnCours(true)
               }
             }}
             className="data-[state=checked]:bg-[#840404]"
@@ -165,15 +163,15 @@ export function SectionFixeCommandes({
         </div>
       </div>
 
+      {/* Filtres semaine, client, recherche */}
       <div className="flex flex-wrap gap-4 items-center">
         <select
           className="border rounded px-2 py-2 text-sm w-[160px]"
           value={selectedSemaine}
           onChange={(e) => {
-            setSelectedSemaine(e.target.value)
-            if (semaineEnCours && e.target.value !== semaineActuelle.toString()) {
-              setSemaineEnCours(false)
-            }
+            const val = e.target.value
+            setSelectedSemaine(val)
+            if (val !== "Toutes") setSemaineEnCours(false)
           }}
         >
           <option value="Toutes">Toutes les semaines</option>
@@ -185,14 +183,14 @@ export function SectionFixeCommandes({
         </select>
 
         <select
-          className="border rounded px-2 py-2 text-sm w-[180px]"
+          className="border rounded px-2 py-2 text-sm w-[200px]"
           value={client}
           onChange={(e) => setClient(e.target.value)}
         >
           <option value="">Tous les clients</option>
-          {clientsDisponibles.map((c) => (
-            <option key={c.id} value={c.nom}>
-              {c.nom}
+          {clientsDisponibles.map((nom) => (
+            <option key={nom} value={nom}>
+              {nom}
             </option>
           ))}
         </select>
@@ -203,7 +201,6 @@ export function SectionFixeCommandes({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-
         <Button
           variant="outline"
           size="sm"
@@ -214,6 +211,7 @@ export function SectionFixeCommandes({
         </Button>
       </div>
 
+      {/* Boutons d’action */}
       <div className="flex flex-wrap items-center gap-4">
         <Button className="bg-[#840404] hover:bg-[#750303] text-white flex items-center gap-2">
           <Plus size={16} /> Nouvelle commande
@@ -227,4 +225,10 @@ export function SectionFixeCommandes({
       </div>
     </div>
   )
+}
+
+function getWeekNumber(date: Date) {
+  const start = new Date(date.getFullYear(), 0, 1)
+  const diff = (+date - +start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) / 86400000
+  return Math.floor((diff + start.getDay() + 6) / 7)
 }
