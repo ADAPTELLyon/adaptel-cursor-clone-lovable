@@ -5,14 +5,19 @@ import { cn } from "@/lib/utils"
 import { Plus, CalendarCheck, AlertCircle, RotateCcw } from "lucide-react"
 import { indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
+import { getWeek } from "date-fns"
 
-export default function SectionFixeCommandes({
+const semaineActuelle = getWeek(new Date())
+
+export function SectionFixeCommandes({
   selectedSecteurs,
   setSelectedSecteurs,
   stats,
   taux,
   semaine,
   setSemaine,
+  selectedSemaine,
+  setSelectedSemaine,
   client,
   setClient,
   search,
@@ -24,6 +29,8 @@ export default function SectionFixeCommandes({
   semaineEnCours,
   setSemaineEnCours,
   resetFiltres,
+  semainesDisponibles,
+  clientsDisponibles,
 }: {
   selectedSecteurs: string[]
   setSelectedSecteurs: (val: string[]) => void
@@ -36,6 +43,8 @@ export default function SectionFixeCommandes({
   taux: number
   semaine: string
   setSemaine: (s: string) => void
+  selectedSemaine: string
+  setSelectedSemaine: (val: string) => void
   client: string
   setClient: (s: string) => void
   search: string
@@ -47,6 +56,8 @@ export default function SectionFixeCommandes({
   semaineEnCours: boolean
   setSemaineEnCours: (b: boolean) => void
   resetFiltres: () => void
+  semainesDisponibles: string[]
+  clientsDisponibles: any[]
 }) {
   return (
     <div className="sticky top-0 z-10 bg-white shadow-sm p-4 space-y-6">
@@ -92,7 +103,7 @@ export default function SectionFixeCommandes({
                   : "bg-gray-100 text-black hover:bg-gray-200"
               )}
               onClick={() => {
-                if (toutAfficher) setToutAfficher(false)
+                setToutAfficher(false)
                 setSelectedSecteurs([label])
               }}
             >
@@ -114,6 +125,9 @@ export default function SectionFixeCommandes({
                 const monday = new Date(today.setDate(today.getDate() - today.getDay() + 1))
                 const iso = monday.toISOString().slice(0, 10)
                 setSemaine(iso)
+                setSelectedSemaine(semaineActuelle.toString())
+              } else {
+                setSelectedSemaine("Toutes")
               }
             }}
             className="data-[state=checked]:bg-[#840404]"
@@ -133,8 +147,17 @@ export default function SectionFixeCommandes({
             checked={toutAfficher}
             onCheckedChange={(val) => {
               setToutAfficher(val)
-              if (val) setSelectedSecteurs(secteursList.map((s) => s.label))
-              else setSelectedSecteurs(["Étages"])
+              if (val) {
+                setSelectedSecteurs(secteursList.map((s) => s.label))
+                setClient("")
+                setSelectedSemaine("Toutes")
+                setSemaineEnCours(false)
+              } else {
+                setSelectedSecteurs(["Étages"])
+                setClient("")
+                setSelectedSemaine(semaineActuelle.toString())
+                setSemaineEnCours(true)
+              }
             }}
             className="data-[state=checked]:bg-[#840404]"
           />
@@ -144,30 +167,43 @@ export default function SectionFixeCommandes({
 
       <div className="flex flex-wrap gap-4 items-center">
         <select
-          className="border rounded px-2 py-2 text-sm w-[220px]"
-          value={semaine}
+          className="border rounded px-2 py-2 text-sm w-[160px]"
+          value={selectedSemaine}
           onChange={(e) => {
-            setSemaine(e.target.value)
-            setSemaineEnCours(false)
+            setSelectedSemaine(e.target.value)
+            if (semaineEnCours && e.target.value !== semaineActuelle.toString()) {
+              setSemaineEnCours(false)
+            }
           }}
         >
-          <option value="">Semaine</option>
-          <option value="2025-04-21">Semaine du 21/04</option>
+          <option value="Toutes">Toutes les semaines</option>
+          {semainesDisponibles.map((s) => (
+            <option key={s} value={s}>
+              Semaine {s}
+            </option>
+          ))}
         </select>
+
         <select
-          className="border rounded px-2 py-2 text-sm w-[220px]"
+          className="border rounded px-2 py-2 text-sm w-[180px]"
           value={client}
           onChange={(e) => setClient(e.target.value)}
         >
-          <option value="">Client</option>
-          <option value="client1">Client 1</option>
+          <option value="">Tous les clients</option>
+          {clientsDisponibles.map((c) => (
+            <option key={c.id} value={c.nom}>
+              {c.nom}
+            </option>
+          ))}
         </select>
+
         <Input
           placeholder="Rechercher..."
-          className="w-[240px]"
+          className="w-[220px]"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+
         <Button
           variant="outline"
           size="sm"

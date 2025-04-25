@@ -6,37 +6,19 @@ import { format, parseISO } from "date-fns"
 import { fr } from "date-fns/locale"
 import { statutColors, indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
-import type { Commande } from "@/types"
+import type { Commande, JourPlanning } from "@/types"
 
-export function PlanningClientTable() {
-  const [commandes, setCommandes] = useState<Commande[]>([])
+export function PlanningClientTable({
+  planning,
+  selectedSecteurs,
+  selectedSemaine,
+}: {
+  planning: Record<string, JourPlanning[]>
+  selectedSecteurs: string[]
+  selectedSemaine: string
+}) {
   const [editId, setEditId] = useState<string | null>(null)
   const [heureTemp, setHeureTemp] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    const fetchCommandes = async () => {
-      const { data, error } = await supabase
-        .from("commandes")
-        .select(`*, clients (nom), candidats (nom, prenom)`)
-        .order("date", { ascending: true })
-
-      if (error) {
-        console.error("Erreur chargement commandes", error)
-        return
-      }
-
-      setCommandes(data as unknown as Commande[])
-    }
-
-    fetchCommandes()
-  }, [])
-
-  const groupesParSemaine = commandes.reduce((acc, commande) => {
-    const semaine = format(parseISO(commande.date), "I")
-    if (!acc[semaine]) acc[semaine] = []
-    acc[semaine].push(commande)
-    return acc
-  }, {} as Record<string, Commande[]>)
 
   const formatHeure = (val: string) => {
     const digits = val.replace(/\D/g, "")
@@ -45,26 +27,32 @@ export function PlanningClientTable() {
     return val
   }
 
+  const groupesParSemaine: Record<string, [string, JourPlanning[]][]> = {}
+
+  Object.entries(planning).forEach(([client, jours]) => {
+    jours.forEach((jour) => {
+      const semaine = format(parseISO(jour.date), "I")
+      if (!groupesParSemaine[semaine]) groupesParSemaine[semaine] = []
+      const cle = `${client}||${jour.secteur}||${jour.service || ""}`
+
+      const exist = groupesParSemaine[semaine].find(([k]) => k === cle)
+      if (!exist) {
+        groupesParSemaine[semaine].push([cle, [jour]])
+      } else {
+        exist[1].push(jour)
+      }
+    })
+  })
+
   return (
     <div className="space-y-8 mt-8">
-      {Object.entries(groupesParSemaine).map(([semaine, commandesSemaine]) => {
+      {Object.entries(groupesParSemaine).map(([semaine, groupes]) => {
         const semaineTexte = `Semaine ${semaine}`
-        const groupes = commandesSemaine.reduce((acc, cmd) => {
-          const cle = `${cmd.client_id}-${cmd.secteur}-${cmd.service}`
-          if (!acc[cle]) acc[cle] = []
-          acc[cle].push(cmd)
-          return acc
-        }, {} as Record<string, Commande[]>)
-
-        const groupesTries = Object.entries(groupes).sort((a, b) => {
-          const nomA = a[1][0].clients?.nom || ""
-          const nomB = b[1][0].clients?.nom || ""
-          return nomA.localeCompare(nomB)
-        })
 
         const jours = Array.from({ length: 7 }, (_, i) => {
-          const base = parseISO(commandesSemaine[0].date)
-          const lundi = new Date(base.setDate(base.getDate() - base.getDay() + 1))
+          const base = groupes[0][1][0].date
+          const lundi = new Date(parseISO(base))
+          lundi.setDate(lundi.getDate() - lundi.getDay() + 1)
           const jour = new Date(lundi)
           jour.setDate(lundi.getDate() + i)
           return {
@@ -79,9 +67,14 @@ export function PlanningClientTable() {
             <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
               <div className="p-3 border-r flex items-center justify-center">{semaineTexte}</div>
               {jours.map((jour, index) => {
-                const nbRecherche = commandesSemaine.filter(
-                  (c) => c.date === jour.dateStr && c.statut === "En recherche"
-                ).length
+                const nbRecherche = groupes
+                  .flatMap(([, jours]) =>
+                    jours.flatMap((j) =>
+                      j.commandes.filter(
+                        (c) => c.date === jour.dateStr && c.statut === "En recherche"
+                      )
+                    )
+                  ).length
 
                 return (
                   <div key={index} className="p-3 border-r text-center relative leading-tight">
@@ -109,16 +102,15 @@ export function PlanningClientTable() {
               })}
             </div>
 
-            {groupesTries.map(([cle, lignes]) => {
-              const { clients, secteur, service } = lignes[0]
-              const client_nom = clients?.nom || ""
+            {groupes.map(([key, jours]) => {
+              const [clientNom, secteur, service] = key.split("||")
               const secteurInfo = secteursList.find((s) => s.value === secteur)
 
               return (
-                <div key={cle} className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm">
+                <div key={key} className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm">
                   <div className="p-4 border-r space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="font-semibold">{client_nom}</span>
+                      <span className="font-semibold">{clientNom}</span>
                       <Pencil className="h-4 w-4 text-gray-400 cursor-pointer" />
                     </div>
                     <div className="flex items-start gap-2 flex-wrap text-sm">
@@ -137,7 +129,7 @@ export function PlanningClientTable() {
                   </div>
 
                   {jours.map((jour, index) => {
-                    const commandesJour = lignes.filter((c) => c.date === jour.dateStr)
+                    const commandesJour = jour.commandes
                     const commande = commandesJour[0]
 
                     return (
