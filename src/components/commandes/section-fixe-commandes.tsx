@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils"
 import { Plus, CalendarCheck, AlertCircle, RotateCcw } from "lucide-react"
 import { indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
+import { startOfWeek } from "date-fns"
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -55,18 +56,26 @@ export function SectionFixeCommandes({
     <div className="sticky top-0 z-10 bg-white shadow-sm p-4 space-y-6">
       {/* Indicateurs */}
       <div className="grid grid-cols-4 gap-2">
-        {["Demandées", "Validées", "En recherche", "Non pourvue"].map((label) => (
-          <div
-            key={label}
-            className="rounded-xl p-3"
-            style={{ backgroundColor: indicateurColors[label] }}
-          >
-            <div className="text-xs text-white">{label}</div>
-            <div className="text-2xl font-bold text-white">
-              {stats[label.toLowerCase().replace(" ", "")] || 0}
+        {["Demandées", "Validées", "En recherche", "Non pourvue"].map((label) => {
+          const key =
+            label === "En recherche"
+              ? "enRecherche"
+              : label === "Non pourvue"
+              ? "nonPourvue"
+              : label.toLowerCase().replace(" ", "")
+          return (
+            <div
+              key={label}
+              className="rounded-xl p-3"
+              style={{ backgroundColor: indicateurColors[label] }}
+            >
+              <div className="text-xs text-white">{label}</div>
+              <div className="text-2xl font-bold text-white">
+                {stats[key] || 0}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* Barre de progression */}
@@ -118,7 +127,7 @@ export function SectionFixeCommandes({
               setSemaineEnCours(val)
               if (val) {
                 const today = new Date()
-                const monday = new Date(today.setDate(today.getDate() - today.getDay() + 1))
+                const monday = startOfWeek(today, { weekStartsOn: 1 })
                 const iso = monday.toISOString().slice(0, 10)
                 setSemaine(iso)
                 setSelectedSemaine(getWeekNumber(monday).toString())

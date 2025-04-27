@@ -11,7 +11,7 @@ export default function Commandes() {
   const [filteredPlanning, setFilteredPlanning] = useState<Record<string, JourPlanning[]>>({})
   const [selectedSecteurs, setSelectedSecteurs] = useState(["Étages"])
   const [semaineEnCours, setSemaineEnCours] = useState(true)
-  const [semaine, setSemaine] = useState(format(new Date(), "yyyy-MM-dd"))
+  const [semaine, setSemaine] = useState(format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"))
   const [selectedSemaine, setSelectedSemaine] = useState("Toutes")
   const [semaineDates, setSemaineDates] = useState<Date[]>([])
   const [client, setClient] = useState("")
@@ -80,7 +80,7 @@ export default function Commandes() {
   }, [])
 
   useEffect(() => {
-    const semaineActuelle = getWeek(new Date())
+    const semaineActuelle = getWeek(new Date(), { weekStartsOn: 1 })
 
     const matchSearchTerm = (val: string) => {
       return search.trim().toLowerCase().split(" ").every(term => val.toLowerCase().includes(term))
@@ -92,7 +92,7 @@ export default function Commandes() {
       Object.entries(planning).forEach(([clientNom, jours]) => {
         const joursMatch = jours.filter((j) => {
           const dateStr = format(new Date(j.date), "dd/MM/yyyy")
-          const semaineStr = getWeek(new Date(j.date)).toString()
+          const semaineStr = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
 
           return (
             matchSearchTerm(clientNom) ||
@@ -117,7 +117,7 @@ export default function Commandes() {
 
     Object.entries(planning).forEach(([clientNom, jours]) => {
       const joursFiltres = jours.filter((j) => {
-        const semaineDuJour = getWeek(new Date(j.date))
+        const semaineDuJour = getWeek(new Date(j.date), { weekStartsOn: 1 })
         const matchSecteur = selectedSecteurs.includes(j.secteur)
         const matchClient = client ? clientNom === client : true
         const matchRecherche = enRecherche ? j.commandes.some((cmd) => cmd.statut?.toLowerCase() === "en recherche") : true
@@ -131,7 +131,7 @@ export default function Commandes() {
 
     if (toutAfficher) {
       const allVisible = Object.entries(planning).reduce((acc, [clientNom, jours]) => {
-        const joursFuturs = jours.filter((j) => getWeek(new Date(j.date)) >= semaineActuelle)
+        const joursFuturs = jours.filter((j) => getWeek(new Date(j.date), { weekStartsOn: 1 }) >= semaineActuelle)
         const matchClient = client ? clientNom === client : true
         if (joursFuturs.length > 0 && matchClient) {
           acc[clientNom] = joursFuturs
@@ -143,21 +143,28 @@ export default function Commandes() {
       setFilteredPlanning(newFiltered)
     }
 
-    let d = 0,
-      v = 0,
-      r = 0,
-      np = 0
+    let d = 0, v = 0, r = 0, np = 0
+
     Object.values(toutAfficher ? planning : newFiltered).forEach((jours) =>
       jours.forEach((j) =>
         j.commandes.forEach((cmd) => {
-          d++
-          if (cmd.statut === "Validé") v++
-          else if (cmd.statut === "En recherche") r++
-          else np++
+          if (cmd.statut !== "Annule Client" && cmd.statut !== "Annule ADA") {
+            d++
+            if (cmd.statut === "Validé") v++
+            if (cmd.statut === "En recherche") r++
+            if (cmd.statut === "Non pourvue") np++
+          }
         })
       )
     )
-    setStats({ demandées: d, validées: v, enRecherche: r, nonPourvue: np })
+
+    setStats({
+      demandées: d,
+      validées: v,
+      enRecherche: r,
+      nonPourvue: np,
+    })
+
   }, [planning, selectedSecteurs, selectedSemaine, client, search, enRecherche, toutAfficher])
 
   const resetFiltres = () => {
@@ -167,7 +174,7 @@ export default function Commandes() {
     setEnRecherche(false)
     setToutAfficher(false)
     setSemaineEnCours(true)
-    setSemaine(format(new Date(), "yyyy-MM-dd"))
+    setSemaine(format(startOfWeek(new Date(), { weekStartsOn: 1 }), "yyyy-MM-dd"))
     setSelectedSemaine("Toutes")
   }
 
@@ -177,7 +184,7 @@ export default function Commandes() {
     new Set(
       Object.values(planning)
         .flat()
-        .map((j) => getWeek(new Date(j.date)).toString())
+        .map((j) => getWeek(new Date(j.date), { weekStartsOn: 1 }).toString())
     )
   ).sort((a, b) => parseInt(a) - parseInt(b))
 
