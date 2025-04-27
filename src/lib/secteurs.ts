@@ -1,11 +1,9 @@
-import { Utensils, Sofa, ShowerHead, Building, Star } from "lucide-react"
+import { Bed, ChefHat, GlassWater, Droplet, Bell } from "lucide-react"
 
 export const secteursList = [
-  { value: "Cuisine", label: "Cuisine", icon: Utensils },
-  { value: "Salle", label: "Salle", icon: Sofa },
-  { value: "Plonge", label: "Plonge", icon: ShowerHead },
-  { value: "Réception", label: "Réception", icon: Building },
-  { value: "Étages", label: "Étages", icon: Star },
+  { label: "Étages", value: "Étages", icon: Bed },
+  { label: "Cuisine", value: "Cuisine", icon: ChefHat },
+  { label: "Salle", value: "Salle", icon: GlassWater },
+  { label: "Plonge", value: "Plonge", icon: Droplet },
+  { label: "Réception", value: "Réception", icon: Bell },
 ]
-
-export const secteurLabels = secteursList.map((s) => s.label)

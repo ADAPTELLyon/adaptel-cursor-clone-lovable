@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react"
 import MainLayout from "@/components/main-layout"
-import SectionFixeCommandes from "@/components/commandes/section-fixe-commandes"
+import { SectionFixeCommandes } from "@/components/commandes/section-fixe-commandes"
 import { PlanningClientTable } from "@/components/commandes/PlanningClientTable"
 import { supabase } from "@/lib/supabase"
-import { addDays, format, startOfWeek } from "date-fns"
+import { addDays, format, startOfWeek, getWeek } from "date-fns"
 import { Commande, JourPlanning } from "@/types"
 
 export default function Commandes() {
@@ -12,6 +12,7 @@ export default function Commandes() {
   const [selectedSecteurs, setSelectedSecteurs] = useState(["Étages"])
   const [semaineEnCours, setSemaineEnCours] = useState(true)
   const [semaine, setSemaine] = useState(format(new Date(), "yyyy-MM-dd"))
+  const [selectedSemaine, setSelectedSemaine] = useState("Toutes")
   const [semaineDates, setSemaineDates] = useState<Date[]>([])
   const [client, setClient] = useState("")
   const [search, setSearch] = useState("")
@@ -27,7 +28,7 @@ export default function Commandes() {
 
   useEffect(() => {
     const fetchPlanning = async () => {
-      const dates = semaineDates.map((d) => format(d, "yyyy-MM-dd"))
+      const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
       const { data, error } = await supabase
         .from("commandes")
         .select(`
@@ -37,7 +38,7 @@ export default function Commandes() {
           candidats (nom, prenom),
           client:client_id (nom)
         `)
-        .in("date", dates)
+        .gte("date", lundi.toISOString().slice(0, 10))
 
       if (error || !data) {
         console.error("Erreur Supabase :", error)
@@ -46,61 +47,106 @@ export default function Commandes() {
 
       const map: Record<string, JourPlanning[]> = {}
       for (const item of data as any[]) {
-        const nomClient = item.client?.nom || "Client inconnu"
+        const nomClient = item.client?.nom || item.client_id || "Client inconnu"
         if (!map[nomClient]) map[nomClient] = []
 
-        let jour = map[nomClient].find((j) => j.date === item.date)
-        if (!jour) {
-          jour = {
+        const jour: JourPlanning = {
+          date: item.date,
+          secteur: item.secteur,
+          service: item.service,
+          commandes: [{
+            id: item.id,
             date: item.date,
+            statut: item.statut,
             secteur: item.secteur,
             service: item.service,
-            commandes: [],
-          }
-          map[nomClient].push(jour)
+            client_id: item.client_id,
+            heure_debut_matin: item.heure_debut_matin,
+            heure_fin_matin: item.heure_fin_matin,
+            heure_debut_soir: item.heure_debut_soir,
+            heure_fin_soir: item.heure_fin_soir,
+            candidats: item.candidats ? { nom: item.candidats.nom, prenom: item.candidats.prenom } : undefined,
+            clients: item.client ? { nom: item.client.nom } : undefined,
+          }]
         }
 
-        jour.commandes.push({
-          ...item,
-          clients: item.client ? { nom: item.client.nom } : undefined,
-          candidats: item.candidats ? { nom: item.candidats.nom, prenom: item.candidats.prenom } : undefined,
-        })
+        map[nomClient].push(jour)
       }
 
       setPlanning(map)
     }
 
     fetchPlanning()
-  }, [semaineDates])
+  }, [])
 
   useEffect(() => {
+    const semaineActuelle = getWeek(new Date())
+
+    const matchSearchTerm = (val: string) => {
+      return search.trim().toLowerCase().split(" ").every(term => val.toLowerCase().includes(term))
+    }
+
     const newFiltered: typeof planning = {}
+
+    if (search.trim()) {
+      Object.entries(planning).forEach(([clientNom, jours]) => {
+        const joursMatch = jours.filter((j) => {
+          const dateStr = format(new Date(j.date), "dd/MM/yyyy")
+          const semaineStr = getWeek(new Date(j.date)).toString()
+
+          return (
+            matchSearchTerm(clientNom) ||
+            matchSearchTerm(j.secteur) ||
+            (j.service && matchSearchTerm(j.service)) ||
+            matchSearchTerm(semaineStr) ||
+            matchSearchTerm(dateStr) ||
+            j.commandes.some((cmd) =>
+              [cmd.candidats?.nom, cmd.candidats?.prenom, cmd.statut].filter(Boolean).some((val) =>
+                val ? matchSearchTerm(val) : false
+              )
+            )
+          )
+        })
+        if (joursMatch.length > 0) {
+          newFiltered[clientNom] = joursMatch
+        }
+      })
+      setFilteredPlanning(newFiltered)
+      return
+    }
 
     Object.entries(planning).forEach(([clientNom, jours]) => {
       const joursFiltres = jours.filter((j) => {
+        const semaineDuJour = getWeek(new Date(j.date))
         const matchSecteur = selectedSecteurs.includes(j.secteur)
         const matchClient = client ? clientNom === client : true
-        const matchSearch = search
-          ? [clientNom, j.secteur, ...(j.commandes.flatMap((c) => [c.statut, c.candidats?.nom, c.candidats?.prenom]))]
-              .filter(Boolean)
-              .some((val) => val?.toLowerCase().includes(search.toLowerCase()))
-          : true
-        const matchRecherche = enRecherche
-          ? j.commandes.some((cmd) => cmd.statut === "En recherche")
-          : true
-
-        return matchSecteur && matchClient && matchSearch && matchRecherche
+        const matchRecherche = enRecherche ? j.commandes.some((cmd) => cmd.statut?.toLowerCase() === "en recherche") : true
+        const matchSemaine = selectedSemaine === "Toutes" || selectedSemaine === semaineDuJour.toString()
+        return matchSecteur && matchClient && matchRecherche && matchSemaine
       })
-
       if (joursFiltres.length > 0) {
         newFiltered[clientNom] = joursFiltres
       }
     })
 
-    setFilteredPlanning(toutAfficher ? planning : newFiltered)
+    if (toutAfficher) {
+      const allVisible = Object.entries(planning).reduce((acc, [clientNom, jours]) => {
+        const joursFuturs = jours.filter((j) => getWeek(new Date(j.date)) >= semaineActuelle)
+        const matchClient = client ? clientNom === client : true
+        if (joursFuturs.length > 0 && matchClient) {
+          acc[clientNom] = joursFuturs
+        }
+        return acc
+      }, {} as Record<string, JourPlanning[]>)
+      setFilteredPlanning(allVisible)
+    } else {
+      setFilteredPlanning(newFiltered)
+    }
 
-    // stats
-    let d = 0, v = 0, r = 0, np = 0
+    let d = 0,
+      v = 0,
+      r = 0,
+      np = 0
     Object.values(toutAfficher ? planning : newFiltered).forEach((jours) =>
       jours.forEach((j) =>
         j.commandes.forEach((cmd) => {
@@ -112,7 +158,7 @@ export default function Commandes() {
       )
     )
     setStats({ demandées: d, validées: v, enRecherche: r, nonPourvue: np })
-  }, [planning, selectedSecteurs, client, search, enRecherche, toutAfficher])
+  }, [planning, selectedSecteurs, selectedSemaine, client, search, enRecherche, toutAfficher])
 
   const resetFiltres = () => {
     setSelectedSecteurs(["Étages"])
@@ -122,9 +168,20 @@ export default function Commandes() {
     setToutAfficher(false)
     setSemaineEnCours(true)
     setSemaine(format(new Date(), "yyyy-MM-dd"))
+    setSelectedSemaine("Toutes")
   }
 
   const taux = stats.demandées > 0 ? Math.round((stats.validées / stats.demandées) * 100) : 0
+
+  const semainesDisponibles = Array.from(
+    new Set(
+      Object.values(planning)
+        .flat()
+        .map((j) => getWeek(new Date(j.date)).toString())
+    )
+  ).sort((a, b) => parseInt(a) - parseInt(b))
+
+  const clientsDisponibles = Object.keys(planning)
 
   return (
     <MainLayout>
@@ -135,6 +192,8 @@ export default function Commandes() {
         taux={taux}
         semaine={semaine}
         setSemaine={setSemaine}
+        selectedSemaine={selectedSemaine}
+        setSelectedSemaine={setSelectedSemaine}
         client={client}
         setClient={setClient}
         search={search}
@@ -146,10 +205,14 @@ export default function Commandes() {
         semaineEnCours={semaineEnCours}
         setSemaineEnCours={setSemaineEnCours}
         resetFiltres={resetFiltres}
-        semainesDisponibles={[]} // à compléter si utilisé
-        clientsDisponibles={[]} // à compléter si utilisé
+        semainesDisponibles={semainesDisponibles}
+        clientsDisponibles={clientsDisponibles}
       />
-      <PlanningClientTable planning={filteredPlanning} semaine={semaineDates} />
+      <PlanningClientTable
+        planning={filteredPlanning}
+        selectedSecteurs={selectedSecteurs}
+        selectedSemaine={selectedSemaine}
+      />
     </MainLayout>
   )
 }
