@@ -1,4 +1,4 @@
-// components/commandes/PlanningClientTable.tsx
+// components/commandes/PlanningClientTable2.tsx
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Pencil, Check, Plus } from "lucide-react"
@@ -8,8 +8,8 @@ import { statutColors, indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
 import type { Commande, JourPlanning } from "@/types"
 
-export function PlanningClientTable({
-  planning, // filteredPlanning reçu ici
+export function PlanningClientTable2({
+  planning,
   selectedSecteurs,
   selectedSemaine,
 }: {
@@ -45,11 +45,10 @@ export function PlanningClientTable({
   })
 
   return (
-    <div className="space-y-8 mt-8">
+    <div className="space-y-8">
       {Object.entries(groupesParSemaine).map(([semaine, groupes]) => {
         const semaineTexte = `Semaine ${semaine}`
 
-        // Correction ici : on calcule les dates à partir de la semaine affichée
         const baseDate = startOfWeek(new Date(), { weekStartsOn: 1 })
         const semaineDifference = parseInt(semaine) - getWeek(baseDate, { weekStartsOn: 1 })
         const lundiSemaine = addDays(baseDate, semaineDifference * 7)
@@ -64,9 +63,10 @@ export function PlanningClientTable({
         })
 
         return (
-          <div key={semaine} className="border rounded-lg overflow-hidden shadow-sm">
-            {/* Entête semaine + jours */}
-            <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
+          <div key={semaine} className="relative">
+            <div
+              className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-white text-sm font-medium sticky top-[180px] z-10"
+            >
               <div className="p-3 border-r flex items-center justify-center">{semaineTexte}</div>
 
               {jours.map((jour, index) => {
@@ -110,7 +110,6 @@ export function PlanningClientTable({
               })}
             </div>
 
-            {/* Lignes planning */}
             {groupes.map(([key, jours]) => {
               const [clientNom, secteur, service] = key.split("||")
               const secteurInfo = secteursList.find((s) => s.value === secteur)
@@ -169,7 +168,6 @@ export function PlanningClientTable({
                               )}
                             </div>
 
-                            {/* Heures */}
                             <div className="text-[13px] font-semibold mt-1 space-y-1">
                               {["matin", "soir"].map((creneau) => {
                                 const heureDebut = commande[`heure_debut_${creneau}` as keyof Commande] as string | null
@@ -224,7 +222,6 @@ export function PlanningClientTable({
                               })}
                             </div>
 
-                            {/* Bouton + */}
                             <div className="absolute top-1 right-1">
                               <div className="rounded-full p-1 bg-white/40">
                                 <Plus className="h-3 w-3 text-white" />

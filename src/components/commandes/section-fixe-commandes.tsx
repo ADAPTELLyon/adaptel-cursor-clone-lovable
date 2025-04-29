@@ -53,7 +53,7 @@ export function SectionFixeCommandes({
   clientsDisponibles: string[]
 }) {
   return (
-    <div className="sticky top-0 z-10 bg-white shadow-sm p-4 space-y-6">
+    <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 space-y-6">
       {/* Indicateurs */}
       <div className="grid grid-cols-4 gap-2">
         {["Demandées", "Validées", "En recherche", "Non pourvue"].map((label) => {

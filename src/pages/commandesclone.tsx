@@ -1,30 +1,24 @@
+// pages/commandesclone.tsx
 import { useEffect, useState } from "react"
 import MainLayout from "@/components/main-layout"
 import { SectionFixeCommandes } from "@/components/commandes/section-fixe-commandes"
-import { PlanningClientTable } from "@/components/commandes/PlanningClientTable"
+import { PlanningClientTable2 } from "@/components/commandes/PlanningClientTable2"
 import { supabase } from "@/lib/supabase"
 import { addDays, format, startOfWeek, getWeek } from "date-fns"
 import { Commande, JourPlanning } from "@/types"
 
-export default function Commandes() {
+export default function CommandesClone() {
   const [planning, setPlanning] = useState<Record<string, JourPlanning[]>>({})
   const [filteredPlanning, setFilteredPlanning] = useState<Record<string, JourPlanning[]>>({})
   const [selectedSecteurs, setSelectedSecteurs] = useState(["Étages"])
   const [semaineEnCours, setSemaineEnCours] = useState(true)
   const [semaine, setSemaine] = useState(format(new Date(), "yyyy-MM-dd"))
   const [selectedSemaine, setSelectedSemaine] = useState("Toutes")
-  const [semaineDates, setSemaineDates] = useState<Date[]>([])
   const [client, setClient] = useState("")
   const [search, setSearch] = useState("")
   const [toutAfficher, setToutAfficher] = useState(false)
   const [enRecherche, setEnRecherche] = useState(false)
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
-
-  useEffect(() => {
-    const baseDate = new Date(semaine || new Date())
-    const dates = Array.from({ length: 7 }, (_, i) => addDays(startOfWeek(baseDate, { weekStartsOn: 1 }), i))
-    setSemaineDates(dates)
-  }, [semaine])
 
   useEffect(() => {
     const fetchPlanning = async () => {
@@ -81,7 +75,6 @@ export default function Commandes() {
 
   useEffect(() => {
     const semaineActuelle = getWeek(new Date(), { weekStartsOn: 1 })
-
     const matchSearchTerm = (val: string) => {
       return search.trim().toLowerCase().split(" ").every(term => val.toLowerCase().includes(term))
     }
@@ -143,7 +136,6 @@ export default function Commandes() {
       setFilteredPlanning(newFiltered)
     }
 
-    // Calcul simple et clair des stats
     let d = 0, v = 0, r = 0, np = 0
 
     Object.values(toutAfficher ? planning : newFiltered).forEach((jours) =>
@@ -221,11 +213,13 @@ export default function Commandes() {
         semainesDisponibles={semainesDisponibles}
         clientsDisponibles={clientsDisponibles}
       />
-      <PlanningClientTable
-        planning={filteredPlanning}
-        selectedSecteurs={selectedSecteurs}
-        selectedSemaine={selectedSemaine}
-      />
+      <div className="flex-1 overflow-y-auto" style={{ height: "calc(100vh - 220px)" }}>
+        <PlanningClientTable2
+          planning={filteredPlanning}
+          selectedSecteurs={selectedSecteurs}
+          selectedSemaine={selectedSemaine}
+        />
+      </div>
     </MainLayout>
   )
 }

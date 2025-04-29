@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -9,6 +8,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import BackOffice from "./pages/BackOffice";
 import Commandes from "./pages/Commandes";
+import CommandesClone from "./pages/commandesclone"; // 👉 AJOUT ICI
 import Planning from "./pages/Planning";
 import Clients from "./pages/Clients";
 import Candidats from "./pages/Candidats";
@@ -29,6 +29,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/back-office" element={<BackOffice />} />
             <Route path="/commandes" element={<Commandes />} />
+            <Route path="/commandesclone" element={<CommandesClone />} /> {/* 👉 AJOUT ICI */}
             <Route path="/planning" element={<Planning />} />
             <Route path="/clients" element={<Clients />} />
             <Route path="/candidats" element={<Candidats />} />
