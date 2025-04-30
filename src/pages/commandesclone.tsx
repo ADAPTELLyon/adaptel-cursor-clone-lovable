@@ -1,5 +1,4 @@
-// pages/commandesclone.tsx
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import MainLayout from "@/components/main-layout"
 import { SectionFixeCommandes } from "@/components/commandes/section-fixe-commandes"
 import { PlanningClientTable2 } from "@/components/commandes/PlanningClientTable2"
@@ -19,6 +18,14 @@ export default function CommandesClone() {
   const [toutAfficher, setToutAfficher] = useState(false)
   const [enRecherche, setEnRecherche] = useState(false)
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
+  const sectionFixeRef = useRef<HTMLDivElement>(null)
+  const [hauteurSectionFixe, setHauteurSectionFixe] = useState(460)
+
+  useEffect(() => {
+    if (sectionFixeRef.current) {
+      setHauteurSectionFixe(sectionFixeRef.current.offsetHeight)
+    }
+  }, [])
 
   useEffect(() => {
     const fetchPlanning = async () => {
@@ -48,7 +55,7 @@ export default function CommandesClone() {
           date: item.date,
           secteur: item.secteur,
           service: item.service,
-          commandes: [{
+          commandes: [ {
             id: item.id,
             date: item.date,
             statut: item.statut,
@@ -75,6 +82,7 @@ export default function CommandesClone() {
 
   useEffect(() => {
     const semaineActuelle = getWeek(new Date(), { weekStartsOn: 1 })
+
     const matchSearchTerm = (val: string) => {
       return search.trim().toLowerCase().split(" ").every(term => val.toLowerCase().includes(term))
     }
@@ -86,7 +94,6 @@ export default function CommandesClone() {
         const joursMatch = jours.filter((j) => {
           const dateStr = format(new Date(j.date), "dd/MM/yyyy")
           const semaineStr = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
-
           return (
             matchSearchTerm(clientNom) ||
             matchSearchTerm(j.secteur) ||
@@ -100,9 +107,7 @@ export default function CommandesClone() {
             )
           )
         })
-        if (joursMatch.length > 0) {
-          newFiltered[clientNom] = joursMatch
-        }
+        if (joursMatch.length > 0) newFiltered[clientNom] = joursMatch
       })
       setFilteredPlanning(newFiltered)
       return
@@ -117,18 +122,14 @@ export default function CommandesClone() {
         const matchSemaine = selectedSemaine === "Toutes" || selectedSemaine === semaineDuJour.toString()
         return matchSecteur && matchClient && matchRecherche && matchSemaine
       })
-      if (joursFiltres.length > 0) {
-        newFiltered[clientNom] = joursFiltres
-      }
+      if (joursFiltres.length > 0) newFiltered[clientNom] = joursFiltres
     })
 
     if (toutAfficher) {
       const allVisible = Object.entries(planning).reduce((acc, [clientNom, jours]) => {
         const joursFuturs = jours.filter((j) => getWeek(new Date(j.date), { weekStartsOn: 1 }) >= semaineActuelle)
         const matchClient = client ? clientNom === client : true
-        if (joursFuturs.length > 0 && matchClient) {
-          acc[clientNom] = joursFuturs
-        }
+        if (joursFuturs.length > 0 && matchClient) acc[clientNom] = joursFuturs
         return acc
       }, {} as Record<string, JourPlanning[]>)
       setFilteredPlanning(allVisible)
@@ -137,32 +138,19 @@ export default function CommandesClone() {
     }
 
     let d = 0, v = 0, r = 0, np = 0
-
     Object.values(toutAfficher ? planning : newFiltered).forEach((jours) =>
       jours.forEach((j) =>
         j.commandes.forEach((cmd) => {
           if (cmd.statut !== "Annule Client" && cmd.statut !== "Annule ADA") {
             d++
-            if (cmd.statut === "Validé") {
-              v++
-            }
-            if (cmd.statut === "En recherche") {
-              r++
-            }
-            if (cmd.statut === "Non pourvue") {
-              np++
-            }
+            if (cmd.statut === "Validé") v++
+            if (cmd.statut === "En recherche") r++
+            if (cmd.statut === "Non pourvue") np++
           }
         })
       )
     )
-
-    setStats({
-      demandées: d,
-      validées: v,
-      enRecherche: r,
-      nonPourvue: np,
-    })
+    setStats({ demandées: d, validées: v, enRecherche: r, nonPourvue: np })
   }, [planning, selectedSecteurs, selectedSemaine, client, search, enRecherche, toutAfficher])
 
   const resetFiltres = () => {
@@ -177,49 +165,44 @@ export default function CommandesClone() {
   }
 
   const taux = stats.demandées > 0 ? Math.round((stats.validées / stats.demandées) * 100) : 0
-
   const semainesDisponibles = Array.from(
-    new Set(
-      Object.values(planning)
-        .flat()
-        .map((j) => getWeek(new Date(j.date), { weekStartsOn: 1 }).toString())
-    )
+    new Set(Object.values(planning).flat().map((j) => getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()))
   ).sort((a, b) => parseInt(a) - parseInt(b))
-
   const clientsDisponibles = Object.keys(planning)
 
   return (
     <MainLayout>
-      <SectionFixeCommandes
-        selectedSecteurs={selectedSecteurs}
-        setSelectedSecteurs={setSelectedSecteurs}
-        stats={stats}
-        taux={taux}
-        semaine={semaine}
-        setSemaine={setSemaine}
-        selectedSemaine={selectedSemaine}
-        setSelectedSemaine={setSelectedSemaine}
-        client={client}
-        setClient={setClient}
-        search={search}
-        setSearch={setSearch}
-        toutAfficher={toutAfficher}
-        setToutAfficher={setToutAfficher}
-        enRecherche={enRecherche}
-        setEnRecherche={setEnRecherche}
-        semaineEnCours={semaineEnCours}
-        setSemaineEnCours={setSemaineEnCours}
-        resetFiltres={resetFiltres}
-        semainesDisponibles={semainesDisponibles}
-        clientsDisponibles={clientsDisponibles}
-      />
-      <div className="flex-1 overflow-y-auto" style={{ height: "calc(100vh - 220px)" }}>
-        <PlanningClientTable2
-          planning={filteredPlanning}
+      <div ref={sectionFixeRef}>
+        <SectionFixeCommandes
           selectedSecteurs={selectedSecteurs}
+          setSelectedSecteurs={setSelectedSecteurs}
+          stats={stats}
+          taux={taux}
+          semaine={semaine}
+          setSemaine={setSemaine}
           selectedSemaine={selectedSemaine}
+          setSelectedSemaine={setSelectedSemaine}
+          client={client}
+          setClient={setClient}
+          search={search}
+          setSearch={setSearch}
+          toutAfficher={toutAfficher}
+          setToutAfficher={setToutAfficher}
+          enRecherche={enRecherche}
+          setEnRecherche={setEnRecherche}
+          semaineEnCours={semaineEnCours}
+          setSemaineEnCours={setSemaineEnCours}
+          resetFiltres={resetFiltres}
+          semainesDisponibles={semainesDisponibles}
+          clientsDisponibles={clientsDisponibles}
         />
       </div>
+      <PlanningClientTable2
+        planning={filteredPlanning}
+        selectedSecteurs={selectedSecteurs}
+        selectedSemaine={selectedSemaine}
+        sectionFixeHauteur={hauteurSectionFixe}
+      />
     </MainLayout>
   )
 }

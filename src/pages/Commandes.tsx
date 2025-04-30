@@ -29,6 +29,8 @@ export default function Commandes() {
   useEffect(() => {
     const fetchPlanning = async () => {
       const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
+      const semaineCourante = getWeek(lundi, { weekStartsOn: 1 }).toString()
+
       const { data, error } = await supabase
         .from("commandes")
         .select(`
@@ -74,6 +76,7 @@ export default function Commandes() {
       }
 
       setPlanning(map)
+      setSelectedSemaine(semaineCourante)
     }
 
     fetchPlanning()
@@ -115,35 +118,46 @@ export default function Commandes() {
       return
     }
 
-    Object.entries(planning).forEach(([clientNom, jours]) => {
-      const joursFiltres = jours.filter((j) => {
-        const semaineDuJour = getWeek(new Date(j.date), { weekStartsOn: 1 })
-        const matchSecteur = selectedSecteurs.includes(j.secteur)
-        const matchClient = client ? clientNom === client : true
-        const matchRecherche = enRecherche ? j.commandes.some((cmd) => cmd.statut?.toLowerCase() === "en recherche") : true
-        const matchSemaine = selectedSemaine === "Toutes" || selectedSemaine === semaineDuJour.toString()
-        return matchSecteur && matchClient && matchRecherche && matchSemaine
-      })
-      if (joursFiltres.length > 0) {
-        newFiltered[clientNom] = joursFiltres
-      }
-    })
-
     if (toutAfficher) {
       const allVisible = Object.entries(planning).reduce((acc, [clientNom, jours]) => {
-        const joursFuturs = jours.filter((j) => getWeek(new Date(j.date), { weekStartsOn: 1 }) >= semaineActuelle)
+        const semaineActuelleInt = getWeek(new Date(), { weekStartsOn: 1 })
+        const joursFuturs = jours.filter((j) =>
+          getWeek(new Date(j.date), { weekStartsOn: 1 }) >= semaineActuelleInt
+        )
+
         const matchClient = client ? clientNom === client : true
-        if (joursFuturs.length > 0 && matchClient) {
-          acc[clientNom] = joursFuturs
+
+        // Nouvelle logique : filtrer aussi sur En recherche
+        const joursFiltres = joursFuturs.filter(j =>
+          !enRecherche || j.commandes.some(cmd => cmd.statut === "En recherche")
+        )
+
+        if (joursFiltres.length > 0 && matchClient) {
+          acc[clientNom] = joursFiltres
         }
+
         return acc
       }, {} as Record<string, JourPlanning[]>)
+
       setFilteredPlanning(allVisible)
     } else {
+      Object.entries(planning).forEach(([clientNom, jours]) => {
+        const joursFiltres = jours.filter((j) => {
+          const semaineDuJour = getWeek(new Date(j.date), { weekStartsOn: 1 })
+          const matchSecteur = selectedSecteurs.includes(j.secteur)
+          const matchClient = client ? clientNom === client : true
+          const matchRecherche = enRecherche ? j.commandes.some((cmd) => cmd.statut === "En recherche") : true
+          const matchSemaine = selectedSemaine === "Toutes" || selectedSemaine === semaineDuJour.toString()
+          return matchSecteur && matchClient && matchRecherche && matchSemaine
+        })
+        if (joursFiltres.length > 0) {
+          newFiltered[clientNom] = joursFiltres
+        }
+      })
+
       setFilteredPlanning(newFiltered)
     }
 
-    // Calcul simple et clair des stats
     let d = 0, v = 0, r = 0, np = 0
 
     Object.values(toutAfficher ? planning : newFiltered).forEach((jours) =>
@@ -151,15 +165,9 @@ export default function Commandes() {
         j.commandes.forEach((cmd) => {
           if (cmd.statut !== "Annule Client" && cmd.statut !== "Annule ADA") {
             d++
-            if (cmd.statut === "Validé") {
-              v++
-            }
-            if (cmd.statut === "En recherche") {
-              r++
-            }
-            if (cmd.statut === "Non pourvue") {
-              np++
-            }
+            if (cmd.statut === "Validé") v++
+            if (cmd.statut === "En recherche") r++
+            if (cmd.statut === "Non pourvue") np++
           }
         })
       )
@@ -181,7 +189,8 @@ export default function Commandes() {
     setToutAfficher(false)
     setSemaineEnCours(true)
     setSemaine(format(new Date(), "yyyy-MM-dd"))
-    setSelectedSemaine("Toutes")
+    const current = getWeek(new Date(), { weekStartsOn: 1 }).toString()
+    setSelectedSemaine(current)
   }
 
   const taux = stats.demandées > 0 ? Math.round((stats.validées / stats.demandées) * 100) : 0

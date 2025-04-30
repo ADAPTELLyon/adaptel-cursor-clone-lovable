@@ -26,7 +26,6 @@ export function SectionFixeCommandes({
   setEnRecherche,
   semaineEnCours,
   setSemaineEnCours,
-  resetFiltres,
   semainesDisponibles,
   clientsDisponibles,
 }: {
@@ -48,10 +47,24 @@ export function SectionFixeCommandes({
   setEnRecherche: (b: boolean) => void
   semaineEnCours: boolean
   setSemaineEnCours: (b: boolean) => void
-  resetFiltres: () => void
   semainesDisponibles: string[]
   clientsDisponibles: string[]
 }) {
+  function resetFiltres() {
+    const monday = startOfWeek(new Date(), { weekStartsOn: 1 })
+    const iso = monday.toISOString().slice(0, 10)
+    const semaineNum = getWeekNumber(monday).toString()
+
+    setSelectedSecteurs(["Étages"])
+    setClient("")
+    setSearch("")
+    setToutAfficher(false)
+    setEnRecherche(false)
+    setSemaineEnCours(true)
+    setSemaine(iso)
+    setSelectedSemaine(semaineNum)
+  }
+
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 space-y-6">
       {/* Indicateurs */}
@@ -156,13 +169,16 @@ export function SectionFixeCommandes({
               setToutAfficher(val)
               if (val) {
                 setSelectedSecteurs(secteursList.map((s) => s.label))
+                setClient("")
+                setSelectedSemaine("Toutes")
+                setSemaineEnCours(false)
               } else {
                 setSelectedSecteurs(["Étages"])
               }
             }}
             className="data-[state=checked]:bg-[#840404]"
           />
-          <span className="text-sm">Tous les secteurs</span>
+          <span className="text-sm">Tout afficher</span>
         </div>
       </div>
 

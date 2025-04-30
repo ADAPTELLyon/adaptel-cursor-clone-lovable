@@ -1,15 +1,15 @@
-// components/commandes/PlanningClientTable.tsx
 import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Pencil, Check, Plus } from "lucide-react"
-import { format, startOfWeek, addDays, getWeek, parseISO } from "date-fns"
+import { format, startOfWeek, addDays, getWeek } from "date-fns"
 import { fr } from "date-fns/locale"
 import { statutColors, indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
+import { supabase } from "@/lib/supabase"
 import type { Commande, JourPlanning } from "@/types"
 
 export function PlanningClientTable({
-  planning, // filteredPlanning reçu ici
+  planning,
   selectedSecteurs,
   selectedSemaine,
 }: {
@@ -34,7 +34,6 @@ export function PlanningClientTable({
       const semaine = getWeek(new Date(jour.date), { weekStartsOn: 1 }).toString()
       if (!groupesParSemaine[semaine]) groupesParSemaine[semaine] = []
       const cle = `${client}||${jour.secteur}||${jour.service || ""}`
-
       const exist = groupesParSemaine[semaine].find(([k]) => k === cle)
       if (!exist) {
         groupesParSemaine[semaine].push([cle, [jour]])
@@ -44,12 +43,23 @@ export function PlanningClientTable({
     })
   })
 
+  const updateHeure = async (commandeId: string, creneau: string, champ: "debut" | "fin", valeur: string) => {
+    const field = `heure_${champ === "debut" ? "debut" : "fin"}_${creneau}`
+
+    const { error } = await supabase
+      .from("commandes")
+      .update({ [field]: valeur })
+      .eq("id", commandeId)
+
+    if (error) {
+      console.error("Erreur enregistrement heure :", error)
+    }
+  }
+
   return (
     <div className="space-y-8 mt-8">
       {Object.entries(groupesParSemaine).map(([semaine, groupes]) => {
         const semaineTexte = `Semaine ${semaine}`
-
-        // Correction ici : on calcule les dates à partir de la semaine affichée
         const baseDate = startOfWeek(new Date(), { weekStartsOn: 1 })
         const semaineDifference = parseInt(semaine) - getWeek(baseDate, { weekStartsOn: 1 })
         const lundiSemaine = addDays(baseDate, semaineDifference * 7)
@@ -63,44 +73,42 @@ export function PlanningClientTable({
           }
         })
 
+        const joursFiltres = groupes
+          .flatMap(([_, jours]) => jours)
+          .filter((j) => selectedSecteurs.includes(j.secteur))
+
         return (
           <div key={semaine} className="border rounded-lg overflow-hidden shadow-sm">
-            {/* Entête semaine + jours */}
+            {/* En-tête semaine */}
             <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
               <div className="p-3 border-r flex items-center justify-center">{semaineTexte}</div>
-
               {jours.map((jour, index) => {
-                let nbEnRecherche = 0
+                const missionsDuJour = joursFiltres.filter(
+                  (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
+                )
 
-                Object.values(planning).forEach((joursPlanning) => {
-                  joursPlanning.forEach((j) => {
-                    if (j.date === jour.dateStr) {
-                      j.commandes.forEach((cmd) => {
-                        if (cmd.statut?.toLowerCase() === "en recherche") {
-                          nbEnRecherche++
-                        }
-                      })
-                    }
-                  })
-                })
+                const nbEnRecherche = missionsDuJour.flatMap((j) => j.commandes).filter((cmd) => cmd.statut === "En recherche").length
+                const totalMissions = missionsDuJour.flatMap((j) => j.commandes).length
 
                 return (
                   <div key={index} className="p-3 border-r text-center relative leading-tight">
                     <div>{jour.label.split(" ")[0]}</div>
                     <div className="text-xs">{jour.label.split(" ").slice(1).join(" ")}</div>
-                    {nbEnRecherche > 0 ? (
+
+                    {totalMissions === 0 ? (
+                      <div className="absolute top-1 right-1">
+                        <div className="h-5 w-5 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs">–</div>
+                      </div>
+                    ) : nbEnRecherche > 0 ? (
                       <div
                         className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center"
-                        style={{
-                          backgroundColor: indicateurColors["En recherche"],
-                          color: "white",
-                        }}
+                        style={{ backgroundColor: indicateurColors["En recherche"], color: "white" }}
                       >
                         {nbEnRecherche}
                       </div>
                     ) : (
                       <div className="absolute top-1 right-1">
-                        <div className="h-5 w-5 rounded-full bg-[#48bb78] flex items-center justify-center">
+                        <div className="h-5 w-5 rounded-full bg-[#a9d08e] flex items-center justify-center">
                           <Check className="w-4 h-4 text-white" />
                         </div>
                       </div>
@@ -111,7 +119,7 @@ export function PlanningClientTable({
             </div>
 
             {/* Lignes planning */}
-            {groupes.map(([key, jours]) => {
+            {groupes.map(([key, joursGroupe]) => {
               const [clientNom, secteur, service] = key.split("||")
               const secteurInfo = secteursList.find((s) => s.value === secteur)
 
@@ -138,7 +146,9 @@ export function PlanningClientTable({
                   </div>
 
                   {jours.map((jour, index) => {
-                    const commande = jour.commandes[0]
+                    const commande = joursGroupe.find(
+                      (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
+                    )?.commandes[0]
 
                     return (
                       <div key={index} className="border-r p-2 h-28 relative">
@@ -148,9 +158,7 @@ export function PlanningClientTable({
                           </div>
                         ) : (
                           <div
-                            className={cn(
-                              "h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative"
-                            )}
+                            className={cn("h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative")}
                             style={{
                               backgroundColor: statutColors[commande.statut]?.bg || "#e5e7eb",
                               color: statutColors[commande.statut]?.text || "#000000",
@@ -160,16 +168,16 @@ export function PlanningClientTable({
                               {commande.statut === "Validé" && commande.candidats?.nom && commande.candidats?.prenom ? (
                                 <>
                                   <span>{commande.candidats.nom}</span>
-                                  <span className="block text-xs font-normal">
-                                    {commande.candidats.prenom}
-                                  </span>
+                                  <span className="block text-xs font-normal">{commande.candidats.prenom}</span>
                                 </>
                               ) : (
-                                <span className="font-medium">{commande.statut}</span>
+                                <>
+                                  <span className="font-medium">{commande.statut}</span>
+                                  <span className="block text-xs font-normal h-[1.25rem]"></span>
+                                </>
                               )}
                             </div>
 
-                            {/* Heures */}
                             <div className="text-[13px] font-semibold mt-1 space-y-1">
                               {["matin", "soir"].map((creneau) => {
                                 const heureDebut = commande[`heure_debut_${creneau}` as keyof Commande] as string | null
@@ -179,22 +187,29 @@ export function PlanningClientTable({
 
                                 return (
                                   <div key={creneau} className="flex gap-1 items-center">
-                                    {[keyDebut, keyFin].map((key, idx) => (
-                                      editId === key ? (
+                                    {[keyDebut, keyFin].map((key) => {
+                                      const champ = key.includes("debut") ? "debut" : "fin"
+                                      const valeur = key.includes("debut") ? heureDebut : heureFin
+                                      const champCreneau = key.includes("debut") ? `heure_debut_${creneau}` : `heure_fin_${creneau}`
+
+                                      return editId === key ? (
                                         <input
                                           key={key}
                                           type="text"
-                                          autoFocus
-                                          value={heureTemp[key] || ""}
+                                          value={heureTemp[key] ?? valeur ?? ""}
                                           onChange={(e) =>
                                             setHeureTemp({
                                               ...heureTemp,
-                                              [key]: formatHeure(e.target.value),
+                                              [key]: e.target.value,
                                             })
                                           }
-                                          onBlur={() => setEditId(null)}
+                                          onBlur={() => {
+                                            updateHeure(commande.id, creneau, champ as "debut" | "fin", formatHeure(heureTemp[key]))
+                                            setEditId(null)
+                                          }}
                                           onKeyDown={(e) => {
                                             if (e.key === "Enter") {
+                                              updateHeure(commande.id, creneau, champ as "debut" | "fin", formatHeure(heureTemp[key]))
                                               setEditId(null)
                                             }
                                           }}
@@ -207,24 +222,20 @@ export function PlanningClientTable({
                                             setEditId(key)
                                             setHeureTemp((prev) => ({
                                               ...prev,
-                                              [key]:
-                                                key.includes("debut")
-                                                  ? heureDebut?.slice(0, 5) || ""
-                                                  : heureFin?.slice(0, 5) || "",
+                                              [key]: valeur?.slice(0, 5) || "",
                                             }))
                                           }}
                                           className="cursor-pointer hover:underline"
                                         >
-                                          {(key.includes("debut") ? heureDebut : heureFin)?.slice(0, 5) || "–"}
+                                          {valeur?.slice(0, 5) || "–"}
                                         </span>
                                       )
-                                    ))}
+                                    })}
                                   </div>
                                 )
                               })}
                             </div>
 
-                            {/* Bouton + */}
                             <div className="absolute top-1 right-1">
                               <div className="rounded-full p-1 bg-white/40">
                                 <Plus className="h-3 w-3 text-white" />

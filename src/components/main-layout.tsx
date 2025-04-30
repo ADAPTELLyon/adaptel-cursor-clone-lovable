@@ -19,16 +19,15 @@ function MainLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-100">
       {/* Bandeau navigation fixé */}
       <div className="sticky top-0 z-50 bg-white shadow-md">
         <MainNav />
       </div>
 
-      {/* Contenu principal */}
-      <main className="container mx-auto p-8">
+      {/* Contenu principal élargi */}
+      <main className="max-w-[1600px] mx-auto px-4 pt-8">
         {/* ATTENTION : on ne met plus de pt-[72px] ici */}
-
         {children}
       </main>
 
