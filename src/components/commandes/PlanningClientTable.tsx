@@ -20,22 +20,36 @@ export function PlanningClientTable({
   const [editId, setEditId] = useState<string | null>(null)
   const [heureTemp, setHeureTemp] = useState<Record<string, string>>({})
 
-  const formatHeure = (val: string) => {
-    const digits = val.replace(/\D/g, "")
-    if (digits.length === 4) return `${digits.slice(0, 2)}:${digits.slice(2)}`
-    if (digits.length === 3) return `0${digits[0]}:${digits.slice(1)}`
-    return val
-  }
+  const updateHeure = async (
+    commande: Commande,
+    champ: keyof Commande,
+    nouvelleValeur: string
+  ) => {
+    const isValidTime = /^\d{2}:\d{2}$/.test(nouvelleValeur)
+    if (!isValidTime) {
+      console.error("Format heure invalide :", nouvelleValeur)
+      return
+    }
 
-  const updateHeure = async (commandeId: string, field: string, value: string) => {
-    const key = `heure_${field}` as keyof Commande
     const { error } = await supabase
       .from("commandes")
-      .update({ [key]: value })
-      .eq("id", commandeId)
+      .update({ [champ]: nouvelleValeur })
+      .eq("id", commande.id)
+
     if (error) {
-      console.error("Erreur update", error)
+      console.error("Erreur enregistrement heure :", error)
+    } else {
+      commande[champ] = nouvelleValeur
     }
+  }
+
+  const cleanHeure = (val: string) => val.replace(/\D/g, "")
+
+  const finalFormatHeure = (digits: string) => {
+    if (digits.length === 4) return `${digits.slice(0, 2)}:${digits.slice(2)}`
+    if (digits.length === 3) return `0${digits[0]}:${digits.slice(1)}`
+    if (digits.length === 2) return `${digits}:00`
+    return digits
   }
 
   const groupesParSemaine: Record<string, [string, JourPlanning[]][]> = {}
@@ -83,8 +97,9 @@ export function PlanningClientTable({
                 const missionsDuJour = joursFiltres.filter(
                   (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
                 )
-
-                const nbEnRecherche = missionsDuJour.flatMap((j) => j.commandes).filter((cmd) => cmd.statut === "En recherche").length
+                const nbEnRecherche = missionsDuJour
+                  .flatMap((j) => j.commandes)
+                  .filter((cmd) => cmd.statut === "En recherche").length
                 const totalMissions = missionsDuJour.flatMap((j) => j.commandes).length
 
                 return (
@@ -96,7 +111,10 @@ export function PlanningClientTable({
                         <div className="h-5 w-5 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs">–</div>
                       </div>
                     ) : nbEnRecherche > 0 ? (
-                      <div className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center" style={{ backgroundColor: indicateurColors["En recherche"], color: "white" }}>
+                      <div
+                        className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center"
+                        style={{ backgroundColor: indicateurColors["En recherche"], color: "white" }}
+                      >
                         {nbEnRecherche}
                       </div>
                     ) : (
@@ -138,7 +156,11 @@ export function PlanningClientTable({
                   </div>
 
                   {jours.map((jour, index) => {
-                    const commande = joursGroupe.find((j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr)?.commandes[0]
+                    const commande = joursGroupe.find(
+                      (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
+                    )?.commandes[0]
+
+                    const isEtages = secteur === "Étages"
 
                     return (
                       <div key={index} className="border-r p-2 h-28 relative">
@@ -147,12 +169,15 @@ export function PlanningClientTable({
                             <Plus className="h-4 w-4 text-gray-400" />
                           </div>
                         ) : (
-                          <div className={cn("h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative")} style={{
-                            backgroundColor: statutColors[commande.statut]?.bg || "#e5e7eb",
-                            color: statutColors[commande.statut]?.text || "#000000",
-                          }}>
+                          <div
+                            className={cn("h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative")}
+                            style={{
+                              backgroundColor: statutColors[commande.statut]?.bg || "#e5e7eb",
+                              color: statutColors[commande.statut]?.text || "#000000",
+                            }}
+                          >
                             <div className="leading-tight font-semibold">
-                              {commande.statut === "Validé" && commande.candidats?.nom && commande.candidats?.prenom ? (
+                              {commande.statut === "Validé" && commande.candidats ? (
                                 <>
                                   <span>{commande.candidats.nom}</span>
                                   <span className="block text-xs font-normal">{commande.candidats.prenom}</span>
@@ -166,55 +191,59 @@ export function PlanningClientTable({
                             </div>
 
                             <div className="text-[13px] font-semibold mt-1 space-y-1">
-                              {["matin", "soir"].map((creneau) => {
-                                const heureDebut = commande[`heure_debut_${creneau}` as keyof Commande] as string | null
-                                const heureFin = commande[`heure_fin_${creneau}` as keyof Commande] as string | null
+                              {["matin", ...(isEtages ? [] : ["soir"])].map((creneau) => {
+                                const heureDebut = commande[`heure_debut_${creneau}` as keyof Commande] ?? null
+                                const heureFin = commande[`heure_fin_${creneau}` as keyof Commande] ?? null
                                 const keyDebut = `${commande.id}-${creneau}-debut`
                                 const keyFin = `${commande.id}-${creneau}-fin`
 
                                 return (
                                   <div key={creneau} className="flex gap-1 items-center">
-                                    {[keyDebut, keyFin].map((key) => (
-                                      editId === key ? (
-                                        <input
-                                          key={key}
-                                          type="text"
-                                          value={heureTemp[key] || ""}
-                                          onChange={(e) =>
-                                            setHeureTemp({ ...heureTemp, [key]: e.target.value })
-                                          }
-                                          onBlur={() => {
-                                            const newVal = formatHeure(heureTemp[key] || "")
-                                            setEditId(null)
-                                            updateHeure(commande.id, key.includes("debut") ? `debut_${creneau}` : `fin_${creneau}`, newVal)
-                                            commande[key.includes("debut") ? `heure_debut_${creneau}` : `heure_fin_${creneau}`] = newVal
-                                          }}
-                                          onKeyDown={(e) => {
-                                            if (e.key === "Enter") {
-                                              const newVal = formatHeure(heureTemp[key] || "")
+                                    {[{ key: keyDebut, value: heureDebut, champ: `heure_debut_${creneau}` }, { key: keyFin, value: heureFin, champ: `heure_fin_${creneau}` }].map(
+                                      ({ key, value, champ }) => (
+                                        editId === key ? (
+                                          <input
+                                            key={key}
+                                            type="text"
+                                            value={heureTemp[key] ?? ""}
+                                            autoFocus
+                                            onFocus={(e) => e.target.select()}
+                                            onChange={(e) => {
+                                              const cleaned = cleanHeure(e.target.value)
+                                              setHeureTemp((prev) => ({ ...prev, [key]: cleaned }))
+                                            }}
+                                            onBlur={async () => {
+                                              const rawValue = heureTemp[key] ?? ""
+                                              const formatted = finalFormatHeure(rawValue)
+                                              await updateHeure(commande, champ as keyof Commande, formatted)
+                                              setHeureTemp((prev) => ({ ...prev, [key]: formatted }))
                                               setEditId(null)
-                                              updateHeure(commande.id, key.includes("debut") ? `debut_${creneau}` : `fin_${creneau}`, newVal)
-                                              commande[key.includes("debut") ? `heure_debut_${creneau}` : `heure_fin_${creneau}`] = newVal
-                                            }
-                                          }}
-                                          className="w-12 text-[13px] px-1 border rounded bg-white text-black"
-                                        />
-                                      ) : (
-                                        <span
-                                          key={key}
-                                          onClick={() => {
-                                            setEditId(key)
-                                            setHeureTemp({
-                                              ...heureTemp,
-                                              [key]: (key.includes("debut") ? heureDebut : heureFin)?.slice(0, 5) || "",
-                                            })
-                                          }}
-                                          className="cursor-pointer hover:underline"
-                                        >
-                                          {(key.includes("debut") ? heureDebut : heureFin)?.slice(0, 5) || "–"}
-                                        </span>
+                                            }}
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter" || e.key === "Tab") {
+                                                (e.target as HTMLInputElement).blur()
+                                              }
+                                            }}
+                                            className="w-12 text-[13px] px-1 border rounded text-black"
+                                            style={{ backgroundColor: "transparent" }}
+                                          />
+                                        ) : (
+                                          <span
+                                            key={key}
+                                            onClick={() => {
+                                              setEditId(key)
+                                              setHeureTemp((prev) => ({
+                                                ...prev,
+                                                [key]: (value as string)?.replace(":", "") || "",
+                                              }))
+                                            }}
+                                            className="cursor-pointer hover:underline"
+                                          >
+                                            {value ? (value as string).slice(0, 5) : "–"}
+                                          </span>
+                                        )
                                       )
-                                    ))}
+                                    )}
                                   </div>
                                 )
                               })}
