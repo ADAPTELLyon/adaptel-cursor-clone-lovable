@@ -76,6 +76,7 @@ export type Database = {
           groupe: string | null
           id: string
           nom: string
+          postes_bases_actifs: string[] | null
           secteurs: string[] | null
           services: string[] | null
           telephone: string | null
@@ -91,6 +92,7 @@ export type Database = {
           groupe?: string | null
           id?: string
           nom: string
+          postes_bases_actifs?: string[] | null
           secteurs?: string[] | null
           services?: string[] | null
           telephone?: string | null
@@ -106,6 +108,7 @@ export type Database = {
           groupe?: string | null
           id?: string
           nom?: string
+          postes_bases_actifs?: string[] | null
           secteurs?: string[] | null
           services?: string[] | null
           telephone?: string | null
@@ -118,6 +121,8 @@ export type Database = {
         Row: {
           candidat_id: string | null
           client_id: string | null
+          commentaire: string | null
+          complement_motif: string | null
           created_at: string | null
           created_by: string | null
           date: string
@@ -128,6 +133,7 @@ export type Database = {
           heure_fin_nuit: string | null
           heure_fin_soir: string | null
           id: string
+          motif_contrat: string | null
           secteur: string
           service: string | null
           statut: string
@@ -136,6 +142,8 @@ export type Database = {
         Insert: {
           candidat_id?: string | null
           client_id?: string | null
+          commentaire?: string | null
+          complement_motif?: string | null
           created_at?: string | null
           created_by?: string | null
           date: string
@@ -146,6 +154,7 @@ export type Database = {
           heure_fin_nuit?: string | null
           heure_fin_soir?: string | null
           id?: string
+          motif_contrat?: string | null
           secteur: string
           service?: string | null
           statut: string
@@ -154,6 +163,8 @@ export type Database = {
         Update: {
           candidat_id?: string | null
           client_id?: string | null
+          commentaire?: string | null
+          complement_motif?: string | null
           created_at?: string | null
           created_by?: string | null
           date?: string
@@ -164,6 +175,7 @@ export type Database = {
           heure_fin_nuit?: string | null
           heure_fin_soir?: string | null
           id?: string
+          motif_contrat?: string | null
           secteur?: string
           service?: string | null
           statut?: string
@@ -523,6 +535,52 @@ export type Database = {
           secteur?: string
         }
         Relationships: []
+      }
+      postes_bases_clients: {
+        Row: {
+          client_id: string
+          created_at: string | null
+          id: string
+          poste_base_id: string
+          tenue_id: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string | null
+          id?: string
+          poste_base_id: string
+          tenue_id?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string | null
+          id?: string
+          poste_base_id?: string
+          tenue_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "postes_bases_clients_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "postes_bases_clients_poste_base_id_fkey"
+            columns: ["poste_base_id"]
+            isOneToOne: false
+            referencedRelation: "postes_bases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "postes_bases_clients_tenue_id_fkey"
+            columns: ["tenue_id"]
+            isOneToOne: false
+            referencedRelation: "parametrages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       postes_types_clients: {
         Row: {

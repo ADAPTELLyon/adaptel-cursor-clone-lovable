@@ -85,7 +85,10 @@ export function SectionFixeCommandes({
             className="h-full text-xs flex items-center justify-center text-white font-medium transition-all duration-300"
             style={{
               width: `${taux}%`,
-              backgroundColor: taux === 100 ? indicateurColors["Validées"] : indicateurColors["En recherche"],
+              backgroundColor:
+                taux === 100
+                  ? indicateurColors["Validées"]
+                  : indicateurColors["En recherche"],
             }}
           >
             {`${taux}%`}
@@ -159,6 +162,7 @@ export function SectionFixeCommandes({
               } else {
                 setSelectedSecteurs(["Étages"])
               }
+              // ✅ On n'applique plus aucune logique sur la semaine ici
             }}
             className="data-[state=checked]:bg-[#840404]"
           />
@@ -232,6 +236,10 @@ export function SectionFixeCommandes({
 
 function getWeekNumber(date: Date) {
   const start = new Date(date.getFullYear(), 0, 1)
-  const diff = (+date - +start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) / 86400000
+  const diff =
+    (+date -
+      +start +
+      (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) /
+    86400000
   return Math.floor((diff + start.getDay() + 6) / 7)
 }
