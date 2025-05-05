@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -6,6 +7,7 @@ import { Plus, CalendarCheck, AlertCircle, RotateCcw } from "lucide-react"
 import { indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
 import { startOfWeek } from "date-fns"
+import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -52,6 +54,8 @@ export function SectionFixeCommandes({
   semainesDisponibles: string[]
   clientsDisponibles: string[]
 }) {
+  const [openNouvelleCommande, setOpenNouvelleCommande] = useState(false)
+
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 space-y-6">
       {/* Indicateurs */}
@@ -162,7 +166,6 @@ export function SectionFixeCommandes({
               } else {
                 setSelectedSecteurs(["Étages"])
               }
-              // ✅ On n'applique plus aucune logique sur la semaine ici
             }}
             className="data-[state=checked]:bg-[#840404]"
           />
@@ -220,7 +223,10 @@ export function SectionFixeCommandes({
 
       {/* Boutons d’action */}
       <div className="flex flex-wrap items-center gap-4">
-        <Button className="bg-[#840404] hover:bg-[#750303] text-white flex items-center gap-2">
+        <Button
+          className="bg-[#840404] hover:bg-[#750303] text-white flex items-center gap-2"
+          onClick={() => setOpenNouvelleCommande(true)}
+        >
           <Plus size={16} /> Nouvelle commande
         </Button>
         <Button variant="outline" className="flex items-center gap-2">
@@ -230,6 +236,11 @@ export function SectionFixeCommandes({
           <AlertCircle size={16} /> Saisir incident
         </Button>
       </div>
+
+      <NouvelleCommandeDialog
+        open={openNouvelleCommande}
+        onOpenChange={setOpenNouvelleCommande}
+      />
     </div>
   )
 }

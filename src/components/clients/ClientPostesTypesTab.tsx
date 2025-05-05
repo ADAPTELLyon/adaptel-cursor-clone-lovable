@@ -73,16 +73,16 @@ export function ClientPostesTypesTab({ client }: Props) {
     if (!client.id) return;
     const { data } = await supabase
       .from("postes_bases_clients")
-      .select("poste_base_id, tenue_id, tenue (id, valeur, description)")
+      .select("poste_base_id, tenue_id, parametrages!tenue_id (id, valeur, description)")
       .eq("client_id", client.id);
     if (data) {
       const mapping: Record<string, Parametrage | null> = {};
       data.forEach((row: any) => {
-        mapping[row.poste_base_id] = row.tenue
+        mapping[row.poste_base_id] = row.parametrages
           ? {
-              id: row.tenue.id,
-              valeur: row.tenue.valeur,
-              description: row.tenue.description,
+              id: row.parametrages.id,
+              valeur: row.parametrages.valeur,
+              description: row.parametrages.description,
               categorie: "tenue",
               created_at: "",
               updated_at: "",
