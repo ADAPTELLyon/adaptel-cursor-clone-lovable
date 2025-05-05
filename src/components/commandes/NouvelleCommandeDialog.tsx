@@ -1,290 +1,275 @@
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-  } from "@/components/ui/dialog"
-  import { Button } from "@/components/ui/button"
-  import { Input } from "@/components/ui/input"
-  import { Textarea } from "@/components/ui/textarea"
-  import { Switch } from "@/components/ui/switch"
-  import { secteursList } from "@/lib/secteurs"
-  import { useClientsBySecteur } from "@/hooks/useClientsBySecteur"
-  import { usePostesTypesByClient } from "@/hooks/usePostesTypesByClient"
-  import { useEffect, useState } from "react"
-  import { format, addWeeks, startOfWeek, addDays } from "date-fns"
-  import { fr } from "date-fns/locale"
-  
-  export default function NouvelleCommandeDialog({
-    open,
-    onOpenChange,
-  }: {
-    open: boolean
-    onOpenChange: (open: boolean) => void
-  }) {
-    const [secteur, setSecteur] = useState<string>("")
-    const [clientId, setClientId] = useState<string>("")
-    const [service, setService] = useState<string>("")
-    const [semaine, setSemaine] = useState<string>("")
-    const [commentaire, setCommentaire] = useState<string>("")
-    const [motif, setMotif] = useState<string>("Extra Usage constant")
-    const [joursState, setJoursState] = useState<Record<string, boolean>>({})
-    const [semainesDisponibles, setSemainesDisponibles] = useState<
-      { value: string; label: string; startDate: Date }[]
-    >([])
-  
-    const { clients } = useClientsBySecteur(secteur)
-    const selectedClient = clients.find((c) => c.id === clientId)
-    const services = selectedClient?.services || []
-  
-    const { postesTypes } = usePostesTypesByClient(clientId, secteur)
-  
-    useEffect(() => {
-      const semaines: { value: string; label: string; startDate: Date }[] = []
-      const today = new Date()
-      const start = addWeeks(today, -6)
-      const end = addWeeks(today, 16)
-  
-      let current = startOfWeek(start, { weekStartsOn: 1 })
-      while (current <= end) {
-        const weekNumber = getWeekNumber(current)
-        const weekStart = format(current, "dd MMM", { locale: fr })
-        const weekEnd = format(addDays(current, 6), "dd MMM", { locale: fr })
-        semaines.push({
-          value: weekNumber.toString(),
-          label: `Semaine ${weekNumber} - ${weekStart} au ${weekEnd}`,
-          startDate: current,
-        })
-        current = addWeeks(current, 1)
-      }
-      setSemainesDisponibles(semaines)
-      const currentWeek = getWeekNumber(new Date())
-      setSemaine(currentWeek.toString())
-    }, [])
-  
-    const semaineObj = semainesDisponibles.find((s) => s.value === semaine)
-    const joursSemaine = semaineObj
-      ? Array.from({ length: 7 }, (_, i) => {
-          const date = addDays(semaineObj.startDate, i)
-          return {
-            jour: format(date, "EEEE dd MMMM", { locale: fr }),
-            key: format(date, "yyyy-MM-dd"),
-          }
-        })
-      : []
-  
-    const toggleJour = (key: string) => {
-      setJoursState((prev) => ({ ...prev, [key]: !prev[key] }))
+import { useState } from "react";
+import { cn } from "@/lib/utils";
+import { Pencil, Check, Plus } from "lucide-react";
+import { format, startOfWeek, addDays, getWeek } from "date-fns";
+import { fr } from "date-fns/locale";
+import { statutColors, indicateurColors } from "@/lib/colors";
+import { secteursList } from "@/lib/secteurs";
+import { supabase } from "@/lib/supabase";
+import type { CommandeWithCandidat, JourPlanning } from "@/types/types-front";
+import { Input } from "@/components/ui/input";
+
+export function PlanningClientTable({
+  planning,
+  selectedSecteurs,
+  selectedSemaine,
+}: {
+  planning: Record<string, JourPlanning[]>;
+  selectedSecteurs: string[];
+  selectedSemaine: string;
+}) {
+  const [editId, setEditId] = useState<string | null>(null);
+  const [heureTemp, setHeureTemp] = useState<Record<string, string>>({});
+
+  const updateHeure = async (
+    commande: CommandeWithCandidat,
+    champ: keyof CommandeWithCandidat,
+    nouvelleValeur: string
+  ) => {
+    const isValidTime = /^\d{2}:\d{2}$/.test(nouvelleValeur);
+    if (!isValidTime) {
+      console.error("Format heure invalide :", nouvelleValeur);
+      return;
     }
-  
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>Nouvelle commande</DialogTitle>
-          </DialogHeader>
-  
-          <div className="grid grid-cols-2 gap-6 mt-4">
-            {/* Partie gauche */}
-            <div className="space-y-6 border p-4 rounded-lg shadow-md bg-white">
-              {/* Secteurs */}
-              <div className="space-y-2">
-                <div className="font-semibold text-sm">Secteur</div>
-                <div className="grid grid-cols-5 gap-2">
-                  {secteursList.map(({ label, icon: Icon }) => (
-                    <Button
-                      key={label}
-                      variant={secteur === label ? "default" : "outline"}
-                      className="flex items-center justify-center gap-1 text-xs py-2"
-                      onClick={() => {
-                        setSecteur(label)
-                        setClientId("")
-                        setService("")
-                      }}
-                    >
-                      <Icon className="h-4 w-4" />
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-  
-              {/* Client */}
-              <div className="space-y-2">
-                <div className="font-semibold text-sm">Client</div>
-                <select
-                  className="border rounded w-full px-2 py-2 text-sm"
-                  value={clientId}
-                  onChange={(e) => {
-                    setClientId(e.target.value)
-                    setService("")
-                  }}
-                >
-                  <option value="">Sélectionner un client</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.nom}
-                    </option>
-                  ))}
-                </select>
-              </div>
-  
-              {/* Service */}
-              <div className="space-y-2">
-                <div className="font-semibold text-sm">Service</div>
-                <select
-                  className={`border rounded w-full px-2 py-2 text-sm ${
-                    services.length === 0 ? "opacity-50 cursor-not-allowed bg-gray-100" : ""
-                  }`}
-                  value={service}
-                  onChange={(e) => setService(e.target.value)}
-                  disabled={services.length === 0}
-                >
-                  <option value="">
-                    {services.length === 0
-                      ? "Aucun service disponible"
-                      : "Sélectionner un service"}
-                  </option>
-                  {services.map((svc) => (
-                    <option key={svc} value={svc}>
-                      {svc}
-                    </option>
-                  ))}
-                </select>
-              </div>
-  
-              {/* Semaine */}
-              <div className="space-y-2">
-                <div className="font-semibold text-sm">Semaine</div>
-                <select
-                  className="border rounded w-full px-2 py-2 text-sm"
-                  value={semaine}
-                  onChange={(e) => setSemaine(e.target.value)}
-                >
-                  {semainesDisponibles.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-  
-              {/* Motif */}
-              <div className="space-y-2">
-                <div className="font-semibold text-sm">Motif contrat</div>
-                <select
-                  className="border rounded w-full px-2 py-2 text-sm"
-                  value={motif}
-                  onChange={(e) => setMotif(e.target.value)}
-                >
-                  <option>Extra Usage constant</option>
-                  <option>Accroissement d’activité</option>
-                  <option>Remplacement de personnel</option>
-                </select>
-                {(motif === "Accroissement d’activité" ||
-                  motif === "Remplacement de personnel") && (
-                  <Input
-                    placeholder="Précisez le motif"
-                    className="mt-2"
-                    value={commentaire}
-                    onChange={(e) => setCommentaire(e.target.value)}
-                  />
-                )}
-              </div>
-  
-              {/* Info */}
-              <div className="space-y-2">
-                <div className="font-semibold text-sm">Information</div>
-                <Textarea
-                  placeholder="Informations complémentaires..."
-                  value={commentaire}
-                  onChange={(e) => setCommentaire(e.target.value)}
-                />
-              </div>
-  
-              {/* Poste type */}
-              <div className="space-y-2">
-                <div className="font-semibold text-sm">Poste type</div>
-                <select
-                  className="border rounded w-full px-2 py-2 text-sm"
-                  disabled={!postesTypes || postesTypes.length === 0}
-                >
-                  <option>
-                    {postesTypes.length === 0
-                      ? "Aucun poste type disponible"
-                      : "Sélectionner un poste type"}
-                  </option>
-                  {postesTypes.map((pt) => (
-                    <option key={pt.id} value={pt.id}>
-                      {pt.nom}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-  
-            {/* Partie droite */}
-            <div className="space-y-4 border p-4 rounded-lg shadow-md bg-white">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold text-sm">Activer toutes les journées</div>
-                <Switch
-                  onCheckedChange={(val) => {
-                    const newState: Record<string, boolean> = {}
-                    joursSemaine.forEach((j) => {
-                      newState[j.key] = val
-                    })
-                    setJoursState(newState)
-                  }}
-                />
-              </div>
-              <Button variant="outline" size="sm">
-                Répliquer les heures
-              </Button>
-              <div className="grid grid-cols-1 gap-2">
-                {joursSemaine.map((j) => (
-                  <div
-                    key={j.key}
-                    className="border rounded p-3 space-y-2 bg-gray-50 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-medium">{j.jour}</div>
-                      <Switch
-                        checked={joursState[j.key] || false}
-                        onCheckedChange={() => toggleJour(j.key)}
-                      />
-                    </div>
-  
-                    {joursState[j.key] && (
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <Input type="time" placeholder="Heure début matin" />
-                        <Input type="time" placeholder="Heure fin matin" />
-                        <Input type="time" placeholder="Heure début soir" />
-                        <Input type="time" placeholder="Heure fin soir" />
-                        <Input type="number" placeholder="Nb de personnes" min={1} />
+
+    const { error } = await supabase
+      .from("commandes")
+      .update({ [champ]: nouvelleValeur })
+      .eq("id", commande.id);
+
+    if (error) {
+      console.error("Erreur enregistrement heure :", error);
+    } else {
+      commande[champ] = nouvelleValeur;
+    }
+  };
+
+  const groupesParSemaine: Record<
+    string,
+    Record<string, JourPlanning[][]>
+  > = {};
+
+  Object.entries(planning).forEach(([client, jours]) => {
+    jours.forEach((jour) => {
+      const semaine = getWeek(new Date(jour.date), { weekStartsOn: 1 }).toString();
+      if (!groupesParSemaine[semaine]) groupesParSemaine[semaine] = {};
+      const cle = `${client}||${jour.secteur}||${jour.service || ""}`;
+
+      if (!groupesParSemaine[semaine][cle]) {
+        // Créer une première ligne vide (7 cases)
+        const newRow = Array(7).fill(null) as (JourPlanning | null)[];
+        const dayIndex = new Date(jour.date).getDay() === 0 ? 6 : new Date(jour.date).getDay() - 1;
+        newRow[dayIndex] = jour;
+        groupesParSemaine[semaine][cle] = [newRow];
+      } else {
+        const lignesExistantes = groupesParSemaine[semaine][cle];
+        const dayIndex = new Date(jour.date).getDay() === 0 ? 6 : new Date(jour.date).getDay() - 1;
+        let placé = false;
+
+        // Essayer de remplir une ligne existante si case libre
+        for (const ligne of lignesExistantes) {
+          if (!ligne[dayIndex]) {
+            ligne[dayIndex] = jour;
+            placé = true;
+            break;
+          }
+        }
+
+        // Si aucune ligne n'avait de place, on crée une nouvelle ligne
+        if (!placé) {
+          const newRow = Array(7).fill(null) as (JourPlanning | null)[];
+          newRow[dayIndex] = jour;
+          groupesParSemaine[semaine][cle].push(newRow);
+        }
+      }
+    });
+  });
+
+  return (
+    <div className="space-y-8 mt-8">
+      {Object.entries(groupesParSemaine).map(([semaine, groupes]) => {
+        const semaineTexte = `Semaine ${semaine}`;
+        const baseDate = startOfWeek(new Date(), { weekStartsOn: 1 });
+        const semaineDifference = parseInt(semaine) - getWeek(baseDate, { weekStartsOn: 1 });
+        const lundiSemaine = addDays(baseDate, semaineDifference * 7);
+
+        const jours = Array.from({ length: 7 }, (_, i) => {
+          const jour = addDays(lundiSemaine, i);
+          return {
+            date: jour,
+            dateStr: format(jour, "yyyy-MM-dd"),
+            label: format(jour, "eeee dd MMMM", { locale: fr }),
+          };
+        });
+
+        return (
+          <div key={semaine} className="border rounded-lg overflow-hidden shadow-sm">
+            <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
+              <div className="p-3 border-r flex items-center justify-center">{semaineTexte}</div>
+              {jours.map((jour, index) => {
+                const toutesCommandes = Object.values(groupes)
+                  .flatMap((lignes) => lignes.flat())
+                  .map((ligne) => ligne[index])
+                  .filter((j) => j !== null) as JourPlanning[];
+
+                const nbEnRecherche = toutesCommandes
+                  .flatMap((j) => j.commandes)
+                  .filter((cmd) => cmd.statut === "En recherche").length;
+
+                const totalMissions = toutesCommandes.flatMap((j) => j.commandes).length;
+
+                return (
+                  <div key={index} className="p-3 border-r text-center relative leading-tight">
+                    <div>{jour.label.split(" ")[0]}</div>
+                    <div className="text-xs">{jour.label.split(" ").slice(1).join(" ")}</div>
+                    {totalMissions === 0 ? (
+                      <div className="absolute top-1 right-1">
+                        <div className="h-5 w-5 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs">–</div>
+                      </div>
+                    ) : nbEnRecherche > 0 ? (
+                      <div
+                        className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center"
+                        style={{ backgroundColor: indicateurColors["En recherche"], color: "white" }}
+                      >
+                        {nbEnRecherche}
+                      </div>
+                    ) : (
+                      <div className="absolute top-1 right-1">
+                        <div className="h-5 w-5 rounded-full bg-[#a9d08e] flex items-center justify-center">
+                          <Check className="w-4 h-4 text-white" />
+                        </div>
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-              <div className="pt-4">
-                <Button className="w-full bg-[#840404] hover:bg-[#750303] text-white">
-                  Valider
-                </Button>
-              </div>
+                );
+              })}
             </div>
+
+            {Object.entries(groupes).map(([key, lignes]) => {
+              const [clientNom, secteur, service] = key.split("||");
+              const secteurInfo = secteursList.find((s) => s.value === secteur);
+
+              return lignes.map((ligne, idx) => (
+                <div key={`${key}-${idx}`} className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm">
+                  <div className="p-4 border-r space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold">{clientNom}</span>
+                      <Pencil className="h-4 w-4 text-gray-400 cursor-pointer" />
+                    </div>
+                    <div className="flex items-start gap-2 flex-wrap text-sm">
+                      {secteurInfo && (
+                        <div className="text-[13px] px-2 py-1 rounded bg-gray-100 text-gray-800 flex items-center gap-1">
+                          <secteurInfo.icon className="h-3 w-3" /> {secteurInfo.label}
+                        </div>
+                      )}
+                      {service && (
+                        <div className="text-[13px] px-2 py-1 rounded bg-gray-100 text-gray-800 italic">
+                          {service}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-[13px] text-gray-500">{semaineTexte}</div>
+                  </div>
+
+                  {ligne.map((jour, index) => {
+                    const commande = jour?.commandes[0];
+                    const isEtages = secteur === "Étages";
+
+                    return (
+                      <div key={index} className="border-r p-2 h-28 relative">
+                        {!commande ? (
+                          <div className="h-full bg-gray-100 rounded flex items-center justify-center">
+                            <Plus className="h-4 w-4 text-gray-400" />
+                          </div>
+                        ) : (
+                          <div
+                            className={cn("h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative")}
+                            style={{
+                              backgroundColor: statutColors[commande.statut]?.bg || "#e5e7eb",
+                              color: statutColors[commande.statut]?.text || "#000000",
+                            }}
+                          >
+                            <div className="leading-tight font-semibold">
+                              {commande.statut === "Validé" && commande.candidat ? (
+                                <>
+                                  <span>{commande.candidat.nom}</span>
+                                  <span className="block text-xs font-normal">{commande.candidat.prenom}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="font-medium">{commande.statut}</span>
+                                  <span className="block text-xs font-normal h-[1.25rem]"></span>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="text-[13px] font-semibold mt-1 space-y-1">
+                              {["matin", ...(isEtages ? [] : ["soir"])].map((creneau) => {
+                                const heureDebut = commande[`heure_debut_${creneau}` as keyof CommandeWithCandidat] ?? "";
+                                const heureFin = commande[`heure_fin_${creneau}` as keyof CommandeWithCandidat] ?? "";
+                                const keyDebut = `${commande.id}-${creneau}-debut`;
+                                const keyFin = `${commande.id}-${creneau}-fin`;
+
+                                return (
+                                  <div key={creneau} className="flex gap-1 items-center">
+                                    {[{ key: keyDebut, value: heureDebut, champ: `heure_debut_${creneau}` }, { key: keyFin, value: heureFin, champ: `heure_fin_${creneau}` }].map(
+                                      ({ key, value, champ }) => (
+                                        editId === key ? (
+                                          <Input
+                                            key={key}
+                                            type="time"
+                                            value={String(heureTemp[key] ?? value).slice(0, 5)}
+                                            autoFocus
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setHeureTemp((prev) => ({ ...prev, [key]: val }));
+                                            }}
+                                            onBlur={async () => {
+                                              const rawValue = heureTemp[key] ?? "";
+                                              await updateHeure(commande, champ as keyof CommandeWithCandidat, rawValue);
+                                              setHeureTemp((prev) => ({ ...prev, [key]: rawValue }));
+                                              setEditId(null);
+                                            }}
+                                            className="w-16 text-[13px] px-1 rounded text-black bg-transparent border-none focus:border focus:bg-white"
+                                          />
+                                        ) : (
+                                          <span
+                                            key={key}
+                                            onClick={() => {
+                                              setEditId(key);
+                                              setHeureTemp((prev) => ({
+                                                ...prev,
+                                                [key]: String(value),
+                                              }));
+                                            }}
+                                            className="cursor-pointer hover:underline"
+                                          >
+                                            {String(value).slice(0, 5) || "–"}
+                                          </span>
+                                        )
+                                      )
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div className="absolute top-1 right-1">
+                              <div className="rounded-full p-1 bg-white/40">
+                                <Plus className="h-3 w-3 text-white" />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ));
+            })}
           </div>
-        </DialogContent>
-      </Dialog>
-    )
-  }
-  
-  function getWeekNumber(date: Date) {
-    const start = new Date(date.getFullYear(), 0, 1)
-    const diff =
-      (+date -
-        +start +
-        (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) /
-      86400000
-    return Math.floor((diff + start.getDay() + 6) / 7)
-  }
-  
+        );
+      })}
+    </div>
+  );
+}

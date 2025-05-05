@@ -5,7 +5,6 @@ import { format, startOfWeek, addDays, getWeek } from "date-fns";
 import { fr } from "date-fns/locale";
 import { statutColors, indicateurColors } from "@/lib/colors";
 import { secteursList } from "@/lib/secteurs";
-import { supabase } from "@/lib/supabase";
 import type { CommandeWithCandidat, JourPlanning } from "@/types/types-front";
 import { Input } from "@/components/ui/input";
 
@@ -21,41 +20,40 @@ export function PlanningClientTable({
   const [editId, setEditId] = useState<string | null>(null);
   const [heureTemp, setHeureTemp] = useState<Record<string, string>>({});
 
-  const updateHeure = async (
-    commande: CommandeWithCandidat,
-    champ: keyof CommandeWithCandidat,
-    nouvelleValeur: string
-  ) => {
-    const isValidTime = /^\d{2}:\d{2}$/.test(nouvelleValeur);
-    if (!isValidTime) {
-      console.error("Format heure invalide :", nouvelleValeur);
-      return;
-    }
-
-    const { error } = await supabase
-      .from("commandes")
-      .update({ [champ]: nouvelleValeur })
-      .eq("id", commande.id);
-
-    if (error) {
-      console.error("Erreur enregistrement heure :", error);
-    } else {
-      commande[champ] = nouvelleValeur;
-    }
-  };
-
-  const groupesParSemaine: Record<string, [string, JourPlanning[]][]> = {};
+  const groupesParSemaine: Record<
+    string,
+    Record<string, (JourPlanning | null)[]>
+  > = {};
 
   Object.entries(planning).forEach(([client, jours]) => {
     jours.forEach((jour) => {
       const semaine = getWeek(new Date(jour.date), { weekStartsOn: 1 }).toString();
-      if (!groupesParSemaine[semaine]) groupesParSemaine[semaine] = [];
+      if (!groupesParSemaine[semaine]) groupesParSemaine[semaine] = {};
       const cle = `${client}||${jour.secteur}||${jour.service || ""}`;
-      const exist = groupesParSemaine[semaine].find(([k]) => k === cle);
-      if (!exist) {
-        groupesParSemaine[semaine].push([cle, [jour]]);
+
+      if (!groupesParSemaine[semaine][cle]) {
+        const newRow = Array(7).fill(null) as (JourPlanning | null)[];
+        const dayIndex = new Date(jour.date).getDay() === 0 ? 6 : new Date(jour.date).getDay() - 1;
+        newRow[dayIndex] = jour;
+        groupesParSemaine[semaine][cle] = [newRow];
       } else {
-        exist[1].push(jour);
+        const lignesExistantes = groupesParSemaine[semaine][cle];
+        const dayIndex = new Date(jour.date).getDay() === 0 ? 6 : new Date(jour.date).getDay() - 1;
+        let placé = false;
+
+        for (const ligne of lignesExistantes) {
+          if (!ligne[dayIndex]) {
+            ligne[dayIndex] = jour;
+            placé = true;
+            break;
+          }
+        }
+
+        if (!placé) {
+          const newRow = Array(7).fill(null) as (JourPlanning | null)[];
+          newRow[dayIndex] = jour;
+          lignesExistantes.push(newRow);
+        }
       }
     });
   });
@@ -77,22 +75,24 @@ export function PlanningClientTable({
           };
         });
 
-        const joursFiltres = groupes
-          .flatMap(([_, jours]) => jours)
-          .filter((j) => selectedSecteurs.includes(j.secteur));
+        const groupesFiltres = Object.entries(groupes).filter(([cle]) => {
+          const secteur = cle.split("||")[1];
+          return selectedSecteurs.includes(secteur);
+        });
 
         return (
           <div key={semaine} className="border rounded-lg overflow-hidden shadow-sm">
             <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
               <div className="p-3 border-r flex items-center justify-center">{semaineTexte}</div>
               {jours.map((jour, index) => {
-                const missionsDuJour = joursFiltres.filter(
-                  (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
+                const commandesJour = groupesFiltres.flatMap(([_, lignes]) =>
+                  lignes
+                    .flat()
+                    .filter((j) => j?.date && format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr)
+                    .flatMap((j) => j?.commandes || [])
                 );
-                const nbEnRecherche = missionsDuJour
-                  .flatMap((j) => j.commandes)
-                  .filter((cmd) => cmd.statut === "En recherche").length;
-                const totalMissions = missionsDuJour.flatMap((j) => j.commandes).length;
+                const nbEnRecherche = commandesJour.filter((cmd) => cmd.statut === "En recherche").length;
+                const totalMissions = commandesJour.length;
 
                 return (
                   <div key={index} className="p-3 border-r text-center relative leading-tight">
@@ -121,12 +121,15 @@ export function PlanningClientTable({
               })}
             </div>
 
-            {groupes.map(([key, joursGroupe]) => {
+            {groupesFiltres.map(([key, lignes]) => {
               const [clientNom, secteur, service] = key.split("||");
               const secteurInfo = secteursList.find((s) => s.value === secteur);
 
-              return (
-                <div key={key} className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm">
+              return lignes.map((ligne, idx) => (
+                <div
+                  key={`${key}-ligne-${idx}`}
+                  className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm"
+                >
                   <div className="p-4 border-r space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="font-semibold">{clientNom}</span>
@@ -147,11 +150,8 @@ export function PlanningClientTable({
                     <div className="text-[13px] text-gray-500">{semaineTexte}</div>
                   </div>
 
-                  {jours.map((jour, index) => {
-                    const commande = joursGroupe.find(
-                      (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
-                    )?.commandes[0];
-
+                  {ligne.map((jour, index) => {
+                    const commande = jour?.commandes[0];
                     const isEtages = secteur === "Étages";
 
                     return (
@@ -162,7 +162,9 @@ export function PlanningClientTable({
                           </div>
                         ) : (
                           <div
-                            className={cn("h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative")}
+                            className={cn(
+                              "h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative"
+                            )}
                             style={{
                               backgroundColor: statutColors[commande.statut]?.bg || "#e5e7eb",
                               color: statutColors[commande.statut]?.text || "#000000",
@@ -186,48 +188,10 @@ export function PlanningClientTable({
                               {["matin", ...(isEtages ? [] : ["soir"])].map((creneau) => {
                                 const heureDebut = commande[`heure_debut_${creneau}` as keyof CommandeWithCandidat] ?? "";
                                 const heureFin = commande[`heure_fin_${creneau}` as keyof CommandeWithCandidat] ?? "";
-                                const keyDebut = `${commande.id}-${creneau}-debut`;
-                                const keyFin = `${commande.id}-${creneau}-fin`;
 
                                 return (
                                   <div key={creneau} className="flex gap-1 items-center">
-                                    {[{ key: keyDebut, value: heureDebut, champ: `heure_debut_${creneau}` }, { key: keyFin, value: heureFin, champ: `heure_fin_${creneau}` }].map(
-                                      ({ key, value, champ }) => (
-                                        editId === key ? (
-                                          <Input
-                                            key={key}
-                                            type="time"
-                                            value={String(heureTemp[key] ?? value).slice(0, 5)}
-                                            autoFocus
-                                            onChange={(e) => {
-                                              const val = e.target.value;
-                                              setHeureTemp((prev) => ({ ...prev, [key]: val }));
-                                            }}
-                                            onBlur={async () => {
-                                              const rawValue = heureTemp[key] ?? "";
-                                              await updateHeure(commande, champ as keyof CommandeWithCandidat, rawValue);
-                                              setHeureTemp((prev) => ({ ...prev, [key]: rawValue }));
-                                              setEditId(null);
-                                            }}
-                                            className="w-16 text-[13px] px-1 rounded text-black bg-transparent border-none focus:border focus:bg-white"
-                                          />
-                                        ) : (
-                                          <span
-                                            key={key}
-                                            onClick={() => {
-                                              setEditId(key);
-                                              setHeureTemp((prev) => ({
-                                                ...prev,
-                                                [key]: String(value),
-                                              }));
-                                            }}
-                                            className="cursor-pointer hover:underline"
-                                          >
-                                            {String(value).slice(0, 5) || "–"}
-                                          </span>
-                                        )
-                                      )
-                                    )}
+                                    <span>{heureDebut ? `${heureDebut.slice(0, 5)} - ${heureFin.slice(0, 5)}` : "–"}</span>
                                   </div>
                                 );
                               })}
@@ -244,7 +208,7 @@ export function PlanningClientTable({
                     );
                   })}
                 </div>
-              );
+              ));
             })}
           </div>
         );

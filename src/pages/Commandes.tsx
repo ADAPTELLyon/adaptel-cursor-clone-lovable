@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import MainLayout from "@/components/main-layout";
 import { SectionFixeCommandes } from "@/components/commandes/section-fixe-commandes";
 import { PlanningClientTable } from "@/components/commandes/PlanningClientTable";
+import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog";
 import { supabase } from "@/lib/supabase";
 import { addDays, format, startOfWeek, getWeek } from "date-fns";
 import { JourPlanning, CommandeWithCandidat } from "@/types/types-front";
@@ -13,83 +14,75 @@ export default function Commandes() {
   const [semaineEnCours, setSemaineEnCours] = useState(true);
   const [semaine, setSemaine] = useState(format(new Date(), "yyyy-MM-dd"));
   const [selectedSemaine, setSelectedSemaine] = useState("Toutes");
-  const [semaineDates, setSemaineDates] = useState<Date[]>([]);
   const [client, setClient] = useState("");
   const [search, setSearch] = useState("");
   const [toutAfficher, setToutAfficher] = useState(false);
   const [enRecherche, setEnRecherche] = useState(false);
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 });
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [openDialog, setOpenDialog] = useState(false);
+
+  const fetchPlanning = async () => {
+    const lundi = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const semaineCourante = getWeek(lundi, { weekStartsOn: 1 }).toString();
+
+    const { data, error } = await supabase
+      .from("commandes")
+      .select(`
+        id, date, statut, secteur, service, client_id,
+        heure_debut_matin, heure_fin_matin,
+        heure_debut_soir, heure_fin_soir,
+        created_at,
+        candidats (id, nom, prenom),
+        clients (nom)
+      `)
+      .gte("date", lundi.toISOString().slice(0, 10));
+
+    if (error || !data) {
+      console.error("Erreur Supabase :", error);
+      return;
+    }
+
+    const map: Record<string, JourPlanning[]> = {};
+    for (const item of data as any[]) {
+      const nomClient = item.clients?.nom || item.client_id || "Client inconnu";
+      if (!map[nomClient]) map[nomClient] = [];
+
+      const jour: JourPlanning = {
+        date: item.date,
+        secteur: item.secteur,
+        service: item.service,
+        commandes: [
+          {
+            id: item.id,
+            date: item.date,
+            statut: item.statut,
+            secteur: item.secteur,
+            service: item.service,
+            client_id: item.client_id,
+            candidat_id: item.candidats ? item.candidats.id : null,
+            heure_debut_matin: item.heure_debut_matin,
+            heure_fin_matin: item.heure_fin_matin,
+            heure_debut_soir: item.heure_debut_soir,
+            heure_fin_soir: item.heure_fin_soir,
+            created_at: item.created_at,
+            candidat: item.candidats
+              ? { nom: item.candidats.nom, prenom: item.candidats.prenom }
+              : null,
+          } as CommandeWithCandidat,
+        ],
+      };
+
+      map[nomClient].push(jour);
+    }
+
+    setPlanning(map);
+    setSelectedSemaine(semaineCourante);
+  };
 
   useEffect(() => {
-    const baseDate = new Date(semaine || new Date());
-    const dates = Array.from({ length: 7 }, (_, i) =>
-      addDays(startOfWeek(baseDate, { weekStartsOn: 1 }), i)
-    );
-    setSemaineDates(dates);
-  }, [semaine]);
-
-  useEffect(() => {
-    const fetchPlanning = async () => {
-      const lundi = startOfWeek(new Date(), { weekStartsOn: 1 });
-      const semaineCourante = getWeek(lundi, { weekStartsOn: 1 }).toString();
-
-      const { data, error } = await supabase
-        .from("commandes")
-        .select(`
-          id, date, statut, secteur, service, client_id,
-          heure_debut_matin, heure_fin_matin,
-          heure_debut_soir, heure_fin_soir,
-          created_at,
-          candidat: candidat_id (nom, prenom),
-          client:client_id (nom)
-        `)
-        .gte("date", lundi.toISOString().slice(0, 10));
-
-      if (error || !data) {
-        console.error("Erreur Supabase :", error);
-        return;
-      }
-
-      const map: Record<string, JourPlanning[]> = {};
-      for (const item of data as any[]) {
-        const nomClient = item.client?.nom || item.client_id || "Client inconnu";
-        if (!map[nomClient]) map[nomClient] = [];
-
-        const jour: JourPlanning = {
-          date: item.date,
-          secteur: item.secteur,
-          service: item.service,
-          commandes: [
-            {
-              id: item.id,
-              date: item.date,
-              statut: item.statut,
-              secteur: item.secteur,
-              service: item.service,
-              client_id: item.client_id,
-              candidat_id: item.candidat_id ?? null,
-              heure_debut_matin: item.heure_debut_matin,
-              heure_fin_matin: item.heure_fin_matin,
-              heure_debut_soir: item.heure_debut_soir,
-              heure_fin_soir: item.heure_fin_soir,
-              created_at: item.created_at,
-              candidat:
-                item.candidat && typeof item.candidat === "object"
-                  ? { nom: item.candidat.nom, prenom: item.candidat.prenom }
-                  : null,
-            } as CommandeWithCandidat,
-          ],
-        };
-
-        map[nomClient].push(jour);
-      }
-
-      setPlanning(map);
-      setSelectedSemaine(semaineCourante);
-    };
-
     fetchPlanning();
-  }, []);
+  }, [refreshTrigger]);
 
   useEffect(() => {
     const semaineActuelle = getWeek(new Date(), { weekStartsOn: 1 });
@@ -253,6 +246,11 @@ export default function Commandes() {
         planning={filteredPlanning}
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
+      />
+      <NouvelleCommandeDialog
+        open={openDialog}
+        onOpenChange={setOpenDialog}
+        onRefresh={() => setRefreshTrigger((x) => x + 1)}
       />
     </MainLayout>
   );

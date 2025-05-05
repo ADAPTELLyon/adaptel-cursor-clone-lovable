@@ -13,6 +13,14 @@ export function useClientsBySecteur(secteur: string) {
       return
     }
 
+    // Met en minuscules + retire les accents
+    const secteurClean = secteur
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+
+    console.log("🔍 Recherche des clients pour secteur (nettoyé) :", secteurClean)
+
     const fetchClients = async () => {
       setLoading(true)
       setError(null)
@@ -20,7 +28,7 @@ export function useClientsBySecteur(secteur: string) {
       const { data, error } = await supabase
         .from("clients")
         .select("id, nom, services, secteurs")
-        .contains("secteurs", [secteur])
+        .contains("secteurs", [secteurClean])
         .order("nom", { ascending: true })
 
       if (error) {

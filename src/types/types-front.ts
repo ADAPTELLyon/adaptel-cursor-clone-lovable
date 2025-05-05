@@ -88,7 +88,7 @@ export type PosteType = {
     heure_fin_matin?: string | null;
     heure_debut_soir?: string | null;
     heure_fin_soir?: string | null;
-    temps_pause_minutes?: string | null; // ✅ spécifique pour les pauses (nullable)
+    temps_pause?: string | null; // ✅ devient un champ 'time' (HH:MM:SS) nullable
     created_at: string;
     poste_base?: PosteBase | null;       // ✅ pour faciliter les jointures dans le front
 };
@@ -109,5 +109,5 @@ export type JourPlanning = {
     date: string;
     secteur: string;
     service?: string | null;
-    commandes: CommandeWithCandidat[];
+    commandes: CommandeWithCandidat[]; 
 };

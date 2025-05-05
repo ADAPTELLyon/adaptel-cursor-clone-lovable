@@ -17,18 +17,67 @@ export function usePostesTypesByClient(clientId: string, secteur: string) {
       setLoading(true)
       setError(null)
 
-      const { data, error } = await supabase
-        .from("postes_types")
-        .select("id, nom, client_id, secteur")
-        .eq("client_id", clientId)
-        .eq("secteur", secteur)
-        .order("nom", { ascending: true })
+      try {
+        console.log("🔎 Recherche des postes types pour client:", clientId, "secteur:", secteur)
 
-      if (error) {
-        console.error("Erreur récupération postes types :", error)
-        setError(error.message)
-      } else {
-        setPostesTypes((data as PosteType[]) || [])
+        const { data, error } = await supabase
+          .from("postes_types_clients")
+          .select(
+            `
+              id,
+              client_id,
+              poste_base_id,
+              nom,
+              heure_debut_matin,
+              heure_fin_matin,
+              heure_debut_soir,
+              heure_fin_soir,
+              temps_pause_minutes,
+              created_at,
+              poste_base:poste_base_id (
+                id,
+                secteur,
+                nom,
+                created_at
+              )
+            `
+          )
+          .eq("client_id", clientId)
+          .order("nom", { ascending: true })
+
+        console.log("📦 Données brutes Supabase :", data)
+
+        if (error) {
+          console.error("❌ Erreur récupération postes types :", error)
+          setError(error.message)
+          setPostesTypes([])
+        } else {
+          // On mappe pour "compléter" le poste_base avec un champ actif:false (pour correspondre à ton type)
+          const fixedData = (data as any[]).map((item) => ({
+            ...item,
+            poste_base: item.poste_base
+              ? {
+                  ...item.poste_base,
+                  actif: false, // on complète pour éviter le bug TS
+                }
+              : null,
+          }))
+
+          // Puis on filtre par secteur (nettoyé)
+          const filtered = fixedData.filter((pt) => {
+            const secteurPoste = pt.poste_base?.secteur?.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            const secteurRecherche = secteur.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            return secteurPoste === secteurRecherche
+          })
+
+          console.log("✅ Postes types filtrés (par secteur):", filtered)
+
+          setPostesTypes(filtered as PosteType[])
+        }
+      } catch (err) {
+        console.error("❌ Erreur inattendue :", err)
+        setError("Erreur inattendue")
+        setPostesTypes([])
       }
 
       setLoading(false)
