@@ -20,9 +20,11 @@ import type { PosteType } from "@/types/types-front";
 export default function NouvelleCommandeDialog({
   open,
   onOpenChange,
+  onRefresh, // ✅ Ajout ici
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onRefresh?: () => void; // ✅ Ajout ici
 }) {
   const [secteur, setSecteur] = useState<string>("");
   const [clientId, setClientId] = useState<string>("");
@@ -35,6 +37,7 @@ export default function NouvelleCommandeDialog({
     { value: string; label: string; startDate: Date }[]
   >([]);
   const [heuresParJour, setHeuresParJour] = useState<
+
     Record<
       string,
       {

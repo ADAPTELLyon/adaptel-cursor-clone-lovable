@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { Pencil, Check, Plus } from "lucide-react";
+import { Pencil, Check, Plus, Info } from "lucide-react";
 import { format, startOfWeek, addDays, getWeek } from "date-fns";
 import { fr } from "date-fns/locale";
 import { statutColors, indicateurColors } from "@/lib/colors";
@@ -8,6 +8,8 @@ import { secteursList } from "@/lib/secteurs";
 import { supabase } from "@/lib/supabase";
 import type { CommandeWithCandidat, JourPlanning } from "@/types/types-front";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 
 export function PlanningClientTable({
   planning,
@@ -20,6 +22,8 @@ export function PlanningClientTable({
 }) {
   const [editId, setEditId] = useState<string | null>(null);
   const [heureTemp, setHeureTemp] = useState<Record<string, string>>({});
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [commentaireTemp, setCommentaireTemp] = useState<string>("");
 
   const updateHeure = async (
     commande: CommandeWithCandidat,
@@ -27,39 +31,34 @@ export function PlanningClientTable({
     nouvelleValeur: string
   ) => {
     const isValidTime = /^\d{2}:\d{2}$/.test(nouvelleValeur);
-    if (!isValidTime) {
-      console.error("Format heure invalide :", nouvelleValeur);
-      return;
-    }
-
+    if (!isValidTime) return;
     const { error } = await supabase
       .from("commandes")
       .update({ [champ]: nouvelleValeur })
       .eq("id", commande.id);
+    if (!error) commande[champ] = nouvelleValeur;
+  };
 
-    if (error) {
-      console.error("Erreur enregistrement heure :", error);
-    } else {
-      commande[champ] = nouvelleValeur;
+  const updateCommentaire = async (commande: CommandeWithCandidat) => {
+    const { error } = await supabase
+      .from("commandes")
+      .update({ commentaire: commentaireTemp })
+      .eq("id", commande.id);
+    if (!error) {
+      commande.commentaire = commentaireTemp;
+      setEditingCommentId(null);
     }
   };
 
-  const groupesParSemaine: Record<
-    string,
-    Record<string, JourPlanning[][]>
-  > = {};
+  const groupesParSemaine: Record<string, Record<string, JourPlanning[][]>> = {};
 
   Object.entries(planning).forEach(([client, jours]) => {
     jours.forEach((jour) => {
       const semaine = getWeek(new Date(jour.date), { weekStartsOn: 1 }).toString();
       if (!groupesParSemaine[semaine]) groupesParSemaine[semaine] = {};
-
       const cle = `${client}||${jour.secteur}||${jour.service || ""}`;
-      if (!groupesParSemaine[semaine][cle]) {
-        groupesParSemaine[semaine][cle] = [];
-      }
+      if (!groupesParSemaine[semaine][cle]) groupesParSemaine[semaine][cle] = [];
 
-      // Cherche une ligne existante à compléter
       let ligneExistante = groupesParSemaine[semaine][cle].find((ligne) => {
         return !ligne.some(
           (cell) =>
@@ -69,11 +68,9 @@ export function PlanningClientTable({
       });
 
       if (!ligneExistante) {
-        // Sinon créer une nouvelle ligne
         ligneExistante = [];
         groupesParSemaine[semaine][cle].push(ligneExistante);
       }
-
       ligneExistante.push(jour);
     });
   });
@@ -102,22 +99,17 @@ export function PlanningClientTable({
               {jours.map((jour, index) => {
                 let totalMissions = 0;
                 let nbEnRecherche = 0;
-
                 Object.values(groupes).forEach((groupe) =>
                   groupe.forEach((ligne) => {
                     const jourCell = ligne.find(
-                      (j) =>
-                        format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
+                      (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
                     );
                     if (jourCell) {
                       totalMissions += jourCell.commandes.length;
-                      nbEnRecherche += jourCell.commandes.filter(
-                        (cmd) => cmd.statut === "En recherche"
-                      ).length;
+                      nbEnRecherche += jourCell.commandes.filter((cmd) => cmd.statut === "En recherche").length;
                     }
                   })
                 );
-
                 return (
                   <div key={index} className="p-3 border-r text-center relative leading-tight">
                     <div>{jour.label.split(" ")[0]}</div>
@@ -127,15 +119,7 @@ export function PlanningClientTable({
                         <div className="h-5 w-5 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs">–</div>
                       </div>
                     ) : nbEnRecherche > 0 ? (
-                      <div
-                        className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center"
-                        style={{
-                          backgroundColor: indicateurColors["En recherche"],
-                          color: "white",
-                        }}
-                      >
-                        {nbEnRecherche}
-                      </div>
+                      <div className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center" style={{ backgroundColor: indicateurColors["En recherche"], color: "white" }}>{nbEnRecherche}</div>
                     ) : (
                       <div className="absolute top-1 right-1">
                         <div className="h-5 w-5 rounded-full bg-[#a9d08e] flex items-center justify-center">
@@ -153,36 +137,21 @@ export function PlanningClientTable({
               const secteurInfo = secteursList.find((s) => s.value === secteur);
 
               return lignes.map((ligne, ligneIndex) => (
-                <div
-                  key={`${key}-${ligneIndex}`}
-                  className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm"
-                >
+                <div key={`${key}-${ligneIndex}`} className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm">
                   <div className="p-4 border-r space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="font-semibold">{clientNom}</span>
                       <Pencil className="h-4 w-4 text-gray-400 cursor-pointer" />
                     </div>
                     <div className="flex items-start gap-2 flex-wrap text-sm">
-                      {secteurInfo && (
-                        <div className="text-[13px] px-2 py-1 rounded bg-gray-100 text-gray-800 flex items-center gap-1">
-                          <secteurInfo.icon className="h-3 w-3" /> {secteurInfo.label}
-                        </div>
-                      )}
-                      {service && (
-                        <div className="text-[13px] px-2 py-1 rounded bg-gray-100 text-gray-800 italic">
-                          {service}
-                        </div>
-                      )}
+                      {secteurInfo && <div className="text-[13px] px-2 py-1 rounded bg-gray-100 text-gray-800 flex items-center gap-1"><secteurInfo.icon className="h-3 w-3" /> {secteurInfo.label}</div>}
+                      {service && <div className="text-[13px] px-2 py-1 rounded bg-gray-100 text-gray-800 italic">{service}</div>}
                     </div>
                     <div className="text-[13px] text-gray-500">{semaineTexte}</div>
                   </div>
 
                   {jours.map((jour, index) => {
-                    const jourCell = ligne.find(
-                      (j) =>
-                        format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
-                    );
-
+                    const jourCell = ligne.find((j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr);
                     const commande = jourCell?.commandes[0];
                     const isEtages = secteur === "Étages";
 
@@ -193,39 +162,22 @@ export function PlanningClientTable({
                             <Plus className="h-4 w-4 text-gray-400" />
                           </div>
                         ) : (
-                          <div
-                            className={cn(
-                              "h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative"
-                            )}
-                            style={{
-                              backgroundColor: statutColors[commande.statut]?.bg || "#e5e7eb",
-                              color: statutColors[commande.statut]?.text || "#000000",
-                            }}
-                          >
+                          <div className={cn("h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative")}
+                            style={{ backgroundColor: statutColors[commande.statut]?.bg || "#e5e7eb", color: statutColors[commande.statut]?.text || "#000000" }}>
                             <div className="leading-tight font-semibold">
                               {commande.statut === "Validé" && commande.candidat ? (
-                                <>
-                                  <span>{commande.candidat.nom}</span>
-                                  <span className="block text-xs font-normal">{commande.candidat.prenom}</span>
-                                </>
+                                <><span>{commande.candidat.nom}</span><span className="block text-xs font-normal">{commande.candidat.prenom}</span></>
                               ) : (
-                                <>
-                                  <span className="font-medium">{commande.statut}</span>
-                                  <span className="block text-xs font-normal h-[1.25rem]"></span>
-                                </>
+                                <><span className="font-medium">{commande.statut}</span><span className="block text-xs font-normal h-[1.25rem]"></span></>
                               )}
                             </div>
-
                             <div className="text-[13px] font-semibold mt-1 space-y-1">
-                              {["matin", ...(isEtages ? [] : ["soir"])].map((creneau) => {
-                                const heureDebut =
-                                  commande[
-                                    `heure_debut_${creneau}` as keyof CommandeWithCandidat
-                                  ] ?? "";
-                                const heureFin =
-                                  commande[
-                                    `heure_fin_${creneau}` as keyof CommandeWithCandidat
-                                  ] ?? "";
+                              {[
+                                "matin",
+                                ...(isEtages ? [] : ["soir"]),
+                              ].map((creneau) => {
+                                const heureDebut = commande[`heure_debut_${creneau}` as keyof CommandeWithCandidat] ?? "";
+                                const heureFin = commande[`heure_fin_${creneau}` as keyof CommandeWithCandidat] ?? "";
                                 const keyDebut = `${commande.id}-${creneau}-debut`;
                                 const keyFin = `${commande.id}-${creneau}-fin`;
 
@@ -239,17 +191,10 @@ export function PlanningClientTable({
                                             type="time"
                                             value={String(heureTemp[key] ?? value).slice(0, 5)}
                                             autoFocus
-                                            onChange={(e) => {
-                                              const val = e.target.value;
-                                              setHeureTemp((prev) => ({ ...prev, [key]: val }));
-                                            }}
+                                            onChange={(e) => setHeureTemp((prev) => ({ ...prev, [key]: e.target.value }))}
                                             onBlur={async () => {
                                               const rawValue = heureTemp[key] ?? "";
-                                              await updateHeure(
-                                                commande,
-                                                champ as keyof CommandeWithCandidat,
-                                                rawValue
-                                              );
+                                              await updateHeure(commande, champ as keyof CommandeWithCandidat, rawValue);
                                               setHeureTemp((prev) => ({ ...prev, [key]: rawValue }));
                                               setEditId(null);
                                             }}
@@ -260,10 +205,7 @@ export function PlanningClientTable({
                                             key={key}
                                             onClick={() => {
                                               setEditId(key);
-                                              setHeureTemp((prev) => ({
-                                                ...prev,
-                                                [key]: String(value),
-                                              }));
+                                              setHeureTemp((prev) => ({ ...prev, [key]: String(value) }));
                                             }}
                                             className="cursor-pointer hover:underline"
                                           >
@@ -281,6 +223,51 @@ export function PlanningClientTable({
                                 <Plus className="h-3 w-3 text-white" />
                               </div>
                             </div>
+
+                            {commande.commentaire && (
+                              <div className="absolute bottom-1 right-1">
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      className="p-0 h-auto w-auto text-black hover:text-black"
+                                    >
+                                      <Info className="h-4 w-4" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-64 text-sm">
+                                    {editingCommentId === commande.id ? (
+                                      <div className="space-y-2">
+                                        <Input
+                                          value={commentaireTemp}
+                                          onChange={(e) => setCommentaireTemp(e.target.value)}
+                                        />
+                                        <Button
+                                          size="sm"
+                                          onClick={() => updateCommentaire(commande)}
+                                        >
+                                          Sauvegarder
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-2">
+                                        <div>{commande.commentaire}</div>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => {
+                                            setEditingCommentId(commande.id);
+                                            setCommentaireTemp(commande.commentaire || "");
+                                          }}
+                                        >
+                                          Modifier
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

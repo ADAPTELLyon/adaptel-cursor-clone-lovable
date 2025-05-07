@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import MainLayout from "@/components/main-layout";
 import { SectionFixeCommandes } from "@/components/commandes/section-fixe-commandes";
 import { PlanningClientTable } from "@/components/commandes/PlanningClientTable";
-import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"; // ✅ Correction ici
+import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog";
 import { supabase } from "@/lib/supabase";
 import { addDays, format, startOfWeek, getWeek } from "date-fns";
 import { JourPlanning, CommandeWithCandidat } from "@/types/types-front";
@@ -20,7 +20,8 @@ export default function Commandes() {
   const [toutAfficher, setToutAfficher] = useState(false);
   const [enRecherche, setEnRecherche] = useState(false);
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 });
-  const [refreshTrigger, setRefreshTrigger] = useState(0); // ✅ pour forcer le rechargement
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [openDialog, setOpenDialog] = useState(false);
 
   useEffect(() => {
     const baseDate = new Date(semaine || new Date());
@@ -41,6 +42,7 @@ export default function Commandes() {
           id, date, statut, secteur, service, client_id,
           heure_debut_matin, heure_fin_matin,
           heure_debut_soir, heure_fin_soir,
+          commentaire,
           created_at,
           candidats (id, nom, prenom),
           clients (nom)
@@ -74,6 +76,7 @@ export default function Commandes() {
               heure_fin_matin: item.heure_fin_matin,
               heure_debut_soir: item.heure_debut_soir,
               heure_fin_soir: item.heure_fin_soir,
+              commentaire: item.commentaire,
               created_at: item.created_at,
               candidat: item.candidats
                 ? { nom: item.candidats.nom, prenom: item.candidats.prenom }
@@ -90,7 +93,7 @@ export default function Commandes() {
     };
 
     fetchPlanning();
-  }, [refreshTrigger]); // ✅ on recharge quand refreshTrigger change
+  }, [refreshTrigger]);
 
   useEffect(() => {
     const semaineActuelle = getWeek(new Date(), { weekStartsOn: 1 });
@@ -212,8 +215,7 @@ export default function Commandes() {
     setSelectedSemaine(current);
   };
 
-  const taux =
-    stats.demandées > 0 ? Math.round((stats.validées / stats.demandées) * 100) : 0;
+  const taux = stats.demandées > 0 ? Math.round((stats.validées / stats.demandées) * 100) : 0;
 
   const semainesDisponibles = Array.from(
     new Set(
@@ -255,7 +257,11 @@ export default function Commandes() {
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
       />
-      <NouvelleCommandeDialog onRefresh={() => setRefreshTrigger((x) => x + 1)} /> {/* ✅ */}
+      <NouvelleCommandeDialog
+        open={openDialog}
+        onOpenChange={setOpenDialog}
+        onRefresh={() => setRefreshTrigger((x) => x + 1)}
+      />
     </MainLayout>
   );
 }

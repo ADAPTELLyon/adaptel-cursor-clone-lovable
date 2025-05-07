@@ -43,6 +43,7 @@ export type Commande = {
     heure_fin_matin?: string | null;
     heure_debut_soir?: string | null;
     heure_fin_soir?: string | null;
+    commentaire?: string | null; //
     created_at: string;
 };
 
