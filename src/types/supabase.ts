@@ -327,7 +327,15 @@ export type Database = {
           table_cible?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "historique_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "utilisateurs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       incidents: {
         Row: {
@@ -596,7 +604,7 @@ export type Database = {
           nom: string
           poste_base_id: string
           repas_fournis: boolean | null
-          temps_pause_minutes: number | null
+          temps_pause_minutes: string | null
           tenue_id: string | null
         }
         Insert: {
@@ -612,7 +620,7 @@ export type Database = {
           nom: string
           poste_base_id: string
           repas_fournis?: boolean | null
-          temps_pause_minutes?: number | null
+          temps_pause_minutes?: string | null
           tenue_id?: string | null
         }
         Update: {
@@ -628,7 +636,7 @@ export type Database = {
           nom?: string
           poste_base_id?: string
           repas_fournis?: boolean | null
-          temps_pause_minutes?: number | null
+          temps_pause_minutes?: string | null
           tenue_id?: string | null
         }
         Relationships: [

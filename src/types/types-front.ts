@@ -112,3 +112,21 @@ export type JourPlanning = {
     service?: string | null;
     commandes: CommandeWithCandidat[]; 
 };
+
+// === TABLE: historique ===
+export type Historique = {
+    id: string;
+    table_cible: string;
+    ligne_id: string;
+    action: string;
+    description: string;
+    date_action: string;
+    user_id: string;
+    avant?: any;
+    apres?: any;
+    created_at: string;
+    user?: {
+      prenom: string;
+    };
+  };
+  
