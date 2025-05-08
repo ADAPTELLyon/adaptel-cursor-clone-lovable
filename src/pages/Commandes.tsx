@@ -256,6 +256,7 @@ export default function Commandes() {
         planning={filteredPlanning}
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
+        onRefresh={() => setRefreshTrigger((x) => x + 1)} // ✅ ligne ajoutée
       />
       <NouvelleCommandeDialog
         open={openDialog}

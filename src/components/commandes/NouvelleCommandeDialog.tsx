@@ -174,8 +174,17 @@ export default function NouvelleCommandeDialog({
 
   const handleSave = async () => {
     if (!clientId || !secteur || !semaine) return;
+  
+    // Récupération sécurisée de l'utilisateur ici, au moment exact de l'action
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const userId = userData?.user?.id || null;
+    if (!userId) {
+      console.error("Utilisateur non récupéré");
+      return;
+    }
+  
     const lignes: any[] = [];
-
+  
     Object.entries(joursState).forEach(([key, isActive]) => {
       if (!isActive) return;
       const heure = heuresParJour[key] || {};
@@ -199,17 +208,31 @@ export default function NouvelleCommandeDialog({
         });
       }
     });
-
+  
     if (lignes.length === 0) return;
-    const { error } = await supabase.from("commandes").insert(lignes);
-    if (!error) {
+  
+    const { data, error } = await supabase.from("commandes").insert(lignes).select("id");
+  
+    if (!error && data) {
+      const historiques = data.map((cmd: any) => ({
+        table_cible: "commandes",
+        ligne_id: cmd.id,
+        action: "creation",
+        description: "Création de commande",
+        user_id: userId,
+        date_action: new Date().toISOString(),
+      }));
+  
+      const { error: errorHist } = await supabase.from("historique").insert(historiques);
+      if (errorHist) console.error("Erreur historique :", errorHist);
+  
       onOpenChange(false);
-      window.location.reload();
+      if (onRefresh) onRefresh();
     } else {
       console.error("Erreur insertion commandes :", error);
     }
   };
-
+  
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
