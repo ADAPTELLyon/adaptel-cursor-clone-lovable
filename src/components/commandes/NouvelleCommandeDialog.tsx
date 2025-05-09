@@ -175,14 +175,12 @@ export default function NouvelleCommandeDialog({
   const handleSave = async () => {
     if (!clientId || !secteur || !semaine) return;
   
-    // Récupération sécurisée de l'utilisateur ici, au moment exact de l'action
-    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const { data: userData } = await supabase.auth.getUser();
     const userId = userData?.user?.id || null;
     if (!userId) {
       console.error("Utilisateur non récupéré");
       return;
     }
-  
     const lignes: any[] = [];
   
     Object.entries(joursState).forEach(([key, isActive]) => {
@@ -211,9 +209,12 @@ export default function NouvelleCommandeDialog({
   
     if (lignes.length === 0) return;
   
-    const { data, error } = await supabase.from("commandes").insert(lignes).select("id");
+    const { data, error } = await supabase
+      .from("commandes")
+      .insert(lignes)
+      .select("id");
   
-    if (!error && data) {
+    if (!error && data && data.length > 0) {
       const historiques = data.map((cmd: any) => ({
         table_cible: "commandes",
         ligne_id: cmd.id,
@@ -222,17 +223,22 @@ export default function NouvelleCommandeDialog({
         user_id: userId,
         date_action: new Date().toISOString(),
       }));
-  
-      const { error: errorHist } = await supabase.from("historique").insert(historiques);
-      if (errorHist) console.error("Erreur historique :", errorHist);
-  
-      onOpenChange(false);
-      if (onRefresh) onRefresh();
+      const { error: errorHist } = await supabase
+      .from("historique")
+      .insert(historiques);
+    
+    if (errorHist) {
+      console.error("Erreur historique :", errorHist);
+    }
+    
+    // ✅ Nouvelle logique : on ne ferme plus ici, on attend l’ordre du parent
+    if (onRefresh) onRefresh();
     } else {
       console.error("Erreur insertion commandes :", error);
     }
   };
   
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">

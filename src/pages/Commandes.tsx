@@ -227,6 +227,12 @@ export default function Commandes() {
 
   const clientsDisponibles = Object.keys(planning);
 
+  // ✅ AJOUT ICI — fermeture du dialog après refresh effectif
+  const onRefreshDone = () => {
+    setRefreshTrigger((x) => x + 1);
+    setOpenDialog(false);
+  };
+
   return (
     <MainLayout>
       <SectionFixeCommandes
@@ -252,16 +258,17 @@ export default function Commandes() {
         semainesDisponibles={semainesDisponibles}
         clientsDisponibles={clientsDisponibles}
       />
+
       <PlanningClientTable
         planning={filteredPlanning}
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
-        onRefresh={() => setRefreshTrigger((x) => x + 1)} // ✅ ligne ajoutée
+        onRefresh={onRefreshDone}
       />
+
       <NouvelleCommandeDialog
         open={openDialog}
         onOpenChange={setOpenDialog}
-        onRefresh={() => setRefreshTrigger((x) => x + 1)}
       />
     </MainLayout>
   );
