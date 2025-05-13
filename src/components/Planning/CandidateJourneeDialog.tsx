@@ -38,14 +38,15 @@ export const CandidateJourneeDialog = ({
   candidatNomPrenom,
 }: CandidateJourneeDialogProps) => {
   const [statut, setStatut] = useState<"Non renseigné" | "Dispo" | "Non Dispo">(
-    disponibilite?.statut === "Non Renseigné" ? "Non renseigné" : disponibilite?.statut ?? "Non renseigné"
+    disponibilite?.statut === "Non Renseigné" ? "Non renseigné" : (disponibilite?.statut ?? "Non renseigné")
   )
   const [matin, setMatin] = useState<boolean>(false)
   const [soir, setSoir] = useState<boolean>(false)
   const [commentaire, setCommentaire] = useState(disponibilite?.commentaire ?? "")
 
   useEffect(() => {
-    setStatut(disponibilite?.statut === "Non Renseigné" ? "Non renseigné" : disponibilite?.statut ?? "Non renseigné")
+    const s = disponibilite?.statut === "Non Renseigné" ? "Non renseigné" : (disponibilite?.statut ?? "Non renseigné")
+    setStatut(s)
     setMatin(disponibilite?.matin ?? false)
     setSoir(disponibilite?.soir ?? false)
     setCommentaire(disponibilite?.commentaire ?? "")
@@ -84,6 +85,18 @@ export const CandidateJourneeDialog = ({
 
   const dateLabel = format(new Date(date), "EEEE d MMMM", { locale: fr })
 
+  const handleStatutChange = (newStatut: "Non renseigné" | "Dispo" | "Non Dispo") => {
+    setStatut(newStatut)
+
+    if (newStatut === "Dispo") {
+      setMatin(true)
+      setSoir(secteur !== "Étages")
+    } else {
+      setMatin(false)
+      setSoir(false)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
@@ -100,7 +113,7 @@ export const CandidateJourneeDialog = ({
               <Button
                 key={s}
                 variant={statut === s ? "default" : "outline"}
-                onClick={() => setStatut(s)}
+                onClick={() => handleStatutChange(s)}
               >
                 {s}
               </Button>

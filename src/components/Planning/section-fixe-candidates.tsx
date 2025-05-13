@@ -7,6 +7,7 @@ import { Plus, CalendarCheck, AlertCircle, RotateCcw } from "lucide-react"
 import { indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
 import { startOfWeek } from "date-fns"
+import AjoutDispoCandidat from "@/components/Planning/AjoutDispoCandidat"
 
 export function SectionFixeCandidates({
   selectedSecteurs,
@@ -208,6 +209,8 @@ export function SectionFixeCandidates({
           <AlertCircle size={16} /> Saisir incident
         </Button>
       </div>
+
+      <AjoutDispoCandidat open={openDialog} onClose={() => setOpenDialog(false)} />
     </div>
   )
 }

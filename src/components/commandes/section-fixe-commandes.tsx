@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 import { Plus, CalendarCheck, AlertCircle, RotateCcw } from "lucide-react"
 import { indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
-import { startOfWeek } from "date-fns"
+import { startOfWeek, getWeek } from "date-fns"
 import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
 
 export function SectionFixeCommandes({
@@ -74,9 +74,7 @@ export function SectionFixeCommandes({
               style={{ backgroundColor: indicateurColors[label] }}
             >
               <div className="text-xs text-white">{label}</div>
-              <div className="text-2xl font-bold text-white">
-                {stats[key] || 0}
-              </div>
+              <div className="text-2xl font-bold text-white">{stats[key] || 0}</div>
             </div>
           )
         })}
@@ -138,8 +136,6 @@ export function SectionFixeCommandes({
                 const iso = monday.toISOString().slice(0, 10)
                 setSemaine(iso)
                 setSelectedSemaine(getWeekNumber(monday).toString())
-              } else {
-                setSelectedSemaine("Toutes")
               }
             }}
             className="data-[state=checked]:bg-[#840404]"
@@ -180,8 +176,13 @@ export function SectionFixeCommandes({
           value={selectedSemaine}
           onChange={(e) => {
             const val = e.target.value
-            setSelectedSemaine(val)
-            if (val !== "Toutes") setSemaineEnCours(false)
+            if (val === "Toutes") {
+              setSelectedSemaine("Toutes")
+              setSemaineEnCours(false)
+            } else {
+              setSelectedSemaine(val)
+              setSemaineEnCours(false)
+            }
           }}
         >
           <option value="Toutes">Toutes les semaines</option>
@@ -211,6 +212,7 @@ export function SectionFixeCommandes({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+
         <Button
           variant="outline"
           size="sm"
