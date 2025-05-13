@@ -20,8 +20,9 @@ export default function Commandes() {
   const [toutAfficher, setToutAfficher] = useState(false);
   const [enRecherche, setEnRecherche] = useState(false);
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 });
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [openDialog, setOpenDialog] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
 
   useEffect(() => {
     const baseDate = new Date(semaine || new Date());
@@ -31,69 +32,77 @@ export default function Commandes() {
     setSemaineDates(dates);
   }, [semaine]);
 
+  const fetchPlanning = async () => {
+    console.log("📡 Fetch planning depuis Supabase...");
+    const lundi = startOfWeek(new Date(), { weekStartsOn: 1 });
+    const semaineCourante = getWeek(lundi, { weekStartsOn: 1 }).toString();
+
+    const { data, error } = await supabase
+      .from("commandes")
+      .select(`
+        id, date, statut, secteur, service, client_id,
+        heure_debut_matin, heure_fin_matin,
+        heure_debut_soir, heure_fin_soir,
+        commentaire,
+        created_at,
+        candidats (id, nom, prenom),
+        clients (nom)
+      `)
+      .gte("date", lundi.toISOString().slice(0, 10));
+
+    if (error || !data) {
+      console.error("❌ Erreur Supabase :", error);
+      return;
+    }
+
+    console.log("🟡 Vérification des commandes après fetch :", data);
+
+    const map: Record<string, JourPlanning[]> = {};
+    for (const item of data as any[]) {
+      const nomClient = item.clients?.nom || item.client_id || "Client inconnu";
+      if (!map[nomClient]) map[nomClient] = [];
+
+      const jour: JourPlanning = {
+        date: item.date,
+        secteur: item.secteur,
+        service: item.service,
+        commandes: [
+          {
+            id: item.id,
+            date: item.date,
+            statut: item.statut,
+            secteur: item.secteur,
+            service: item.service,
+            client_id: item.client_id,
+            candidat_id: item.candidats ? item.candidats.id : null,
+            heure_debut_matin: item.heure_debut_matin,
+            heure_fin_matin: item.heure_fin_matin,
+            heure_debut_soir: item.heure_debut_soir,
+            heure_fin_soir: item.heure_fin_soir,
+            commentaire: item.commentaire,
+            created_at: item.created_at,
+            candidat: item.candidats
+              ? { nom: item.candidats.nom, prenom: item.candidats.prenom }
+              : null,
+          } as CommandeWithCandidat,
+        ],
+      };
+
+      map[nomClient].push(jour);
+    }
+
+    const mapTrie: Record<string, JourPlanning[]> = Object.fromEntries(
+      Object.entries(map).sort(([a], [b]) => a.localeCompare(b))
+    );
+
+    setPlanning(mapTrie);
+    setFilteredPlanning(mapTrie); // ✅ Synchronisation directe
+    setSelectedSemaine(semaineCourante);
+  };
+
   useEffect(() => {
-    const fetchPlanning = async () => {
-      const lundi = startOfWeek(new Date(), { weekStartsOn: 1 });
-      const semaineCourante = getWeek(lundi, { weekStartsOn: 1 }).toString();
-
-      const { data, error } = await supabase
-        .from("commandes")
-        .select(`
-          id, date, statut, secteur, service, client_id,
-          heure_debut_matin, heure_fin_matin,
-          heure_debut_soir, heure_fin_soir,
-          commentaire,
-          created_at,
-          candidats (id, nom, prenom),
-          clients (nom)
-        `)
-        .gte("date", lundi.toISOString().slice(0, 10));
-
-      if (error || !data) {
-        console.error("Erreur Supabase :", error);
-        return;
-      }
-
-      const map: Record<string, JourPlanning[]> = {};
-      for (const item of data as any[]) {
-        const nomClient = item.clients?.nom || item.client_id || "Client inconnu";
-        if (!map[nomClient]) map[nomClient] = [];
-
-        const jour: JourPlanning = {
-          date: item.date,
-          secteur: item.secteur,
-          service: item.service,
-          commandes: [
-            {
-              id: item.id,
-              date: item.date,
-              statut: item.statut,
-              secteur: item.secteur,
-              service: item.service,
-              client_id: item.client_id,
-              candidat_id: item.candidats ? item.candidats.id : null,
-              heure_debut_matin: item.heure_debut_matin,
-              heure_fin_matin: item.heure_fin_matin,
-              heure_debut_soir: item.heure_debut_soir,
-              heure_fin_soir: item.heure_fin_soir,
-              commentaire: item.commentaire,
-              created_at: item.created_at,
-              candidat: item.candidats
-                ? { nom: item.candidats.nom, prenom: item.candidats.prenom }
-                : null,
-            } as CommandeWithCandidat,
-          ],
-        };
-
-        map[nomClient].push(jour);
-      }
-
-      setPlanning(map);
-      setSelectedSemaine(semaineCourante);
-    };
-
     fetchPlanning();
-  }, [refreshTrigger]);
+  }, []);
 
   useEffect(() => {
     const semaineActuelle = getWeek(new Date(), { weekStartsOn: 1 });
@@ -227,11 +236,14 @@ export default function Commandes() {
 
   const clientsDisponibles = Object.keys(planning);
 
-  // ✅ AJOUT ICI — fermeture du dialog après refresh effectif
-  const onRefreshDone = () => {
-    setRefreshTrigger((x) => x + 1);
+  const onRefreshDone = async () => {
+    console.log("⏳ Début onRefreshDone");
+    await fetchPlanning();
+    console.log("✅ Fin onRefreshDone - Planning rechargé");
     setOpenDialog(false);
   };
+
+  // ... (tout ton code identique jusqu'au return)
 
   return (
     <MainLayout>
@@ -269,6 +281,14 @@ export default function Commandes() {
       <NouvelleCommandeDialog
         open={openDialog}
         onOpenChange={setOpenDialog}
+        onRefresh={async () => {
+          console.log("🔁 [NouvelleCommandeDialog] Appel onRefresh → fetchPlanning()");
+          await fetchPlanning();
+        }}
+        onRefreshDone={() => {
+          console.log("✅ Refresh done triggered (NouvelleCommandeDialog)");
+          setRefreshTrigger((prev) => prev + 1);
+        }}
       />
     </MainLayout>
   );

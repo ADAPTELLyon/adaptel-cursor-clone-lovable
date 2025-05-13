@@ -1,58 +1,31 @@
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Check } from "lucide-react"
 import { format, startOfWeek, addDays, getWeek } from "date-fns"
 import { fr } from "date-fns/locale"
-import { statutColors, indicateurColors } from "@/lib/colors"
-import { supabase } from "@/lib/supabase"
-import type { CommandeWithCandidat, JourPlanning } from "@/types/types-front"
-import { Input } from "@/components/ui/input"
-import { ColonneClient } from "@/components/commandes/ColonneClient"
-import { CellulePlanning } from "@/components/commandes/CellulePlanning"
+import { indicateurColors } from "@/lib/colors"
+import type { JourPlanningCandidat } from "@/types/types-front"
+import { ColonneCandidate } from "@/components/Planning/ColonneCandidate"
+import { CellulePlanningCandidate } from "@/components/Planning/CellulePlanningCandidate"
 
-export function PlanningClientTable({
+export function PlanningCandidateTable({
   planning,
   selectedSecteurs,
   selectedSemaine,
   onRefresh,
-  refreshTrigger = 0,
 }: {
-  planning: Record<string, JourPlanning[]>;
-  selectedSecteurs: string[];
-  selectedSemaine: string;
-  onRefresh: () => void;
-  refreshTrigger?: number;
+  planning: Record<string, JourPlanningCandidat[]>
+  selectedSecteurs: string[]
+  selectedSemaine: string
+  onRefresh: () => void
 }) {
-  const [editId, setEditId] = useState<string | null>(null);
-  const [heureTemp, setHeureTemp] = useState<Record<string, string>>({});
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [commentaireTemp, setCommentaireTemp] = useState<string>("");
+  const groupesParSemaine: Record<string, Record<string, JourPlanningCandidat[][]>> = {}
 
-  useEffect(() => {
-    console.log("🔄 Re-render déclenché car `planning` a changé !");
-  }, [planning]);
-
-  const updateHeure = async (
-    commande: CommandeWithCandidat,
-    champ: keyof CommandeWithCandidat,
-    nouvelleValeur: string
-  ) => {
-    const isValidTime = /^\d{2}:\d{2}$/.test(nouvelleValeur);
-    if (!isValidTime) return;
-    const { error } = await supabase
-      .from("commandes")
-      .update({ [champ]: nouvelleValeur })
-      .eq("id", commande.id);
-    if (!error) commande[champ] = nouvelleValeur;
-  };
-
-  const groupesParSemaine: Record<string, Record<string, JourPlanning[][]>> = {}
-
-  Object.entries(planning).forEach(([client, jours]) => {
+  Object.entries(planning).forEach(([candidat, jours]) => {
     jours.forEach((jour) => {
       const semaine = getWeek(new Date(jour.date), { weekStartsOn: 1 }).toString()
       if (!groupesParSemaine[semaine]) groupesParSemaine[semaine] = {}
-      const cle = `${client}||${jour.secteur}||${jour.service || ""}`
+      const cle = `${candidat}||${jour.secteur}||${jour.service || ""}`
       if (!groupesParSemaine[semaine][cle]) groupesParSemaine[semaine][cle] = []
 
       let ligneExistante = groupesParSemaine[semaine][cle].find((ligne) => {
@@ -95,18 +68,17 @@ export function PlanningClientTable({
                 {semaineTexte}
               </div>
               {jours.map((jour, index) => {
-                let totalMissions = 0
-                let nbEnRecherche = 0
+                let totalDispos = 0
+                let nbDisponibles = 0
                 Object.values(groupes).forEach((groupe) =>
                   groupe.forEach((ligne) => {
                     const jourCell = ligne.find(
                       (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
                     )
                     if (jourCell) {
-                      totalMissions += jourCell.commandes.length
-                      nbEnRecherche += jourCell.commandes.filter(
-                        (cmd) => cmd.statut === "En recherche"
-                      ).length
+                      totalDispos += 1
+                      const statut = jourCell.disponibilite?.statut
+                      if (statut === "Dispo") nbDisponibles++
                     }
                   })
                 )
@@ -117,18 +89,18 @@ export function PlanningClientTable({
                   >
                     <div>{jour.label.split(" ")[0]}</div>
                     <div className="text-xs">{jour.label.split(" ").slice(1).join(" ")}</div>
-                    {totalMissions === 0 ? (
+                    {totalDispos === 0 ? (
                       <div className="absolute top-1 right-1">
                         <div className="h-5 w-5 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs">–</div>
                       </div>
-                    ) : nbEnRecherche > 0 ? (
+                    ) : nbDisponibles > 0 ? (
                       <div className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center"
-                        style={{ backgroundColor: indicateurColors["En recherche"], color: "white" }}>
-                        {nbEnRecherche}
+                        style={{ backgroundColor: indicateurColors["Dispo"], color: "white" }}>
+                        {nbDisponibles}
                       </div>
                     ) : (
                       <div className="absolute top-1 right-1">
-                        <div className="h-5 w-5 rounded-full bg-[#a9d08e] flex items-center justify-center">
+                        <div className="h-5 w-5 rounded-full bg-[#4b5563] flex items-center justify-center">
                           <Check className="w-4 h-4 text-white" />
                         </div>
                       </div>
@@ -139,54 +111,47 @@ export function PlanningClientTable({
             </div>
 
             {Object.entries(groupes).map(([key, lignes]) => {
-              const [clientNom, secteur, service] = key.split("||")
+              const [candidatNom, secteur, service] = key.split("||")
 
               return lignes.map((ligne, ligneIndex) => {
-                const nbEnRecherche = ligne
-                  .flatMap((j) => j.commandes)
-                  .filter((cmd) => cmd.statut === "En recherche").length
+                const disponibilites = ligne.map((j) => j.disponibilite?.statut)
+                const hasDispo = disponibilites.includes("Dispo")
 
-                const commandeId = ligne[0]?.commandes[0]?.id
-                const clientId = ligne[0]?.commandes[0]?.client_id || ""
+                const candidatId = ligne[0]?.disponibilite?.candidat_id || ""
+                const nomPrenom = ligne[0]?.disponibilite?.candidat
+                  ? `${ligne[0].disponibilite.candidat.nom} ${ligne[0].disponibilite.candidat.prenom}`
+                  : candidatNom
 
                 return (
                   <div
                     key={`${key}-${ligneIndex}`}
                     className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm"
                   >
-                    <ColonneClient
-                      clientNom={clientNom}
+                    <ColonneCandidate
+                      nomComplet={candidatNom}
                       secteur={secteur}
                       service={service}
                       semaine={semaine}
-                      nbEnRecherche={nbEnRecherche}
-                      commandeId={commandeId}
+                      statutGlobal={hasDispo ? "Dispo" : "Non Dispo"}
+                      candidatId={candidatId}
                     />
 
                     {jours.map((jour, index) => {
                       const jourCell = ligne.find(
                         (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
                       )
-                      const commande = jourCell?.commandes[0]
+                      const dispo = jourCell?.disponibilite
 
                       return (
                         <div key={index} className="border-r p-2 h-28 relative">
-                          <CellulePlanning
-                            commande={commande}
+                          <CellulePlanningCandidate
+                            disponibilite={dispo}
                             secteur={secteur}
-                            editId={editId}
-                            heureTemp={heureTemp}
-                            setEditId={setEditId}
-                            setHeureTemp={setHeureTemp}
-                            updateHeure={updateHeure}
-                            commentaireTemp={commentaireTemp}
-                            setCommentaireTemp={setCommentaireTemp}
-                            editingCommentId={editingCommentId}
-                            setEditingCommentId={setEditingCommentId}
                             date={jour.dateStr}
-                            clientId={clientId}
+                            candidatId={candidatId}
                             service={service}
                             onSuccess={onRefresh}
+                            nomPrenom={nomPrenom}
                           />
                         </div>
                       )

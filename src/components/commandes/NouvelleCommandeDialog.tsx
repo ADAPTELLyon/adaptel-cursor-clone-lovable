@@ -19,13 +19,17 @@ import type { PosteType } from "@/types/types-front";
 
 export default function NouvelleCommandeDialog({
   open,
-  onOpenChange,
-  onRefresh, // ✅ Ajout ici
+  onOpenChange, // ✅ Ajout ici
+  onRefresh,
+  onRefreshDone,
 }: {
   open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onRefresh?: () => void; // ✅ Ajout ici
+  onOpenChange: (open: boolean) => void; // ✅ Ajout ici
+  onRefresh?: () => Promise<void>;
+  onRefreshDone?: () => void;
 }) {
+
+
   const [secteur, setSecteur] = useState<string>("");
   const [clientId, setClientId] = useState<string>("");
   const [service, setService] = useState<string>("");
@@ -171,8 +175,9 @@ export default function NouvelleCommandeDialog({
       setHeuresParJour(updated);
     }
   };
-
   const handleSave = async () => {
+    console.log("🟡 [handleSave] Début de handleSave");
+  
     if (!clientId || !secteur || !semaine) return;
   
     const { data: userData } = await supabase.auth.getUser();
@@ -181,6 +186,7 @@ export default function NouvelleCommandeDialog({
       console.error("Utilisateur non récupéré");
       return;
     }
+  
     const lignes: any[] = [];
   
     Object.entries(joursState).forEach(([key, isActive]) => {
@@ -199,8 +205,7 @@ export default function NouvelleCommandeDialog({
           heure_debut_soir: heure.debutSoir || null,
           heure_fin_soir: heure.finSoir || null,
           motif_contrat: motif,
-          complement_motif:
-            motif === "Extra Usage constant" ? null : commentaire || null,
+          complement_motif: motif === "Extra Usage constant" ? null : commentaire || null,
           commentaire: commentaire || null,
           created_by: userId,
         });
@@ -215,28 +220,30 @@ export default function NouvelleCommandeDialog({
       .select("id");
   
     if (!error && data && data.length > 0) {
-      const historiques = data.map((cmd: any) => ({
-        table_cible: "commandes",
-        ligne_id: cmd.id,
-        action: "creation",
-        description: "Création de commande",
-        user_id: userId,
-        date_action: new Date().toISOString(),
-      }));
-      const { error: errorHist } = await supabase
-      .from("historique")
-      .insert(historiques);
-    
-    if (errorHist) {
-      console.error("Erreur historique :", errorHist);
-    }
-    
-    // ✅ Nouvelle logique : on ne ferme plus ici, on attend l’ordre du parent
-    if (onRefresh) onRefresh();
-    } else {
-      console.error("Erreur insertion commandes :", error);
-    }
-  };
+      console.log("✅ [handleSave] Commandes insérées :", data);
+      if (onRefresh) {
+        console.log("🔁 [handleSave] Appel de onRefresh()");
+        await onRefresh(); // <-- ici le vrai oubli
+      }
+      if (onRefreshDone) {
+        console.log("✅ [handleSave] Appel de onRefreshDone()");
+        await onRefreshDone(); // Ajout de `await` pour assurer la synchronisation
+      }
+      console.log("❌ Tentative de fermeture du pop-up via onOpenChange(false)");
+      if (typeof onOpenChange === "function") { 
+        setTimeout(() => {
+          onOpenChange(false); // ✅ Correction : Utilisation de la bonne prop
+          console.log("✅ Pop-up fermé !");
+        }, 300);
+      } else {
+        console.error("⚠️ `onOpenChange` est indéfini ou incorrect.");
+      }
+      } else {
+        console.error("❌ Erreur insertion commandes :", error);
+      }
+      };
+      
+  
   
 
   return (
