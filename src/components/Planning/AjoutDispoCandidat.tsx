@@ -1,156 +1,331 @@
-import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
 import { secteursList } from "@/lib/secteurs"
-import { Candidat } from "@/types/types-front"
-import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns"
+import { disponibiliteColors } from "@/lib/colors"
+import { supabase } from "@/lib/supabase"
+import { useEffect, useState } from "react"
+import { format, startOfWeek, addDays, getWeek } from "date-fns"
 import { fr } from "date-fns/locale"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import type { Candidat } from "@/types/types-front"
 
-interface AjoutDispoCandidatProps {
+export default function AjoutDispoCandidat({
+  open,
+  onOpenChange,
+}: {
   open: boolean
-  onClose: () => void
-}
-
-type StatutJour = "vide" | "dispo" | "nonDispo"
-
-export default function AjoutDispoCandidat({ open, onClose }: AjoutDispoCandidatProps) {
+  onOpenChange: (val: boolean) => void
+}) {
   const [secteur, setSecteur] = useState("")
-  const [search, setSearch] = useState("")
   const [candidat, setCandidat] = useState<Candidat | null>(null)
-  const [dateCourante, setDateCourante] = useState(new Date())
   const [commentaire, setCommentaire] = useState("")
-  const [statutsParDate, setStatutsParDate] = useState<Record<string, StatutJour>>({})
+  const [semaine, setSemaine] = useState(getWeek(new Date()).toString())
+  const [semainesDisponibles, setSemainesDisponibles] = useState<
+    { value: string; label: string; startDate: Date }[]
+  >([])
 
-  const candidatsFictifs: Candidat[] = [
-    { id: "1", nom: "Dupont", prenom: "Marie", actif: true, adresse: "", code_postal: "", ville: "", email: "", created_at: "", prioritaire: false },
-    { id: "2", nom: "Durand", prenom: "Luc", actif: true, adresse: "", code_postal: "", ville: "", email: "", created_at: "", prioritaire: false },
-    { id: "3", nom: "Martin", prenom: "Camille", actif: true, adresse: "", code_postal: "", ville: "", email: "", created_at: "", prioritaire: false },
-  ]
+  const [dispos, setDispos] = useState<
+    Record<string, { statut: "dispo" | "absence" | "non"; matin: boolean; soir: boolean }>
+  >({})
+  const [candidatsSecteur, setCandidatsSecteur] = useState<Candidat[]>([])
+  const [allMatin, setAllMatin] = useState(true)
+  const [allSoir, setAllSoir] = useState(true)
 
-  const joursDuMois = eachDayOfInterval({
-    start: startOfMonth(dateCourante),
-    end: endOfMonth(dateCourante),
-  })
+  useEffect(() => {
+    const semaines: { value: string; label: string; startDate: Date }[] = []
+    const today = new Date()
+    const start = startOfWeek(today, { weekStartsOn: 1 })
 
-  const handleClickJour = (dateStr: string) => {
-    const current = statutsParDate[dateStr] || "vide"
-    const suivant: StatutJour = current === "vide" ? "dispo" : current === "dispo" ? "nonDispo" : "vide"
-    setStatutsParDate((prev) => ({ ...prev, [dateStr]: suivant }))
+    for (let i = 0; i < 10; i++) {
+      const monday = addDays(start, i * 7)
+      const value = getWeek(monday).toString()
+      const label = `Semaine ${value} - ${format(monday, "dd MMM", {
+        locale: fr,
+      })} au ${format(addDays(monday, 6), "dd MMM", { locale: fr })}`
+      semaines.push({ value, label, startDate: monday })
+    }
+
+    setSemainesDisponibles(semaines)
+  }, [])
+
+  const semaineObj = semainesDisponibles.find((s) => s.value === semaine)
+  const joursSemaine = semaineObj
+    ? Array.from({ length: 7 }, (_, i) => {
+        const date = addDays(semaineObj.startDate, i)
+        const now = new Date()
+        const isPast = date < startOfWeek(now, { weekStartsOn: 1 }) || format(date, "yyyy-MM-dd") < format(now, "yyyy-MM-dd")
+        return {
+          key: format(date, "yyyy-MM-dd"),
+          jour: format(date, "EEEE d MMM", { locale: fr }),
+          isPast,
+        }
+      })
+    : []
+
+  useEffect(() => {
+    const fetchCandidats = async () => {
+      const { data } = await supabase
+        .from("candidats")
+        .select("*")
+        .contains("secteurs", [secteur])
+        .eq("actif", true)
+        .order("nom")
+
+      setCandidatsSecteur(data || [])
+    }
+
+    if (secteur) fetchCandidats()
+  }, [secteur])
+
+  const toggleStatut = (key: string) => {
+    setDispos((prev) => {
+      const actuel = prev[key]?.statut || "non"
+      const suivant =
+        actuel === "non" ? "dispo" : actuel === "dispo" ? "absence" : "non"
+      return {
+        ...prev,
+        [key]: {
+          statut: suivant,
+          matin: prev[key]?.matin ?? true,
+          soir: prev[key]?.soir ?? true,
+        },
+      }
+    })
+  }
+
+  const handleToggleMatin = (key: string) => {
+    setDispos((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        matin: !prev[key]?.matin,
+      },
+    }))
+  }
+
+  const handleToggleSoir = (key: string) => {
+    setDispos((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        soir: !prev[key]?.soir,
+      },
+    }))
+  }
+
+  const appliquerTous = (statut: "dispo" | "absence") => {
+    const updated: typeof dispos = {}
+    joursSemaine.forEach((j) => {
+      if (!j.isPast) {
+        updated[j.key] = {
+          statut,
+          matin: allMatin,
+          soir: allSoir,
+        }
+      }
+    })
+    setDispos(updated)
+  }
+
+  const appliquerMatinSoir = (creneau: "matin" | "soir", value: boolean) => {
+    const updated = { ...dispos }
+    for (const key in updated) {
+      if (updated[key].statut === "dispo") {
+        updated[key][creneau] = value
+      }
+    }
+    setDispos(updated)
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Saisir disponibilités</DialogTitle>
+          <DialogTitle className="flex items-center gap-3">
+            Saisie disponibilités
+            {secteur && (
+              <span className="text-sm bg-[#840404] text-white px-2 py-1 rounded">{secteur}</span>
+            )}
+            {candidat && (
+              <span className="text-sm bg-[#840404] text-white px-2 py-1 rounded">
+                {candidat.nom} {candidat.prenom}
+              </span>
+            )}
+          </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-6">
+        <div className="grid grid-cols-2 gap-6 mt-4">
+          {/* Partie gauche */}
+          <div className="space-y-6 border p-4 rounded-lg shadow-md bg-white">
+            <div className="space-y-2">
+              <div className="font-semibold text-sm">Secteur</div>
+              <div className="grid grid-cols-5 gap-2">
+                {secteursList.map(({ label, icon: Icon }) => (
+                  <Button
+                    key={label}
+                    variant="outline"
+                    className={`flex items-center justify-center gap-1 text-xs py-2 ${
+                      secteur === label ? "bg-[#840404] text-white hover:bg-[#750303]" : ""
+                    }`}
+                    onClick={() => {
+                      setSecteur(label)
+                      setCandidat(null)
+                    }}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            </div>
 
-          {/* Secteurs */}
-          <div className="flex flex-wrap gap-2">
-            {secteursList.map(({ label, icon: Icon }) => (
-              <Button
-                key={label}
-                variant={secteur === label ? "default" : "outline"}
-                className={secteur === label ? "bg-[#840404] text-white" : ""}
-                onClick={() => {
-                  setSecteur(label)
-                  setCandidat(null)
-                }}
+            {secteur && (
+              <div className="space-y-2">
+                <div className="font-semibold text-sm">Candidats</div>
+                <div className="border p-2 h-40 overflow-y-auto rounded">
+                  {candidatsSecteur.map((c) => (
+                    <Button
+                      key={c.id}
+                      variant={candidat?.id === c.id ? "default" : "outline"}
+                      className="w-full justify-start text-left mb-1"
+                      onClick={() => setCandidat(c)}
+                    >
+                      {c.nom} {c.prenom}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <div className="font-semibold text-sm">Semaine</div>
+              <select
+                className="border rounded w-full px-2 py-2 text-sm"
+                value={semaine}
+                onChange={(e) => setSemaine(e.target.value)}
               >
-                <Icon className="h-4 w-4 mr-1" />
-                {label}
-              </Button>
-            ))}
+                {semainesDisponibles.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <div className="font-semibold text-sm">Commentaire</div>
+              <Textarea
+                value={commentaire}
+                onChange={(e) => setCommentaire(e.target.value)}
+                placeholder="Ajouter un commentaire"
+                className="min-h-[80px]"
+              />
+            </div>
           </div>
 
-          {/* Candidats filtrés */}
-          {secteur && (
-            <div className="flex flex-col gap-2">
-              <Input
-                placeholder="Rechercher un candidat..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-              <ScrollArea className="h-32 border rounded p-2">
-                <div className="flex flex-wrap gap-2">
-                  {candidatsFictifs
-                    .filter((c) =>
-                      `${c.nom} ${c.prenom}`.toLowerCase().includes(search.toLowerCase())
-                    )
-                    .sort((a, b) => a.nom.localeCompare(b.nom))
-                    .map((c) => (
-                      <Button
-                        key={c.id}
-                        variant={candidat?.id === c.id ? "default" : "outline"}
-                        className={candidat?.id === c.id ? "bg-[#840404] text-white" : ""}
-                        onClick={() => setCandidat(c)}
-                      >
-                        {c.nom} {c.prenom}
-                      </Button>
-                    ))}
-                </div>
-              </ScrollArea>
+          {/* Partie droite */}
+          <div className="space-y-4 border p-4 rounded-lg shadow-md bg-white">
+            <div className="grid grid-cols-2 gap-4">
+              <Button
+                className="w-full bg-gray-200 text-black hover:bg-gray-300"
+                onClick={() => appliquerTous("dispo")}
+              >
+                Toutes Dispo
+              </Button>
+              <Button
+                className="w-full bg-gray-200 text-black hover:bg-gray-300"
+                onClick={() => appliquerTous("absence")}
+              >
+                Non Dispo
+              </Button>
             </div>
-          )}
 
-          {/* Calendrier */}
-          {candidat && (
-            <>
-              <div className="flex justify-between items-center">
-                <Button variant="ghost" onClick={() => setDateCourante(subMonths(dateCourante, 1))}>
-                  ← Mois précédent
-                </Button>
-                <div className="text-lg font-semibold">
-                  {format(dateCourante, "MMMM yyyy", { locale: fr })}
-                </div>
-                <Button variant="ghost" onClick={() => setDateCourante(addMonths(dateCourante, 1))}>
-                  Mois suivant →
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-7 gap-1 text-center text-sm">
-                {["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"].map((j) => (
-                  <div key={j} className="font-medium">{j}</div>
-                ))}
-                {joursDuMois.map((date) => {
-                  const d = format(date, "yyyy-MM-dd")
-                  const statut = statutsParDate[d] || "vide"
-                  const bg =
-                    statut === "dispo"
-                      ? "bg-blue-400"
-                      : statut === "nonDispo"
-                      ? "bg-gray-500"
-                      : "bg-gray-200"
-                  return (
-                    <div
-                      key={d}
-                      className={`h-10 rounded cursor-pointer flex items-center justify-center text-white ${bg}`}
-                      onClick={() => handleClickJour(d)}
-                    >
-                      {format(date, "d")}
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* Commentaire */}
-              <div className="flex flex-col gap-1 pt-2">
-                <label className="text-sm">Commentaire</label>
-                <Input
-                  value={commentaire}
-                  onChange={(e) => setCommentaire(e.target.value)}
-                  placeholder="Ajouter un commentaire pour ces jours (facultatif)"
+            <div className="flex items-center gap-4 mt-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Matin / Midi</span>
+                <Switch
+                  checked={allMatin}
+                  onCheckedChange={(val) => {
+                    setAllMatin(val)
+                    appliquerMatinSoir("matin", val)
+                  }}
+                  className="scale-90"
                 />
               </div>
-            </>
-          )}
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Soir</span>
+                <Switch
+                  checked={allSoir}
+                  onCheckedChange={(val) => {
+                    setAllSoir(val)
+                    appliquerMatinSoir("soir", val)
+                  }}
+                  className="scale-90"
+                />
+              </div>
+            </div>
 
-          <div className="flex justify-end pt-2">
-            <Button onClick={onClose}>Fermer</Button>
+            <div className="grid grid-cols-1 gap-2">
+              {joursSemaine.map((j) => {
+                const dispo = dispos[j.key]?.statut || "non"
+                const bgColor = disponibiliteColors[
+                  dispo === "dispo"
+                    ? "Dispo"
+                    : dispo === "absence"
+                    ? "Non Dispo"
+                    : "Non Renseigné"
+                ].bg
+
+                return (
+                  <div
+                    key={j.key}
+                    className={`border rounded p-3 shadow-sm flex justify-between items-center`}
+                    style={{ backgroundColor: j.isPast ? "#e5e7eb" : bgColor }}
+                  >
+                    <div
+                      onClick={() => !j.isPast && toggleStatut(j.key)}
+                      className="cursor-pointer select-none flex-1"
+                    >
+                      <div className="text-sm font-medium">{j.jour}</div>
+                    </div>
+
+                    {dispos[j.key]?.statut === "dispo" && !j.isPast && (
+                      <div className="flex gap-4 ml-4">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs">Matin</span>
+                          <Switch
+                            checked={dispos[j.key]?.matin}
+                            onCheckedChange={() => handleToggleMatin(j.key)}
+                            className="scale-90"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs">Soir</span>
+                          <Switch
+                            checked={dispos[j.key]?.soir}
+                            onCheckedChange={() => handleToggleSoir(j.key)}
+                            className="scale-90"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="pt-4">
+              <Button className="w-full bg-[#840404] hover:bg-[#750303] text-white">
+                Valider
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>

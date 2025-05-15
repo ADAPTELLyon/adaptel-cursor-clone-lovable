@@ -13,6 +13,7 @@ export type Candidat = {
   commentaire?: string | null;
   prioritaire: boolean;
   created_at: string;
+  secteurs?: string[]; // ✅ Ajouté pour gérer le filtre par secteur
 };
 
 // === TABLE: disponibilites ===
