@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button"
 import { statutColors } from "@/lib/colors"
 import type { CommandeWithCandidat } from "@/types/types-front"
 import { CommandeJourneeDialog } from "@/components/commandes/CommandeJourneeDialog"
+import { PlanificationCandidatDialog } from "@/components/commandes/PlanificationCandidatDialog"
+import { PopoverPlanificationRapide } from "@/components/commandes/PopoverPlanificationRapide"
 
 interface CellulePlanningProps {
   commande?: CommandeWithCandidat
@@ -49,6 +51,7 @@ export function CellulePlanning({
 }: CellulePlanningProps) {
   const isEtages = secteur === "Étages"
   const [openDialog, setOpenDialog] = useState(false)
+  const [openPlanifDialog, setOpenPlanifDialog] = useState(false)
 
   if (!commande) {
     return (
@@ -144,9 +147,18 @@ export function CellulePlanning({
       </div>
 
       <div className="absolute top-1 right-1">
-        <div className="rounded-full p-1 bg-white/40">
-          <Plus className="h-3 w-3 text-white" />
-        </div>
+        <PopoverPlanificationRapide
+          commande={commande}
+          date={date}
+          secteur={secteur}
+          onRefresh={onSuccess || (() => {})}
+          onOpenListes={() => setOpenPlanifDialog(true)}
+          trigger={
+            <div className="rounded-full p-1 bg-white/40 cursor-pointer">
+              <Plus className="h-3 w-3 text-white" />
+            </div>
+          }
+        />
       </div>
 
       {commande.commentaire && (
@@ -187,6 +199,16 @@ export function CellulePlanning({
           </Popover>
         </div>
       )}
+
+      <PlanificationCandidatDialog
+        open={openPlanifDialog}
+        onClose={() => setOpenPlanifDialog(false)}
+        date={date}
+        secteur={secteur}
+        service={service}
+        commande={commande}
+        onSuccess={onSuccess || (() => {})}
+      />
     </div>
   )
 }

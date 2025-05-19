@@ -215,9 +215,23 @@ export default function NouvelleCommandeDialog({
     if (lignes.length === 0) return;
   
     const { data, error } = await supabase
-      .from("commandes")
-      .insert(lignes)
-      .select("id");
+  .from("commandes")
+  .insert(lignes)
+  .select("id");
+
+if (data && data.length > 0 && userId) {
+  const historique = data.map((cmd) => ({
+    table_cible: "commandes",
+    action: "creation",
+    ligne_id: cmd.id,
+    user_id: userId,
+    description: "Création de commande via NouvelleCommandeDialog",
+    date_action: new Date().toISOString(),
+  }));
+  await supabase.from("historique").insert(historique);
+}
+  
+      
   
     if (!error && data && data.length > 0) {
       console.log("✅ [handleSave] Commandes insérées :", data);

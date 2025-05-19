@@ -132,10 +132,25 @@ export function CommandeJourneeDialog({
   const handleSubmit = async () => {
     setLoading(true)
 
-    const { data: userData, error: userError } = await supabase.auth.getUser()
-    const userId = userData?.user?.id || null
+    const { data: authData } = await supabase.auth.getUser()
+    const userEmail = authData?.user?.email || null
+
+    if (!userEmail) {
+      console.error("Email utilisateur non récupéré")
+      setLoading(false)
+      return
+    }
+
+    const { data: userApp, error: userLookupError } = await supabase
+      .from("utilisateurs")
+      .select("id")
+      .eq("email", userEmail)
+      .single()
+
+    const userId = userApp?.id || null
+
     if (!userId) {
-      console.error("Utilisateur non récupéré")
+      console.error("Utilisateur introuvable dans table utilisateurs")
       setLoading(false)
       return
     }
@@ -164,7 +179,7 @@ export function CommandeJourneeDialog({
         table_cible: "commandes",
         ligne_id: data[0].id,
         action: "creation",
-        description: "Création de commande",
+        description: "Création de commande journée",
         user_id: userId,
         date_action: new Date().toISOString(),
       }

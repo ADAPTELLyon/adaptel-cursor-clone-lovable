@@ -30,6 +30,7 @@ export function SectionFixeCandidates({
   resetFiltres,
   semainesDisponibles,
   candidatsDisponibles,
+  setRefreshTrigger,
 }: {
   selectedSecteurs: string[]
   setSelectedSecteurs: (val: string[]) => void
@@ -51,12 +52,12 @@ export function SectionFixeCandidates({
   resetFiltres: () => void
   semainesDisponibles: string[]
   candidatsDisponibles: string[]
+  setRefreshTrigger: React.Dispatch<React.SetStateAction<number>>
 }) {
   const [openDialog, setOpenDialog] = useState(false)
 
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 space-y-6">
-      {/* Indicateurs */}
       <div className="grid grid-cols-4 gap-2">
         {["Non renseigné", "Dispo", "Non Dispo", "Planifié"].map((label) => (
           <div
@@ -72,7 +73,6 @@ export function SectionFixeCandidates({
         ))}
       </div>
 
-      {/* Filtres Secteurs */}
       <div className="grid grid-cols-5 gap-2">
         {secteursList.map(({ label, icon: Icon }) => {
           const selected = selectedSecteurs.includes(label)
@@ -97,7 +97,6 @@ export function SectionFixeCandidates({
         })}
       </div>
 
-      {/* Interrupteurs */}
       <div className="flex flex-wrap items-center gap-6">
         <div className="flex items-center gap-2">
           <Switch
@@ -146,7 +145,6 @@ export function SectionFixeCandidates({
         </div>
       </div>
 
-      {/* Filtres semaine, candidat, recherche */}
       <div className="flex flex-wrap gap-4 items-center">
         <select
           className="border rounded px-2 py-2 text-sm w-[160px]"
@@ -194,7 +192,6 @@ export function SectionFixeCandidates({
         </Button>
       </div>
 
-      {/* Boutons d’action */}
       <div className="flex flex-wrap items-center gap-4">
         <Button
           className="bg-[#840404] hover:bg-[#750303] text-white flex items-center gap-2"
@@ -210,7 +207,11 @@ export function SectionFixeCandidates({
         </Button>
       </div>
 
-      <AjoutDispoCandidat open={openDialog} onClose={() => setOpenDialog(false)} />
+      <AjoutDispoCandidat
+        open={openDialog}
+        onOpenChange={setOpenDialog}
+        onSuccess={() => setRefreshTrigger((x) => x + 1)}
+      />
     </div>
   )
 }

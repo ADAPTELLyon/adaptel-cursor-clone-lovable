@@ -76,9 +76,15 @@ export default function Commandes() {
             heure_fin_soir: item.heure_fin_soir,
             commentaire: item.commentaire,
             created_at: item.created_at,
-            candidat: item.candidats
-              ? { nom: item.candidats.nom, prenom: item.candidats.prenom }
-              : null,
+            candidat:
+              item.candidats &&
+              typeof item.candidats.nom === "string" &&
+              typeof item.candidats.prenom === "string"
+                ? {
+                    nom: item.candidats.nom,
+                    prenom: item.candidats.prenom,
+                  }
+                : null,
           },
         ],
       }
@@ -143,7 +149,6 @@ export default function Commandes() {
           return semaineJour >= currentWeek
         })
 
-        const matchSecteur = selectedSecteurs.includes(jours[0]?.secteur)
         const matchClient = client ? clientNom === client : true
         const joursFiltres = joursFuturs.filter(
           (j) =>

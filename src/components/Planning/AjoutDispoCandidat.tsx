@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react"
+import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 import {
   Dialog,
   DialogContent,
@@ -5,23 +7,25 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
+import { Input } from "@/components/ui/input"
 import { secteursList } from "@/lib/secteurs"
 import { disponibiliteColors } from "@/lib/colors"
-import { supabase } from "@/lib/supabase"
-import { useEffect, useState } from "react"
 import { format, startOfWeek, addDays, getWeek } from "date-fns"
 import { fr } from "date-fns/locale"
 import type { Candidat } from "@/types/types-front"
+import { supabase } from "@/integrations/supabase/client"
+import { toast } from "@/hooks/use-toast"
 
 export default function AjoutDispoCandidat({
   open,
   onOpenChange,
+  onSuccess,
 }: {
   open: boolean
   onOpenChange: (val: boolean) => void
+  onSuccess: () => void
 }) {
   const [secteur, setSecteur] = useState("")
   const [candidat, setCandidat] = useState<Candidat | null>(null)
@@ -30,13 +34,13 @@ export default function AjoutDispoCandidat({
   const [semainesDisponibles, setSemainesDisponibles] = useState<
     { value: string; label: string; startDate: Date }[]
   >([])
-
   const [dispos, setDispos] = useState<
     Record<string, { statut: "dispo" | "absence" | "non"; matin: boolean; soir: boolean }>
   >({})
-  const [candidatsSecteur, setCandidatsSecteur] = useState<Candidat[]>([])
   const [allMatin, setAllMatin] = useState(true)
   const [allSoir, setAllSoir] = useState(true)
+
+  const { data: candidatsSecteur = [] } = useCandidatsBySecteur(secteur)
 
   useEffect(() => {
     const semaines: { value: string; label: string; startDate: Date }[] = []
@@ -55,6 +59,17 @@ export default function AjoutDispoCandidat({
     setSemainesDisponibles(semaines)
   }, [])
 
+  useEffect(() => {
+    if (!open) {
+      setSecteur("")
+      setCandidat(null)
+      setDispos({})
+      setCommentaire("")
+      setAllMatin(true)
+      setAllSoir(true)
+    }
+  }, [open])
+
   const semaineObj = semainesDisponibles.find((s) => s.value === semaine)
   const joursSemaine = semaineObj
     ? Array.from({ length: 7 }, (_, i) => {
@@ -68,21 +83,6 @@ export default function AjoutDispoCandidat({
         }
       })
     : []
-
-  useEffect(() => {
-    const fetchCandidats = async () => {
-      const { data } = await supabase
-        .from("candidats")
-        .select("*")
-        .contains("secteurs", [secteur])
-        .eq("actif", true)
-        .order("nom")
-
-      setCandidatsSecteur(data || [])
-    }
-
-    if (secteur) fetchCandidats()
-  }, [secteur])
 
   const toggleStatut = (key: string) => {
     setDispos((prev) => {
@@ -142,6 +142,40 @@ export default function AjoutDispoCandidat({
       }
     }
     setDispos(updated)
+  }
+
+  const handleSave = async () => {
+    if (!candidat || !secteur) return
+
+    const lignes = Object.entries(dispos)
+      .filter(([_, d]) => d.statut !== "non")
+      .map(([date, d]) => ({
+        candidat_id: candidat.id,
+        date,
+        secteur,
+        service: null,
+        statut: d.statut === "dispo" ? "Dispo" : "Non Dispo",
+        commentaire,
+        dispo_matin: d.matin,
+        dispo_soir: d.soir,
+        dispo_nuit: false,
+      }))
+
+    if (lignes.length === 0) {
+      toast({ title: "Aucune ligne à enregistrer", variant: "destructive" })
+      return
+    }
+
+    const { error } = await supabase.from("disponibilites").insert(lignes)
+
+    if (error) {
+      toast({ title: "Erreur", description: "Insertion échouée", variant: "destructive" })
+      return
+    }
+
+    toast({ title: "Disponibilités enregistrées" })
+    onOpenChange(false)
+    onSuccess()
   }
 
   return (
@@ -322,7 +356,10 @@ export default function AjoutDispoCandidat({
             </div>
 
             <div className="pt-4">
-              <Button className="w-full bg-[#840404] hover:bg-[#750303] text-white">
+              <Button
+                className="w-full bg-[#840404] hover:bg-[#750303] text-white"
+                onClick={handleSave}
+              >
                 Valider
               </Button>
             </div>

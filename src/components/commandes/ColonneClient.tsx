@@ -8,7 +8,7 @@ interface ColonneClientProps {
   service?: string | null
   semaine: string
   nbEnRecherche: number
-  commandeId?: string
+  commandeIdsLigne: string[]
 }
 
 export function ColonneClient({
@@ -17,7 +17,7 @@ export function ColonneClient({
   service,
   semaine,
   nbEnRecherche,
-  commandeId,
+  commandeIdsLigne,
 }: ColonneClientProps) {
   const secteurInfo = secteursList.find((s) => s.value === secteur)
 
@@ -25,9 +25,9 @@ export function ColonneClient({
     <div className="p-4 border-r bg-gray-50">
       <div className="flex justify-between items-center">
         <span className="font-semibold">{clientNom}</span>
-        {commandeId && (
+        {commandeIdsLigne?.length > 0 && (
           <div className="h-5 w-5 rounded-full bg-white border shadow flex items-center justify-center">
-            <HistoriqueCommandeDialog commandeId={commandeId} />
+            <HistoriqueCommandeDialog commandeIds={commandeIdsLigne} />
           </div>
         )}
       </div>

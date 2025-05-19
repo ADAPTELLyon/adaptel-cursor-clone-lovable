@@ -13,7 +13,8 @@ export type Candidat = {
   commentaire?: string | null;
   prioritaire: boolean;
   created_at: string;
-  secteurs?: string[]; // ✅ Ajouté pour gérer le filtre par secteur
+  secteurs?: string[]; // ✅ Pour filtre secteur
+  vehicule?: boolean;  // ✅ Ajout requis pour affichage icône véhicule
 };
 
 // === TABLE: disponibilites ===
@@ -30,18 +31,20 @@ export type CandidatDispo = {
   commentaire?: string | null;
   created_at: string;
   updated_at?: string | null;
+  creneaux: string[]; // ✅ Obligatoire pour affichage et insertions
 };
 
 export type CandidatDispoWithNom = CandidatDispo & {
   candidat?: Pick<Candidat, "nom" | "prenom">;
 };
 
-// === TYPE: JourPlanning pour planning candidats
+// === TYPE: JourPlanning pour planning candidats ===
 export type JourPlanningCandidat = {
   date: string;
   secteur: string;
   service?: string | null;
-  disponibilite: CandidatDispoWithNom;
+  disponibilite?: CandidatDispoWithNom;
+  commande?: CommandeFull; // ✅ Ajout pour prise en charge des planifications
 };
 
 // === TABLE: clients ===

@@ -3,7 +3,7 @@ import MainLayout from "@/components/main-layout"
 import { SectionFixeCandidates } from "@/components/Planning/section-fixe-candidates"
 import { PlanningCandidateTable } from "@/components/Planning/PlanningCandidateTable"
 import { getPlanningCandidats } from "@/integrations/supabase/planning"
-import { addDays, format, startOfWeek, getWeek } from "date-fns"
+import { format, getWeek } from "date-fns"
 import type { JourPlanningCandidat } from "@/types/types-front"
 
 export default function Planning() {
@@ -17,6 +17,7 @@ export default function Planning() {
   const [search, setSearch] = useState("")
   const [toutAfficher, setToutAfficher] = useState(false)
   const [dispo, setDispo] = useState(false)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
   const [stats, setStats] = useState({
     "Non renseigné": 0,
@@ -47,7 +48,7 @@ export default function Planning() {
 
   useEffect(() => {
     fetchPlanning()
-  }, [])
+  }, [refreshTrigger])
 
   useEffect(() => {
     const matchSearchTerm = (val: string) => {
@@ -63,14 +64,12 @@ export default function Planning() {
     if (search.trim()) {
       Object.entries(planning).forEach(([candidatNom, jours]) => {
         const joursMatch = jours.filter((j) => {
-          const dateStr = format(new Date(j.date), "dd/MM/yyyy")
           const semaineStr = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
           return (
             matchSearchTerm(candidatNom) ||
             matchSearchTerm(j.secteur) ||
             (j.service && matchSearchTerm(j.service)) ||
             matchSearchTerm(semaineStr) ||
-            matchSearchTerm(dateStr) ||
             (j.disponibilite?.statut && matchSearchTerm(j.disponibilite.statut))
           )
         })
@@ -99,10 +98,7 @@ export default function Planning() {
 
     setFilteredPlanning(newFiltered)
 
-    let nr = 0,
-      d = 0,
-      nd = 0,
-      p = 0
+    let nr = 0, d = 0, nd = 0, p = 0
 
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) => {
@@ -166,6 +162,7 @@ export default function Planning() {
         resetFiltres={resetFiltres}
         semainesDisponibles={semainesDisponibles}
         candidatsDisponibles={candidatsDisponibles}
+        setRefreshTrigger={setRefreshTrigger}
       />
 
       <PlanningCandidateTable

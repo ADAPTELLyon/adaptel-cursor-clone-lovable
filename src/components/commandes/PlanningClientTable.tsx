@@ -39,20 +39,51 @@ export function PlanningClientTable({
   ) => {
     const isValidTime = /^\d{2}:\d{2}$/.test(nouvelleValeur);
     if (!isValidTime) return;
+
+    const { data: authData } = await supabase.auth.getUser()
+    const userEmail = authData?.user?.email || null
+
+    const { data: userApp } = await supabase
+      .from("utilisateurs")
+      .select("id")
+      .eq("email", userEmail)
+      .single()
+
+    const userId = userApp?.id || null
+
     const { error } = await supabase
       .from("commandes")
       .update({ [champ]: nouvelleValeur })
-      .eq("id", commande.id);
-    if (!error) commande[champ] = nouvelleValeur;
-  };
+      .eq("id", commande.id)
+
+    if (!error) {
+      commande[champ] = nouvelleValeur
+
+      if (userId) {
+        const { error: histError } = await supabase.from("historique").insert({
+          table_cible: "commandes",
+          ligne_id: commande.id,
+          action: "modification_horaire",
+          description: `Changement de ${champ} à ${nouvelleValeur}`,
+          user_id: userId,
+          date_action: new Date().toISOString(),
+        })
+
+        if (histError) {
+          console.error("Erreur historique modification_horaire :", histError)
+        }
+      }
+    }
+  }
 
   const groupesParSemaine: Record<string, Record<string, JourPlanning[][]>> = {}
 
-  Object.entries(planning).forEach(([client, jours]) => {
+  Object.entries(planning).forEach(([clientNomStr, jours]) => {
+    const clientNom: string = clientNomStr
     jours.forEach((jour) => {
       const semaine = getWeek(new Date(jour.date), { weekStartsOn: 1 }).toString()
       if (!groupesParSemaine[semaine]) groupesParSemaine[semaine] = {}
-      const cle = `${client}||${jour.secteur}||${jour.service || ""}`
+      const cle = `${clientNom}||${jour.secteur}||${jour.service || ""}`
       if (!groupesParSemaine[semaine][cle]) groupesParSemaine[semaine][cle] = []
 
       let ligneExistante = groupesParSemaine[semaine][cle].find((ligne) => {
@@ -148,6 +179,7 @@ export function PlanningClientTable({
 
                 const commandeId = ligne[0]?.commandes[0]?.id
                 const clientId = ligne[0]?.commandes[0]?.client_id || ""
+                const commandeIdsLigne = ligne.flatMap(j => j.commandes.map(c => c.id))
 
                 return (
                   <div
@@ -161,6 +193,7 @@ export function PlanningClientTable({
                       semaine={semaine}
                       nbEnRecherche={nbEnRecherche}
                       commandeId={commandeId}
+                      commandeIdsLigne={commandeIdsLigne}
                     />
 
                     {jours.map((jour, index) => {

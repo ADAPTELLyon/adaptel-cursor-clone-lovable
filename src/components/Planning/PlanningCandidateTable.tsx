@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { Check } from "lucide-react"
 import { format, startOfWeek, addDays, getWeek } from "date-fns"
@@ -75,10 +74,9 @@ export function PlanningCandidateTable({
                     const jourCell = ligne.find(
                       (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
                     )
-                    if (jourCell) {
+                    if (jourCell?.disponibilite) {
                       totalDispos += 1
-                      const statut = jourCell.disponibilite?.statut
-                      if (statut === "Dispo") nbDisponibles++
+                      if (jourCell.disponibilite.statut === "Dispo") nbDisponibles++
                     }
                   })
                 )
@@ -117,10 +115,14 @@ export function PlanningCandidateTable({
                 const disponibilites = ligne.map((j) => j.disponibilite?.statut)
                 const hasDispo = disponibilites.includes("Dispo")
 
-                const candidatId = ligne[0]?.disponibilite?.candidat_id || ""
-                const nomPrenom = ligne[0]?.disponibilite?.candidat
-                  ? `${ligne[0].disponibilite.candidat.nom} ${ligne[0].disponibilite.candidat.prenom}`
-                  : candidatNom
+                const candidatId =
+                  ligne[0]?.disponibilite?.candidat_id || ligne[0]?.commande?.candidat_id || ""
+                const nomPrenom =
+                  ligne[0]?.disponibilite?.candidat
+                    ? `${ligne[0].disponibilite.candidat.nom} ${ligne[0].disponibilite.candidat.prenom}`
+                    : ligne[0]?.commande?.candidat
+                    ? `${ligne[0].commande.candidat.nom} ${ligne[0].commande.candidat.prenom}`
+                    : candidatNom
 
                 return (
                   <div
@@ -141,11 +143,13 @@ export function PlanningCandidateTable({
                         (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
                       )
                       const dispo = jourCell?.disponibilite
+                      const commande = jourCell?.commande
 
                       return (
                         <div key={index} className="border-r p-2 h-28 relative">
                           <CellulePlanningCandidate
                             disponibilite={dispo}
+                            commande={commande}
                             secteur={secteur}
                             date={jour.dateStr}
                             candidatId={candidatId}
