@@ -20,6 +20,7 @@ interface PlanificationCandidatDialogProps {
   onClose: () => void
   date: string
   secteur: string
+  service?: string
   commande: CommandeWithCandidat
   onSuccess: () => void
 }
@@ -29,6 +30,7 @@ export function PlanificationCandidatDialog({
   onClose,
   date,
   secteur,
+  service,
   commande,
   onSuccess,
 }: PlanificationCandidatDialogProps) {
@@ -95,11 +97,14 @@ export function PlanificationCandidatDialog({
   }, [open, date, secteur, candidats])
 
   const handleSelect = async (candidatId: string) => {
-    const { error: errInsert } = await supabase.from("planification").insert({
+    const candidat = candidats.find((c) => c.id === candidatId)
+
+    const { error: errInsertPlanif } = await supabase.from("planification").insert({
       commande_id: commande.id,
       candidat_id: candidatId,
       date,
       secteur,
+      service: service || null,
       statut: "Validé",
       heure_debut_matin: commande.heure_debut_matin,
       heure_fin_matin: commande.heure_fin_matin,
@@ -109,12 +114,12 @@ export function PlanificationCandidatDialog({
       heure_fin_nuit: null,
     })
 
-    if (errInsert) {
+    if (errInsertPlanif) {
       toast({ title: "Erreur", description: "Échec insertion planification", variant: "destructive" })
       return
     }
 
-    const { error: errUpdate } = await supabase
+    const { error: errUpdateCommande } = await supabase
       .from("commandes")
       .update({
         candidat_id: candidatId,
@@ -122,12 +127,11 @@ export function PlanificationCandidatDialog({
       })
       .eq("id", commande.id)
 
-    if (errUpdate) {
+    if (errUpdateCommande) {
       toast({ title: "Erreur", description: "Échec mise à jour commande", variant: "destructive" })
       return
     }
 
-    // 🔐 USER ID via utilisateurs (email)
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
 
@@ -145,9 +149,20 @@ export function PlanificationCandidatDialog({
           table_cible: "commandes",
           ligne_id: commande.id,
           action: "planification",
-          description: `Planification de candidat ${candidatId}`,
+          description: "Planification via popup PlanificationCandidatDialog",
           user_id: userId,
           date_action: new Date().toISOString(),
+          apres: {
+            date,
+            candidat: {
+              nom: candidat?.nom || "",
+              prenom: candidat?.prenom || "",
+            },
+            heure_debut_matin: commande.heure_debut_matin,
+            heure_fin_matin: commande.heure_fin_matin,
+            heure_debut_soir: commande.heure_debut_soir,
+            heure_fin_soir: commande.heure_fin_soir,
+          },
         })
 
         if (histError) {

@@ -1,4 +1,4 @@
-import { Check } from "lucide-react"
+import { Check, Pencil } from "lucide-react"
 import { secteursList } from "@/lib/secteurs"
 import { HistoriqueCommandeDialog } from "@/components/commandes/HistoriqueCommandeDialog"
 

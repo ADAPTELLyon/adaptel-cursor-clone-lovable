@@ -62,13 +62,23 @@ export type Client = {
   services?: string[] | null;
 };
 
+// === TYPE: Statuts de commande ===
+export type StatutCommande =
+  | "En recherche"
+  | "Validé"
+  | "Annule Int"
+  | "Annule Client"
+  | "Annule ADA"
+  | "Absence"
+  | "Non pourvue";
+
 // === TABLE: commandes ===
 export type Commande = {
   id: string;
   date: string;
   secteur: string;
   service?: string | null;
-  statut: string;
+  statut: StatutCommande;
   client_id: string;
   candidat_id?: string | null;
   heure_debut_matin?: string | null;

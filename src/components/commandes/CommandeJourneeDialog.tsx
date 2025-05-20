@@ -170,18 +170,27 @@ export function CommandeJourneeDialog({
         commentaire: commentaire || null,
         created_by: userId,
       })
-      .select("id")
+      .select("id, date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
 
     setLoading(false)
 
     if (!error && data && data.length > 0) {
+      const cmd = data[0]
+
       const historique = {
         table_cible: "commandes",
-        ligne_id: data[0].id,
+        ligne_id: cmd.id,
         action: "creation",
         description: "Création de commande journée",
         user_id: userId,
         date_action: new Date().toISOString(),
+        apres: {
+          date: cmd.date,
+          heure_debut_matin: cmd.heure_debut_matin,
+          heure_fin_matin: cmd.heure_fin_matin,
+          heure_debut_soir: cmd.heure_debut_soir,
+          heure_fin_soir: cmd.heure_fin_soir,
+        },
       }
 
       const { error: histError } = await supabase

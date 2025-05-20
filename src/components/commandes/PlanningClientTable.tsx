@@ -17,28 +17,24 @@ export function PlanningClientTable({
   onRefresh,
   refreshTrigger = 0,
 }: {
-  planning: Record<string, JourPlanning[]>;
-  selectedSecteurs: string[];
-  selectedSemaine: string;
-  onRefresh: () => void;
-  refreshTrigger?: number;
+  planning: Record<string, JourPlanning[]>
+  selectedSecteurs: string[]
+  selectedSemaine: string
+  onRefresh: () => void
+  refreshTrigger?: number
 }) {
-  const [editId, setEditId] = useState<string | null>(null);
-  const [heureTemp, setHeureTemp] = useState<Record<string, string>>({});
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
-  const [commentaireTemp, setCommentaireTemp] = useState<string>("");
-
-  useEffect(() => {
-    console.log("🔄 Re-render déclenché car `planning` a changé !");
-  }, [planning]);
+  const [editId, setEditId] = useState<string | null>(null)
+  const [heureTemp, setHeureTemp] = useState<Record<string, string>>({})
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [commentaireTemp, setCommentaireTemp] = useState<string>("")
 
   const updateHeure = async (
     commande: CommandeWithCandidat,
     champ: keyof CommandeWithCandidat,
     nouvelleValeur: string
   ) => {
-    const isValidTime = /^\d{2}:\d{2}$/.test(nouvelleValeur);
-    if (!isValidTime) return;
+    const isValidTime = /^\d{2}:\d{2}$/.test(nouvelleValeur)
+    if (!isValidTime) return
 
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
@@ -67,6 +63,10 @@ export function PlanningClientTable({
           description: `Changement de ${champ} à ${nouvelleValeur}`,
           user_id: userId,
           date_action: new Date().toISOString(),
+          apres: {
+            champ,
+            valeur: nouvelleValeur,
+          },
         })
 
         if (histError) {
@@ -122,9 +122,7 @@ export function PlanningClientTable({
         return (
           <div key={semaine} className="border rounded-lg overflow-hidden shadow-sm">
             <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
-              <div className="p-3 border-r flex items-center justify-center">
-                {semaineTexte}
-              </div>
+              <div className="p-3 border-r flex items-center justify-center">{semaineTexte}</div>
               {jours.map((jour, index) => {
                 let totalMissions = 0
                 let nbEnRecherche = 0
@@ -142,19 +140,23 @@ export function PlanningClientTable({
                   })
                 )
                 return (
-                  <div
-                    key={index}
-                    className="p-3 border-r text-center relative leading-tight"
-                  >
+                  <div key={index} className="p-3 border-r text-center relative leading-tight">
                     <div>{jour.label.split(" ")[0]}</div>
                     <div className="text-xs">{jour.label.split(" ").slice(1).join(" ")}</div>
                     {totalMissions === 0 ? (
                       <div className="absolute top-1 right-1">
-                        <div className="h-5 w-5 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs">–</div>
+                        <div className="h-5 w-5 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs">
+                          –
+                        </div>
                       </div>
                     ) : nbEnRecherche > 0 ? (
-                      <div className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center"
-                        style={{ backgroundColor: indicateurColors["En recherche"], color: "white" }}>
+                      <div
+                        className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center"
+                        style={{
+                          backgroundColor: indicateurColors["En recherche"],
+                          color: "white",
+                        }}
+                      >
                         {nbEnRecherche}
                       </div>
                     ) : (
@@ -177,9 +179,8 @@ export function PlanningClientTable({
                   .flatMap((j) => j.commandes)
                   .filter((cmd) => cmd.statut === "En recherche").length
 
-                const commandeId = ligne[0]?.commandes[0]?.id
                 const clientId = ligne[0]?.commandes[0]?.client_id || ""
-                const commandeIdsLigne = ligne.flatMap(j => j.commandes.map(c => c.id))
+                const commandeIdsLigne = ligne.flatMap((j) => j.commandes.map((c) => c.id))
 
                 return (
                   <div
@@ -192,7 +193,6 @@ export function PlanningClientTable({
                       service={service}
                       semaine={semaine}
                       nbEnRecherche={nbEnRecherche}
-                      commandeId={commandeId}
                       commandeIdsLigne={commandeIdsLigne}
                     />
 

@@ -9,6 +9,7 @@ import type { CommandeWithCandidat } from "@/types/types-front"
 import { CommandeJourneeDialog } from "@/components/commandes/CommandeJourneeDialog"
 import { PlanificationCandidatDialog } from "@/components/commandes/PlanificationCandidatDialog"
 import { PopoverPlanificationRapide } from "@/components/commandes/PopoverPlanificationRapide"
+import { PopoverChangementStatut } from "@/components/commandes/PopoverChangementStatut"
 
 interface CellulePlanningProps {
   commande?: CommandeWithCandidat
@@ -83,21 +84,25 @@ export function CellulePlanning({
         color: statutColors[commande.statut]?.text || "#000000",
       }}
     >
-      <div className="leading-tight font-semibold">
-        {commande.statut === "Validé" && commande.candidat ? (
-          <>
-            <span>{commande.candidat.nom}</span>
-            <span className="block text-xs font-normal">
-              {commande.candidat.prenom}
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="font-medium">{commande.statut}</span>
-            <span className="block text-xs font-normal h-[1.25rem]"></span>
-          </>
-        )}
-      </div>
+      <PopoverChangementStatut
+        commande={commande}
+        onSuccess={onSuccess || (() => {})}
+        trigger={
+          <div className="leading-tight font-semibold cursor-pointer">
+            {commande.statut === "Validé" && commande.candidat ? (
+              <>
+                <span>{commande.candidat.nom}</span>
+                <span className="block text-xs font-normal">{commande.candidat.prenom}</span>
+              </>
+            ) : (
+              <>
+                <span className="font-medium">{commande.statut}</span>
+                <span className="block text-xs font-normal h-[1.25rem]"></span>
+              </>
+            )}
+          </div>
+        }
+      />
 
       <div className="text-[13px] font-semibold mt-1 space-y-1">
         {["matin", ...(isEtages ? [] : ["soir"])].map((creneau) => {

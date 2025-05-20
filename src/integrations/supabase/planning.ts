@@ -1,6 +1,6 @@
 import { startOfWeek } from "date-fns"
 import { supabase } from "@/integrations/supabase/client"
-import type { JourPlanningCandidat } from "@/types/types-front"
+import type { JourPlanningCandidat, StatutCommande } from "@/types/types-front"
 
 export async function getPlanningCandidats(): Promise<Record<string, JourPlanningCandidat[]>> {
   const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
@@ -56,7 +56,7 @@ export async function getPlanningCandidats(): Promise<Record<string, JourPlannin
         date: commande.date,
         secteur: commande.secteur,
         service: commande.service,
-        statut: commande.statut,
+        statut: commande.statut as StatutCommande,
         client_id: commande.client_id,
         candidat_id: commande.candidat_id,
         heure_debut_matin: commande.heure_debut_matin,
