@@ -13,6 +13,7 @@ export function SectionFixeCommandes({
   selectedSecteurs,
   setSelectedSecteurs,
   stats,
+  totauxSemaine,
   taux,
   semaine,
   setSemaine,
@@ -35,6 +36,7 @@ export function SectionFixeCommandes({
   selectedSecteurs: string[]
   setSelectedSecteurs: (val: string[]) => void
   stats: { demandées: number; validées: number; enRecherche: number; nonPourvue: number }
+  totauxSemaine: { demandées: number; validées: number; enRecherche: number; nonPourvue: number }
   taux: number
   semaine: string
   setSemaine: (s: string) => void
@@ -58,8 +60,8 @@ export function SectionFixeCommandes({
 
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 space-y-6">
-      {/* Indicateurs */}
-      <div className="grid grid-cols-4 gap-2">
+      {/* Indicateurs cercles */}
+      <div className="grid grid-cols-4 gap-4">
         {["Demandées", "Validées", "En recherche", "Non pourvue"].map((label) => {
           const key =
             label === "En recherche"
@@ -67,14 +69,24 @@ export function SectionFixeCommandes({
               : label === "Non pourvue"
               ? "nonPourvue"
               : label.toLowerCase().replace(" ", "")
+          const color = indicateurColors[label] || "#ccc"
+          const total = totauxSemaine[key] || 0
+          const valeur = stats[key] || 0
           return (
-            <div
-              key={label}
-              className="rounded-xl p-3"
-              style={{ backgroundColor: indicateurColors[label] }}
-            >
-              <div className="text-xs text-white">{label}</div>
-              <div className="text-2xl font-bold text-white">{stats[key] || 0}</div>
+            <div key={label} className="relative flex flex-col items-center justify-center">
+              <div
+                className="w-20 h-20 rounded-full flex items-center justify-center text-white text-xl font-bold"
+                style={{ backgroundColor: color }}
+              >
+                {valeur}
+              </div>
+              <div
+                className="absolute bottom-0 right-4 w-6 h-6 rounded-full text-[11px] flex items-center justify-center text-white shadow font-semibold"
+                style={{ backgroundColor: color }}
+              >
+                {total}
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground font-medium">{label}</div>
             </div>
           )
         })}
@@ -250,9 +262,6 @@ export function SectionFixeCommandes({
 function getWeekNumber(date: Date) {
   const start = new Date(date.getFullYear(), 0, 1)
   const diff =
-    (+date -
-      +start +
-      (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) /
-    86400000
+    (+date - +start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) / 86400000
   return Math.floor((diff + start.getDay() + 6) / 7)
 }

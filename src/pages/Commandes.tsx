@@ -14,21 +14,18 @@ export default function Commandes() {
   const [semaineEnCours, setSemaineEnCours] = useState(true)
   const [semaine, setSemaine] = useState(format(new Date(), "yyyy-MM-dd"))
   const [selectedSemaine, setSelectedSemaine] = useState(getWeek(new Date()).toString())
-  const [semaineDates, setSemaineDates] = useState<Date[]>([])
   const [client, setClient] = useState("")
   const [search, setSearch] = useState("")
   const [toutAfficher, setToutAfficher] = useState(false)
   const [enRecherche, setEnRecherche] = useState(false)
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
   const [openDialog, setOpenDialog] = useState(false)
-  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
   useEffect(() => {
     const baseDate = new Date(semaine)
     const dates = Array.from({ length: 7 }, (_, i) =>
       addDays(startOfWeek(baseDate, { weekStartsOn: 1 }), i)
     )
-    setSemaineDates(dates)
   }, [semaine])
 
   const fetchPlanning = async () => {
@@ -41,8 +38,7 @@ export default function Commandes() {
         id, date, statut, secteur, service, client_id,
         heure_debut_matin, heure_fin_matin,
         heure_debut_soir, heure_fin_soir,
-        commentaire,
-        created_at,
+        commentaire, created_at,
         candidats (id, nom, prenom),
         clients (nom)
       `)
@@ -107,90 +103,33 @@ export default function Commandes() {
 
   useEffect(() => {
     const currentWeek = getWeek(new Date(), { weekStartsOn: 1 })
-
-    const matchSearchTerm = (val: string) => {
-      return search
-        .trim()
-        .toLowerCase()
-        .split(" ")
-        .every((term) => val.toLowerCase().includes(term))
-    }
+    const matchSearchTerm = (val: string) =>
+      search.trim().toLowerCase().split(" ").every((term) => val.toLowerCase().includes(term))
 
     const newFiltered: typeof planning = {}
 
-    if (search.trim()) {
-      Object.entries(planning).forEach(([clientNom, jours]) => {
-        const joursMatch = jours.filter((j) => {
-          const semaineStr = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
-          return (
-            matchSearchTerm(clientNom) ||
-            matchSearchTerm(j.secteur) ||
-            (j.service && matchSearchTerm(j.service)) ||
-            matchSearchTerm(semaineStr) ||
-            j.commandes.some((cmd) =>
-              [cmd.candidat?.nom, cmd.candidat?.prenom, cmd.statut]
-                .filter(Boolean)
-                .some((val) => (val ? matchSearchTerm(val) : false))
-            )
-          )
-        })
-        if (joursMatch.length > 0) {
-          newFiltered[clientNom] = joursMatch
-        }
-      })
-      setFilteredPlanning(newFiltered)
-      return
-    }
-
-    if (selectedSemaine === "Toutes") {
-      const filtered = Object.entries(planning).reduce((acc, [clientNom, jours]) => {
-        const joursFuturs = jours.filter((j) => {
-          const semaineJour = getWeek(new Date(j.date), { weekStartsOn: 1 })
-          return semaineJour >= currentWeek
-        })
-
+    Object.entries(planning).forEach(([clientNom, jours]) => {
+      const joursFiltres = jours.filter((j) => {
+        const semaineDuJour = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
+        const matchSecteur = selectedSecteurs.includes(j.secteur)
         const matchClient = client ? clientNom === client : true
-        const joursFiltres = joursFuturs.filter(
-          (j) =>
-            selectedSecteurs.includes(j.secteur) &&
-            (!enRecherche || j.commandes.some((cmd) => cmd.statut === "En recherche"))
-        )
-
-        if (joursFiltres.length > 0 && matchClient) {
-          acc[clientNom] = joursFiltres
-        }
-
-        return acc
-      }, {} as Record<string, JourPlanning[]>)
-
-      setFilteredPlanning(filtered)
-    } else {
-      Object.entries(planning).forEach(([clientNom, jours]) => {
-        const joursFiltres = jours.filter((j) => {
-          const semaineDuJour = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
-          const matchSecteur = selectedSecteurs.includes(j.secteur)
-          const matchClient = client ? clientNom === client : true
-          const matchRecherche = enRecherche
-            ? j.commandes.some((cmd) => cmd.statut === "En recherche")
-            : true
-          const matchSemaine =
-            selectedSemaine === "Toutes" || selectedSemaine === semaineDuJour
-          return matchSecteur && matchClient && matchRecherche && matchSemaine
-        })
-        if (joursFiltres.length > 0) {
-          newFiltered[clientNom] = joursFiltres
-        }
+        const matchRecherche = enRecherche
+          ? j.commandes.some((cmd) => cmd.statut === "En recherche")
+          : true
+        const matchSemaine =
+          selectedSemaine === "Toutes" || selectedSemaine === semaineDuJour
+        return matchSecteur && matchClient && matchRecherche && matchSemaine
       })
+      if (joursFiltres.length > 0) {
+        newFiltered[clientNom] = joursFiltres
+      }
+    })
 
-      setFilteredPlanning(newFiltered)
-    }
+    setFilteredPlanning(newFiltered)
 
-    let d = 0,
-      v = 0,
-      r = 0,
-      np = 0
+    let d = 0, v = 0, r = 0, np = 0
 
-    Object.values(selectedSemaine === "Toutes" ? planning : newFiltered).forEach((jours) =>
+    Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) =>
         j.commandes.forEach((cmd) => {
           if (cmd.statut !== "Annule Client" && cmd.statut !== "Annule ADA") {
@@ -209,15 +148,7 @@ export default function Commandes() {
       enRecherche: r,
       nonPourvue: np,
     })
-  }, [
-    planning,
-    selectedSecteurs,
-    selectedSemaine,
-    client,
-    search,
-    enRecherche,
-    toutAfficher,
-  ])
+  }, [planning, selectedSecteurs, selectedSemaine, client, search, enRecherche, toutAfficher])
 
   const resetFiltres = () => {
     setSelectedSecteurs(["Étages"])
@@ -231,25 +162,35 @@ export default function Commandes() {
     setSelectedSemaine(current)
   }
 
-  const currentWeek = getWeek(new Date(), { weekStartsOn: 1 })
-
   const semainesDisponibles = Array.from(
     new Set(
-      Object.values(planning)
-        .flat()
-        .map((j) => getWeek(new Date(j.date), { weekStartsOn: 1 }))
+      Object.values(planning).flat().map((j) =>
+        getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
+      )
     )
-  )
-    .filter((s) => typeof s === "number")
-    .sort((a, b) => a - b)
-    .map((s) => s.toString())
+  ).sort()
 
   const clientsDisponibles = Object.keys(planning)
 
-  const onRefreshDone = async () => {
-    await fetchPlanning()
-    setOpenDialog(false)
-  }
+  // ✅ Ajout totaux semaine en cours (pour tous secteurs)
+  const semaineCourante = getWeek(new Date(), { weekStartsOn: 1 }).toString()
+  const totauxSemaine = { demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 }
+
+  Object.values(planning).forEach((jours) => {
+    jours.forEach((j) => {
+      const week = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
+      if (week === semaineCourante) {
+        j.commandes.forEach((cmd) => {
+          if (cmd.statut !== "Annule Client" && cmd.statut !== "Annule ADA") {
+            totauxSemaine.demandées++
+            if (cmd.statut === "Validé") totauxSemaine.validées++
+            if (cmd.statut === "En recherche") totauxSemaine.enRecherche++
+            if (cmd.statut === "Non pourvue") totauxSemaine.nonPourvue++
+          }
+        })
+      }
+    })
+  })
 
   return (
     <MainLayout>
@@ -257,6 +198,7 @@ export default function Commandes() {
         selectedSecteurs={selectedSecteurs}
         setSelectedSecteurs={setSelectedSecteurs}
         stats={stats}
+        totauxSemaine={totauxSemaine}
         taux={
           stats.demandées > 0
             ? Math.round((stats.validées / stats.demandées) * 100)
@@ -285,14 +227,14 @@ export default function Commandes() {
         planning={filteredPlanning}
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
-        onRefresh={onRefreshDone}
+        onRefresh={fetchPlanning}
       />
 
       <NouvelleCommandeDialog
         open={openDialog}
         onOpenChange={setOpenDialog}
         onRefresh={fetchPlanning}
-        onRefreshDone={() => setRefreshTrigger((prev) => prev + 1)}
+        onRefreshDone={() => {}}
       />
     </MainLayout>
   )

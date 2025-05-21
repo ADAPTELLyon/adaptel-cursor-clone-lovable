@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
-import { Info } from "lucide-react"
+import { Info, AlertCircle } from "lucide-react"
 import { disponibiliteColors, statutColors } from "@/lib/colors"
 import { CandidateJourneeDialog } from "@/components/Planning/CandidateJourneeDialog"
 import type { CandidatDispoWithNom, CommandeFull } from "@/types/types-front"
@@ -13,6 +13,7 @@ import { toast } from "@/hooks/use-toast"
 interface CellulePlanningCandidateProps {
   disponibilite?: CandidatDispoWithNom
   commande?: CommandeFull
+  autresCommandes?: CommandeFull[] // ✅ Ajout ici
   secteur: string
   date: string
   candidatId: string
@@ -24,6 +25,7 @@ interface CellulePlanningCandidateProps {
 export function CellulePlanningCandidate({
   disponibilite,
   commande,
+  autresCommandes = [],
   secteur,
   date,
   candidatId,
@@ -36,16 +38,12 @@ export function CellulePlanningCandidate({
   const [editing, setEditing] = useState(false)
 
   const isPlanifie = !!commande
-  const statut = disponibilite?.statut ?? "Non renseigné"
+  const statut = isPlanifie ? "Validé" : (disponibilite?.statut ?? "Non renseigné")
   const matin = disponibilite?.matin ?? false
   const soir = disponibilite?.soir ?? false
 
-  const bgColor = isPlanifie
-    ? statutColors["Validé"]?.bg || "#a9d08e"
-    : disponibiliteColors[statut]?.bg || "#e5e7eb"
-  const textColor = isPlanifie
-    ? statutColors["Validé"]?.text || "#000000"
-    : disponibiliteColors[statut]?.text || "#000000"
+  const couleur =
+    statutColors[statut] ?? disponibiliteColors[statut] ?? { bg: "#e5e7eb", text: "#000000" }
 
   const handleClick = () => {
     if (isPlanifie) {
@@ -73,35 +71,6 @@ export function CellulePlanningCandidate({
     } else {
       toast({ title: "Commentaire mis à jour" })
       onSuccess()
-
-      // 🔐 Ajout de l’enregistrement dans historique
-      const { data: authData } = await supabase.auth.getUser()
-      const userEmail = authData?.user?.email || null
-
-      if (userEmail) {
-        const { data: userApp } = await supabase
-          .from("utilisateurs")
-          .select("id")
-          .eq("email", userEmail)
-          .single()
-
-        const userId = userApp?.id || null
-
-        if (userId) {
-          const { error: histError } = await supabase.from("historique").insert({
-            table_cible: "disponibilites",
-            ligne_id: disponibilite.id,
-            action: "modification_commentaire",
-            description: `Mise à jour du commentaire : ${value}`,
-            user_id: userId,
-            date_action: new Date().toISOString(),
-          })
-
-          if (histError) {
-            console.error("Erreur historique (commentaire) :", histError)
-          }
-        }
-      }
     }
   }
 
@@ -111,12 +80,40 @@ export function CellulePlanningCandidate({
         className={cn(
           "h-full rounded p-2 text-xs border cursor-pointer flex flex-col justify-start relative"
         )}
-        style={{ backgroundColor: bgColor, color: textColor }}
+        style={{ backgroundColor: couleur.bg, color: couleur.text }}
         onClick={handleClick}
       >
         {isPlanifie ? (
           <>
-            <div className="font-semibold">{commande.client?.nom || "Mission validée"}</div>
+            <div className="font-semibold flex items-center gap-1">
+              {commande.client?.nom || "Mission validée"}
+
+              {autresCommandes.length > 0 && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <AlertCircle className="h-4 w-4 text-red-600 cursor-pointer" />
+                  </PopoverTrigger>
+                  <PopoverContent className="text-sm space-y-1 max-w-xs">
+                    {autresCommandes.map((c, i) => (
+                      <div key={i} className="border-b pb-1">
+                        <div className="font-medium">{c.client?.nom || "Client inconnu"}</div>
+                        {c.heure_debut_matin && c.heure_fin_matin && (
+                          <div>
+                            Matin : {c.heure_debut_matin.slice(0, 5)} - {c.heure_fin_matin.slice(0, 5)}
+                          </div>
+                        )}
+                        {c.heure_debut_soir && c.heure_fin_soir && (
+                          <div>
+                            Soir : {c.heure_debut_soir.slice(0, 5)} - {c.heure_fin_soir.slice(0, 5)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
+
             <div className="mt-1 text-xs space-y-1 font-medium">
               {["matin", ...(secteur !== "Étages" ? ["soir"] : [])].map((creneau) => {
                 const heureDebut = commande[`heure_debut_${creneau}` as keyof typeof commande] as string

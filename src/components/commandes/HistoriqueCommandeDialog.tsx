@@ -57,6 +57,8 @@ export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDial
     const action = item.action
     const apres = item.apres || {}
     const candidat = apres?.candidat
+    const ancien = apres?.ancien_candidat
+    const nouveau = apres?.nouveau_candidat
 
     let titre = ""
     let complement = null
@@ -115,6 +117,23 @@ export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDial
       badge = <Badge style={{ backgroundColor: statutColors[apres?.statut]?.bg, color: statutColors[apres?.statut]?.text }}>
         {apres?.statut || "?"}
       </Badge>
+      complement = apres?.complement_motif ? (
+        <div className="text-sm text-muted-foreground">
+          Motif : <span className="italic">{apres.complement_motif}</span>
+        </div>
+      ) : null
+    }
+
+    else if (action === "remplacement") {
+      titre = "Changement de candidat"
+      badge = <Badge style={{ backgroundColor: statutColors["Validé"]?.bg, color: statutColors["Validé"]?.text }}>
+        {nouveau?.nom} {nouveau?.prenom}
+      </Badge>
+      complement = (
+        <div className="text-sm text-muted-foreground">
+          Remplacement de <strong>{ancien?.nom} {ancien?.prenom}</strong>
+        </div>
+      )
     }
 
     else {

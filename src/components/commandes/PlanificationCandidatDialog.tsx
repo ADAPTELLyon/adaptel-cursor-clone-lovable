@@ -96,16 +96,46 @@ export function PlanificationCandidatDialog({
     fetchDispoEtPlanif()
   }, [open, date, secteur, candidats])
 
+  const hasHeures = (debut?: string | null, fin?: string | null) => !!(debut && fin)
+
   const handleSelect = async (candidatId: string) => {
+    const jour = date.slice(0, 10)
     const candidat = candidats.find((c) => c.id === candidatId)
+
+    const { data: existingPlanifs, error: planifError } = await supabase
+      .from("planification")
+      .select("heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+      .eq("candidat_id", candidatId)
+      .eq("date", jour)
+
+    if (planifError) {
+      toast({ title: "Erreur", description: "Erreur vérification conflit", variant: "destructive" })
+      return
+    }
+
+    const conflitMatin =
+      hasHeures(commande.heure_debut_matin, commande.heure_fin_matin) &&
+      existingPlanifs?.some((p) => hasHeures(p.heure_debut_matin, p.heure_fin_matin))
+
+    const conflitSoir =
+      hasHeures(commande.heure_debut_soir, commande.heure_fin_soir) &&
+      existingPlanifs?.some((p) => hasHeures(p.heure_debut_soir, p.heure_fin_soir))
+
+    if (conflitMatin || conflitSoir) {
+      toast({
+        title: "Conflit de créneau",
+        description: "Ce candidat a déjà une mission sur ce créneau.",
+        variant: "destructive",
+      })
+      return
+    }
 
     const { error: errInsertPlanif } = await supabase.from("planification").insert({
       commande_id: commande.id,
       candidat_id: candidatId,
       date,
       secteur,
-      service: service || null,
-      statut: "Validé",
+      statut: "Validé", // ✅ OBLIGATOIRE dans ta table
       heure_debut_matin: commande.heure_debut_matin,
       heure_fin_matin: commande.heure_fin_matin,
       heure_debut_soir: commande.heure_debut_soir,
@@ -145,7 +175,7 @@ export function PlanificationCandidatDialog({
       const userId = userApp?.id || null
 
       if (userId) {
-        const { error: histError } = await supabase.from("historique").insert({
+        await supabase.from("historique").insert({
           table_cible: "commandes",
           ligne_id: commande.id,
           action: "planification",
@@ -164,10 +194,6 @@ export function PlanificationCandidatDialog({
             heure_fin_soir: commande.heure_fin_soir,
           },
         })
-
-        if (histError) {
-          console.error("Erreur historique planification :", histError)
-        }
       }
     }
 

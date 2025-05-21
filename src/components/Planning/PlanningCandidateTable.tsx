@@ -1,11 +1,13 @@
+import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { Check } from "lucide-react"
+import { Check, Info } from "lucide-react"
 import { format, startOfWeek, addDays, getWeek } from "date-fns"
 import { fr } from "date-fns/locale"
 import { indicateurColors } from "@/lib/colors"
 import type { JourPlanningCandidat } from "@/types/types-front"
 import { ColonneCandidate } from "@/components/Planning/ColonneCandidate"
 import { CellulePlanningCandidate } from "@/components/Planning/CellulePlanningCandidate"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 export function PlanningCandidateTable({
   planning,
@@ -18,28 +20,18 @@ export function PlanningCandidateTable({
   selectedSemaine: string
   onRefresh: () => void
 }) {
-  const groupesParSemaine: Record<string, Record<string, JourPlanningCandidat[][]>> = {}
+  const groupesParSemaine: Record<string, Record<string, Record<string, JourPlanningCandidat[]>>> = {}
 
   Object.entries(planning).forEach(([candidat, jours]) => {
     jours.forEach((jour) => {
       const semaine = getWeek(new Date(jour.date), { weekStartsOn: 1 }).toString()
       if (!groupesParSemaine[semaine]) groupesParSemaine[semaine] = {}
-      const cle = `${candidat}||${jour.secteur}||${jour.service || ""}`
-      if (!groupesParSemaine[semaine][cle]) groupesParSemaine[semaine][cle] = []
+      const cle = `${candidat}`
+      const dateKey = format(new Date(jour.date), "yyyy-MM-dd")
 
-      let ligneExistante = groupesParSemaine[semaine][cle].find((ligne) => {
-        return !ligne.some(
-          (cell) =>
-            format(new Date(cell.date), "yyyy-MM-dd") ===
-            format(new Date(jour.date), "yyyy-MM-dd")
-        )
-      })
-
-      if (!ligneExistante) {
-        ligneExistante = []
-        groupesParSemaine[semaine][cle].push(ligneExistante)
-      }
-      ligneExistante.push(jour)
+      if (!groupesParSemaine[semaine][cle]) groupesParSemaine[semaine][cle] = {}
+      if (!groupesParSemaine[semaine][cle][dateKey]) groupesParSemaine[semaine][cle][dateKey] = []
+      groupesParSemaine[semaine][cle][dateKey].push(jour)
     })
   })
 
@@ -69,22 +61,18 @@ export function PlanningCandidateTable({
               {jours.map((jour, index) => {
                 let totalDispos = 0
                 let nbDisponibles = 0
-                Object.values(groupes).forEach((groupe) =>
-                  groupe.forEach((ligne) => {
-                    const jourCell = ligne.find(
-                      (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
-                    )
-                    if (jourCell?.disponibilite) {
-                      totalDispos += 1
-                      if (jourCell.disponibilite.statut === "Dispo") nbDisponibles++
+                Object.values(groupes).forEach((groupe) => {
+                  const jourCells = groupe[jour.dateStr]
+                  jourCells?.forEach((j) => {
+                    if (j.disponibilite) {
+                      totalDispos++
+                      if (j.disponibilite.statut === "Dispo") nbDisponibles++
                     }
                   })
-                )
+                })
+
                 return (
-                  <div
-                    key={index}
-                    className="p-3 border-r text-center relative leading-tight"
-                  >
+                  <div key={index} className="p-3 border-r text-center relative leading-tight">
                     <div>{jour.label.split(" ")[0]}</div>
                     <div className="text-xs">{jour.label.split(" ").slice(1).join(" ")}</div>
                     {totalDispos === 0 ? (
@@ -108,61 +96,82 @@ export function PlanningCandidateTable({
               })}
             </div>
 
-            {Object.entries(groupes).map(([key, lignes]) => {
-              const [candidatNom, secteur, service] = key.split("||")
+            {Object.entries(groupes).map(([key, jourMap]) => {
+              const ligne = jours.map(j => jourMap[j.dateStr]?.[0] ?? null)
+              const disponibilites = ligne.map((j) => j?.disponibilite?.statut)
+              const hasDispo = disponibilites.includes("Dispo")
+              const candidatId = ligne[0]?.disponibilite?.candidat_id || ligne[0]?.commande?.candidat_id || ""
+              const nomPrenom =
+                ligne[0]?.disponibilite?.candidat
+                  ? `${ligne[0].disponibilite.candidat.nom} ${ligne[0].disponibilite.candidat.prenom}`
+                  : ligne[0]?.commande?.candidat
+                  ? `${ligne[0].commande.candidat.nom} ${ligne[0].commande.candidat.prenom}`
+                  : key
 
-              return lignes.map((ligne, ligneIndex) => {
-                const disponibilites = ligne.map((j) => j.disponibilite?.statut)
-                const hasDispo = disponibilites.includes("Dispo")
+              return (
+                <div
+                  key={key}
+                  className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm"
+                >
+                  <ColonneCandidate
+                    nomComplet={nomPrenom}
+                    secteur={ligne[0]?.secteur || ""}
+                    service={ligne[0]?.service || ""}
+                    semaine={semaine}
+                    statutGlobal={hasDispo ? "Dispo" : "Non Dispo"}
+                    candidatId={candidatId}
+                  />
 
-                const candidatId =
-                  ligne[0]?.disponibilite?.candidat_id || ligne[0]?.commande?.candidat_id || ""
-                const nomPrenom =
-                  ligne[0]?.disponibilite?.candidat
-                    ? `${ligne[0].disponibilite.candidat.nom} ${ligne[0].disponibilite.candidat.prenom}`
-                    : ligne[0]?.commande?.candidat
-                    ? `${ligne[0].commande.candidat.nom} ${ligne[0].commande.candidat.prenom}`
-                    : candidatNom
+                  {jours.map((jour, index) => {
+                    const jourCells = jourMap[jour.dateStr] || []
+                    const jourCell = jourCells[0]
+                    const extra = jourCells.length > 1 ? jourCells[1] : null
+                    const dispo = jourCell?.disponibilite
+                    const commande = jourCell?.commande
+                    const commandeExtra = extra?.commande
 
-                return (
-                  <div
-                    key={`${key}-${ligneIndex}`}
-                    className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm"
-                  >
-                    <ColonneCandidate
-                      nomComplet={candidatNom}
-                      secteur={secteur}
-                      service={service}
-                      semaine={semaine}
-                      statutGlobal={hasDispo ? "Dispo" : "Non Dispo"}
-                      candidatId={candidatId}
-                    />
+                    return (
+                      <div key={index} className="border-r p-2 h-28 relative">
+                        <CellulePlanningCandidate
+                          disponibilite={dispo}
+                          commande={commande}
+                          secteur={ligne[0]?.secteur || ""}
+                          date={jour.dateStr}
+                          candidatId={candidatId}
+                          service={ligne[0]?.service || ""}
+                          onSuccess={onRefresh}
+                          nomPrenom={nomPrenom}
+                        />
 
-                    {jours.map((jour, index) => {
-                      const jourCell = ligne.find(
-                        (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
-                      )
-                      const dispo = jourCell?.disponibilite
-                      const commande = jourCell?.commande
-
-                      return (
-                        <div key={index} className="border-r p-2 h-28 relative">
-                          <CellulePlanningCandidate
-                            disponibilite={dispo}
-                            commande={commande}
-                            secteur={secteur}
-                            date={jour.dateStr}
-                            candidatId={candidatId}
-                            service={service}
-                            onSuccess={onRefresh}
-                            nomPrenom={nomPrenom}
-                          />
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              })
+                        {commande && commandeExtra && (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <div className="absolute bottom-1 right-1 cursor-pointer bg-white rounded-full p-1 shadow">
+                                <Info className="w-4 h-4 text-[#840404]" />
+                              </div>
+                            </PopoverTrigger>
+                            <PopoverContent side="top" className="text-sm">
+                              <div className="font-medium mb-1">Mission secondaire :</div>
+                              <div>
+                                Client :{" "}
+                                {commandeExtra.client?.nom || "Autre"}
+                              </div>
+                              <div>
+                                Créneau :{" "}
+                                {commandeExtra.heure_debut_matin
+                                  ? `Matin ${commandeExtra.heure_debut_matin} - ${commandeExtra.heure_fin_matin}`
+                                  : commandeExtra.heure_debut_soir
+                                  ? `Soir ${commandeExtra.heure_debut_soir} - ${commandeExtra.heure_fin_soir}`
+                                  : "Heures non renseignées"}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
             })}
           </div>
         )
