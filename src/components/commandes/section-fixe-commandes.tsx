@@ -8,6 +8,7 @@ import { indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
 import { startOfWeek, getWeek } from "date-fns"
 import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
+import IndicateurCard from "@/components/ui/IndicateurCard"
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -32,81 +33,59 @@ export function SectionFixeCommandes({
   resetFiltres,
   semainesDisponibles,
   clientsDisponibles,
-}: {
-  selectedSecteurs: string[]
-  setSelectedSecteurs: (val: string[]) => void
-  stats: { demandées: number; validées: number; enRecherche: number; nonPourvue: number }
-  totauxSemaine: { demandées: number; validées: number; enRecherche: number; nonPourvue: number }
-  taux: number
-  semaine: string
-  setSemaine: (s: string) => void
-  selectedSemaine: string
-  setSelectedSemaine: (val: string) => void
-  client: string
-  setClient: (s: string) => void
-  search: string
-  setSearch: (s: string) => void
-  toutAfficher: boolean
-  setToutAfficher: (b: boolean) => void
-  enRecherche: boolean
-  setEnRecherche: (b: boolean) => void
-  semaineEnCours: boolean
-  setSemaineEnCours: (b: boolean) => void
-  resetFiltres: () => void
-  semainesDisponibles: string[]
-  clientsDisponibles: string[]
-}) {
+}: any) {
   const [openNouvelleCommande, setOpenNouvelleCommande] = useState(false)
 
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 space-y-6">
-      {/* Indicateurs cercles */}
-      <div className="grid grid-cols-4 gap-4">
-        {["Demandées", "Validées", "En recherche", "Non pourvue"].map((label) => {
-          const key =
-            label === "En recherche"
-              ? "enRecherche"
-              : label === "Non pourvue"
-              ? "nonPourvue"
-              : label.toLowerCase().replace(" ", "")
-          const color = indicateurColors[label] || "#ccc"
-          const total = totauxSemaine[key] || 0
-          const valeur = stats[key] || 0
-          return (
-            <div key={label} className="relative flex flex-col items-center justify-center">
-              <div
-                className="w-20 h-20 rounded-full flex items-center justify-center text-white text-xl font-bold"
-                style={{ backgroundColor: color }}
-              >
-                {valeur}
-              </div>
-              <div
-                className="absolute bottom-0 right-4 w-6 h-6 rounded-full text-[11px] flex items-center justify-center text-white shadow font-semibold"
-                style={{ backgroundColor: color }}
-              >
-                {total}
-              </div>
-              <div className="mt-2 text-xs text-muted-foreground font-medium">{label}</div>
-            </div>
-          )
-        })}
+      {/* Bloc indicateurs + cercle */}
+      <div className="grid grid-cols-[1fr_auto] gap-6 items-start">
+        <div className="flex flex-wrap gap-4">
+          <IndicateurCard
+            label="Demandées"
+            value={stats.demandées}
+            total={totauxSemaine.demandées}
+            color={indicateurColors["Demandées"]}
+          />
+          <IndicateurCard
+            label="Validées"
+            value={stats.validées}
+            total={totauxSemaine.validées}
+            color={indicateurColors["Validées"]}
+          />
+          <IndicateurCard
+            label="En recherche"
+            value={stats.enRecherche}
+            total={totauxSemaine.enRecherche}
+            color={indicateurColors["En recherche"]}
+          />
+          <IndicateurCard
+            label="Non pourvue"
+            value={stats.nonPourvue}
+            total={totauxSemaine.nonPourvue}
+            color={indicateurColors["Non pourvue"]}
+          />
+        </div>
+        <div className="self-center w-[180px] h-[160px] flex items-center justify-center border rounded-md bg-gray-100">
+          <span className="text-sm text-muted-foreground">ProgressCircle à venir</span>
+        </div>
       </div>
 
-      {/* Barre de progression */}
-      <div className="relative">
-        <div className="h-6 w-full rounded bg-gray-200 overflow-hidden">
-          <div
-            className="h-full text-xs flex items-center justify-center text-white font-medium transition-all duration-300"
-            style={{
-              width: `${taux}%`,
-              backgroundColor:
-                taux === 100
-                  ? indicateurColors["Validées"]
-                  : indicateurColors["En recherche"],
-            }}
-          >
-            {`${taux}%`}
-          </div>
+      {/* Mini-cards secteurs + comparatif */}
+      <div className="grid grid-cols-[1fr_auto] gap-6 items-start">
+        <div className="grid grid-cols-5 gap-2 flex-1">
+          {["Étages", "Cuisine", "Salle", "Plonge", "Réception"].map((secteur, index) => (
+            <div
+              key={index}
+              className="h-[60px] bg-white border rounded-md flex items-center justify-center text-sm text-muted-foreground"
+            >
+              {secteur}
+            </div>
+          ))}
+        </div>
+        <div className="w-[200px] h-[60px] bg-gray-100 border rounded-md flex flex-col items-center justify-center">
+          <span className="text-sm text-muted-foreground">Comparatif N-1</span>
+          <span className="text-xs text-gray-400">(à venir)</span>
         </div>
       </div>
 
