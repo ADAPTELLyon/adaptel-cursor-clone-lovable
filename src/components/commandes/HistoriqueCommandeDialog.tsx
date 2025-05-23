@@ -1,20 +1,31 @@
 import { useEffect, useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { supabase } from "@/lib/supabase"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { statutColors } from "@/lib/colors"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { UserRound, Clock, Pencil } from "lucide-react"
 import type { Historique } from "@/types/types-front"
 import { Button } from "@/components/ui/button"
+import { PlanningCandidatsSemaine } from "./PlanningCandidatsSemaine"
 
-interface HistoriqueCommandeDialogProps {
+interface Props {
   commandeIds: string[]
+  secteur: string
+  semaineDate: string
 }
 
-export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDialogProps) {
+export function HistoriqueCommandeDialog({
+  commandeIds,
+  secteur,
+  semaineDate,
+}: Props) {
   const [historique, setHistorique] = useState<Historique[]>([])
   const [open, setOpen] = useState(false)
 
@@ -22,16 +33,14 @@ export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDial
     if (!commandeIds || commandeIds.length === 0 || !open) return
 
     const fetchHistorique = async () => {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("historique")
         .select("*, user:user_id (prenom)")
         .eq("table_cible", "commandes")
         .in("ligne_id", commandeIds)
         .order("date_action", { ascending: false })
 
-      if (!error && data) {
-        setHistorique(data)
-      }
+      if (data) setHistorique(data)
     }
 
     fetchHistorique()
@@ -66,7 +75,14 @@ export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDial
 
     if (action === "creation") {
       titre = "Création de commande"
-      badge = <Badge style={{ backgroundColor: statutColors["En recherche"]?.bg, color: statutColors["En recherche"]?.text }}>En recherche</Badge>
+      badge = (
+        <Badge style={{
+          backgroundColor: statutColors["En recherche"]?.bg,
+          color: statutColors["En recherche"]?.text,
+        }}>
+          En recherche
+        </Badge>
+      )
       complement = (
         <>
           <div>Journée : {apres.date ? format(new Date(apres.date), "EEEE d MMMM", { locale: fr }) : "?"}</div>
@@ -82,9 +98,14 @@ export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDial
 
     else if (action === "planification") {
       titre = "Planification"
-      badge = <Badge style={{ backgroundColor: statutColors["Validé"]?.bg, color: statutColors["Validé"]?.text }}>
-        {candidat?.nom} {candidat?.prenom}
-      </Badge>
+      badge = (
+        <Badge style={{
+          backgroundColor: statutColors["Validé"]?.bg,
+          color: statutColors["Validé"]?.text,
+        }}>
+          {candidat?.nom} {candidat?.prenom}
+        </Badge>
+      )
       complement = (
         <>
           <div>Journée : {apres.date ? format(new Date(apres.date), "EEEE d MMMM", { locale: fr }) : "?"}</div>
@@ -102,21 +123,20 @@ export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDial
       titre = "Modification horaire"
       const champ = apres?.champ || ""
       const valeur = apres?.valeur || ""
-      badge = (
-        <Badge variant="secondary">
-          {renderLibelleChamp(champ)}
-        </Badge>
-      )
-      complement = (
-        <div>Nouvelle valeur : {formatHeure(valeur)}</div>
-      )
+      badge = <Badge variant="secondary">{renderLibelleChamp(champ)}</Badge>
+      complement = <div>Nouvelle valeur : {formatHeure(valeur)}</div>
     }
 
     else if (action === "statut") {
       titre = "Changement de statut"
-      badge = <Badge style={{ backgroundColor: statutColors[apres?.statut]?.bg, color: statutColors[apres?.statut]?.text }}>
-        {apres?.statut || "?"}
-      </Badge>
+      badge = (
+        <Badge style={{
+          backgroundColor: statutColors[apres?.statut]?.bg,
+          color: statutColors[apres?.statut]?.text,
+        }}>
+          {apres?.statut || "?"}
+        </Badge>
+      )
       complement = apres?.complement_motif ? (
         <div className="text-sm text-muted-foreground">
           Motif : <span className="italic">{apres.complement_motif}</span>
@@ -126,9 +146,14 @@ export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDial
 
     else if (action === "remplacement") {
       titre = "Changement de candidat"
-      badge = <Badge style={{ backgroundColor: statutColors["Validé"]?.bg, color: statutColors["Validé"]?.text }}>
-        {nouveau?.nom} {nouveau?.prenom}
-      </Badge>
+      badge = (
+        <Badge style={{
+          backgroundColor: statutColors["Validé"]?.bg,
+          color: statutColors["Validé"]?.text,
+        }}>
+          {nouveau?.nom} {nouveau?.prenom}
+        </Badge>
+      )
       complement = (
         <div className="text-sm text-muted-foreground">
           Remplacement de <strong>{ancien?.nom} {ancien?.prenom}</strong>
@@ -138,12 +163,15 @@ export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDial
 
     else {
       titre = "Action inconnue"
-      complement = <div className="italic text-muted-foreground">{item.description || "(pas de détail)"}</div>
+      complement = (
+        <div className="italic text-muted-foreground">
+          {item.description || "(pas de détail)"}
+        </div>
+      )
     }
 
     return (
       <div key={item.id} className="border rounded-lg p-3 bg-white shadow-sm space-y-2">
-        {/* Ligne date + user */}
         <div className="flex items-center justify-between text-sm text-gray-600">
           <div className="flex items-center gap-2">
             <Clock className="h-4 w-4" />
@@ -155,7 +183,6 @@ export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDial
           </div>
         </div>
 
-        {/* Type d'action */}
         <div className="text-sm space-y-1">
           <div className="flex items-center gap-2 font-medium">
             <Pencil className="h-4 w-4 text-gray-600" />
@@ -175,20 +202,29 @@ export function HistoriqueCommandeDialog({ commandeIds }: HistoriqueCommandeDial
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-7xl p-6">
           <DialogHeader>
-            <DialogTitle>Historique de la ligne de commande</DialogTitle>
+            <DialogTitle>Historique & Disponibilités</DialogTitle>
           </DialogHeader>
 
-          <ScrollArea className="h-[500px] pr-2 space-y-4">
-            {historique.length > 0 ? (
-              historique.map(renderBloc)
-            ) : (
-              <div className="text-sm text-muted-foreground italic">
-                Aucun historique pour cette ligne de commande.
-              </div>
-            )}
-          </ScrollArea>
+          <div className="grid grid-cols-[1fr_2fr] gap-6">
+            <div className="border rounded-md bg-gray-50 px-4 py-4 h-[600px] overflow-y-auto space-y-4">
+              {historique.length > 0 ? (
+                historique.map(renderBloc)
+              ) : (
+                <div className="text-sm italic text-gray-400">
+                  Aucun historique pour cette ligne.
+                </div>
+              )}
+            </div>
+
+            <div className="h-[600px] overflow-y-auto pr-2">
+              <PlanningCandidatsSemaine
+                secteur={secteur}
+                semaineDate={semaineDate}
+              />
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

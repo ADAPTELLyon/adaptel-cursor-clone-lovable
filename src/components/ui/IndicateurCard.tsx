@@ -12,26 +12,26 @@ export default function IndicateurCard({
   color: string
 }) {
   return (
-    <div className="relative w-[200px] min-h-[80px] bg-white shadow-sm border rounded-md flex flex-col justify-between px-4 py-3">
+    <div className="relative bg-white shadow-sm border rounded-md flex flex-col justify-between px-4 py-3 h-[80px]">
       {/* Liseré couleur à gauche */}
       <div
         className="absolute top-0 left-0 h-full w-2 rounded-l-md"
         style={{ backgroundColor: color }}
       />
 
-      {/* Terme du statut */}
+      {/* Libellé */}
       <div className="text-sm font-semibold mb-1" style={{ color }}>
         {label}
       </div>
 
-      {/* Valeur centrale colorée */}
-      <div className="text-3xl font-bold" style={{ color }}>
+      {/* Valeur principale : légèrement décalée */}
+      <div className="text-3xl font-bold ml-4" style={{ color }}>
         {value}
       </div>
 
-      {/* Total en haut à droite */}
+      {/* Total semaine : plus grand */}
       <div
-        className="absolute top-2 right-3 text-xs font-semibold"
+        className="absolute top-2 right-3 text-sm font-semibold"
         style={{ color }}
       >
         {total}

@@ -5,12 +5,18 @@ import { PlanningClientTable } from "@/components/commandes/PlanningClientTable"
 import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
 import { supabase } from "@/lib/supabase"
 import { addDays, format, startOfWeek, getWeek } from "date-fns"
-import type { JourPlanning, CommandeWithCandidat } from "@/types/types-front"
+import type { JourPlanning } from "@/types/types-front"
+import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateurs"
 
 export default function Commandes() {
+  // ✅ Initialisation secteur avec mémoire
+  const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(() => {
+    const stored = localStorage.getItem("selectedSecteurs")
+    return stored ? JSON.parse(stored) : ["Étages"]
+  })
+
   const [planning, setPlanning] = useState<Record<string, JourPlanning[]>>({})
   const [filteredPlanning, setFilteredPlanning] = useState<Record<string, JourPlanning[]>>({})
-  const [selectedSecteurs, setSelectedSecteurs] = useState(["Étages"])
   const [semaineEnCours, setSemaineEnCours] = useState(true)
   const [semaine, setSemaine] = useState(format(new Date(), "yyyy-MM-dd"))
   const [selectedSemaine, setSelectedSemaine] = useState(getWeek(new Date()).toString())
@@ -21,16 +27,21 @@ export default function Commandes() {
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
   const [openDialog, setOpenDialog] = useState(false)
 
+  // ✅ Stockage secteur sélectionné
+  useEffect(() => {
+    localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs))
+  }, [selectedSecteurs])
+
   useEffect(() => {
     const baseDate = new Date(semaine)
-    const dates = Array.from({ length: 7 }, (_, i) =>
+    Array.from({ length: 7 }, (_, i) =>
       addDays(startOfWeek(baseDate, { weekStartsOn: 1 }), i)
     )
   }, [semaine])
 
   const fetchPlanning = async () => {
     const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
-    const semaineCourante = getWeek(lundi, { weekStartsOn: 1 }).toString()
+    const semaineCourante = getWeek(lundi).toString()
 
     const { data, error } = await supabase
       .from("commandes")
@@ -73,9 +84,7 @@ export default function Commandes() {
             commentaire: item.commentaire,
             created_at: item.created_at,
             candidat:
-              item.candidats &&
-              typeof item.candidats.nom === "string" &&
-              typeof item.candidats.prenom === "string"
+              item.candidats?.nom && item.candidats?.prenom
                 ? {
                     nom: item.candidats.nom,
                     prenom: item.candidats.prenom,
@@ -88,10 +97,7 @@ export default function Commandes() {
       map[nomClient].push(jour)
     }
 
-    const mapTrie: Record<string, JourPlanning[]> = Object.fromEntries(
-      Object.entries(map).sort(([a], [b]) => a.localeCompare(b))
-    )
-
+    const mapTrie = Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)))
     setPlanning(mapTrie)
     setFilteredPlanning(mapTrie)
     setSelectedSemaine(semaineCourante)
@@ -103,8 +109,11 @@ export default function Commandes() {
 
   useEffect(() => {
     const currentWeek = getWeek(new Date(), { weekStartsOn: 1 })
+
     const matchSearchTerm = (val: string) =>
-      search.trim().toLowerCase().split(" ").every((term) => val.toLowerCase().includes(term))
+      search.trim().toLowerCase().split(" ").every((term) =>
+        val.toLowerCase().includes(term)
+      )
 
     const newFiltered: typeof planning = {}
 
@@ -118,8 +127,28 @@ export default function Commandes() {
           : true
         const matchSemaine =
           selectedSemaine === "Toutes" || selectedSemaine === semaineDuJour
-        return matchSecteur && matchClient && matchRecherche && matchSemaine
+
+        const searchFields = [
+          clientNom,
+          j.secteur,
+          semaineDuJour,
+          ...j.commandes.map(
+            (cmd) =>
+              `${cmd.candidat?.prenom || ""} ${cmd.candidat?.nom || ""}`
+          ),
+        ].join(" ")
+
+        const matchSearch = matchSearchTerm(searchFields)
+
+        return (
+          matchSecteur &&
+          matchClient &&
+          matchRecherche &&
+          matchSemaine &&
+          matchSearch
+        )
       })
+
       if (joursFiltres.length > 0) {
         newFiltered[clientNom] = joursFiltres
       }
@@ -127,7 +156,10 @@ export default function Commandes() {
 
     setFilteredPlanning(newFiltered)
 
-    let d = 0, v = 0, r = 0, np = 0
+    let d = 0,
+      v = 0,
+      r = 0,
+      np = 0
 
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) =>
@@ -172,7 +204,6 @@ export default function Commandes() {
 
   const clientsDisponibles = Object.keys(planning)
 
-  // ✅ Ajout totaux semaine en cours (pour tous secteurs)
   const semaineCourante = getWeek(new Date(), { weekStartsOn: 1 }).toString()
   const totauxSemaine = { demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 }
 
@@ -194,34 +225,43 @@ export default function Commandes() {
 
   return (
     <MainLayout>
-      <SectionFixeCommandes
-        selectedSecteurs={selectedSecteurs}
-        setSelectedSecteurs={setSelectedSecteurs}
-        stats={stats}
-        totauxSemaine={totauxSemaine}
-        taux={
-          stats.demandées > 0
-            ? Math.round((stats.validées / stats.demandées) * 100)
-            : 0
-        }
-        semaine={semaine}
-        setSemaine={setSemaine}
-        selectedSemaine={selectedSemaine}
-        setSelectedSemaine={setSelectedSemaine}
-        client={client}
-        setClient={setClient}
-        search={search}
-        setSearch={setSearch}
-        toutAfficher={toutAfficher}
-        setToutAfficher={setToutAfficher}
-        enRecherche={enRecherche}
-        setEnRecherche={setEnRecherche}
-        semaineEnCours={semaineEnCours}
-        setSemaineEnCours={setSemaineEnCours}
-        resetFiltres={resetFiltres}
-        semainesDisponibles={semainesDisponibles}
-        clientsDisponibles={clientsDisponibles}
-      />
+      <div className="sticky top-[64px] z-20 bg-white shadow-md space-y-6 pb-4">
+        <CommandesIndicateurs
+          stats={stats}
+          totauxSemaine={totauxSemaine}
+          planning={planning}
+          filteredPlanning={filteredPlanning}
+        />
+
+        <SectionFixeCommandes
+          selectedSecteurs={selectedSecteurs}
+          setSelectedSecteurs={setSelectedSecteurs}
+          stats={stats}
+          totauxSemaine={totauxSemaine}
+          taux={
+            stats.demandées > 0
+              ? Math.round((stats.validées / stats.demandées) * 100)
+              : 0
+          }
+          semaine={semaine}
+          setSemaine={setSemaine}
+          selectedSemaine={selectedSemaine}
+          setSelectedSemaine={setSelectedSemaine}
+          client={client}
+          setClient={setClient}
+          search={search}
+          setSearch={setSearch}
+          toutAfficher={toutAfficher}
+          setToutAfficher={setToutAfficher}
+          enRecherche={enRecherche}
+          setEnRecherche={setEnRecherche}
+          semaineEnCours={semaineEnCours}
+          setSemaineEnCours={setSemaineEnCours}
+          resetFiltres={resetFiltres}
+          semainesDisponibles={semainesDisponibles}
+          clientsDisponibles={clientsDisponibles}
+        />
+      </div>
 
       <PlanningClientTable
         planning={filteredPlanning}
