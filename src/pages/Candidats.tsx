@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Plus, Search } from "lucide-react"
@@ -6,7 +5,12 @@ import { supabase } from "@/integrations/supabase/client"
 import MainLayout from "@/components/main-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { CandidateList } from "@/components/candidates/candidate-list"
 import { CandidateFormTabs } from "@/components/candidates/candidate-form-tabs"
@@ -47,24 +51,17 @@ export default function Candidats() {
   }, [search, refetch])
 
   const handleSubmit = async (data: any) => {
-    // Convert date_naissance from dd/mm/yyyy to ISO format if it exists
     const formattedData = { ...data }
     if (formattedData.date_naissance) {
-      const [day, month, year] = formattedData.date_naissance.split('/');
+      const [day, month, year] = formattedData.date_naissance.split('/')
       if (day && month && year) {
-        const isoDate = `${year}-${month}-${day}`;
-        formattedData.date_naissance = isoDate;
+        formattedData.date_naissance = `${year}-${month}-${day}`
       }
     }
 
     const { error } = editingCandidate
-      ? await supabase
-          .from("candidats")
-          .update(formattedData)
-          .eq("id", editingCandidate.id)
-      : await supabase
-          .from("candidats")
-          .insert([formattedData])
+      ? await supabase.from("candidats").update(formattedData).eq("id", editingCandidate.id)
+      : await supabase.from("candidats").insert([formattedData])
 
     if (error) {
       toast({
@@ -94,7 +91,7 @@ export default function Candidats() {
       .eq("id", id)
       .single()
 
-    if (error) {
+    if (error || !data) {
       toast({
         title: "Erreur",
         description: "Impossible de charger le candidat",
@@ -130,7 +127,12 @@ export default function Candidats() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">Candidats</h1>
-          <Button onClick={() => setDialogOpen(true)}>
+          <Button
+            onClick={() => {
+              setEditingCandidate(null)
+              setDialogOpen(true)
+            }}
+          >
             <Plus className="mr-2 h-4 w-4" />
             Ajouter
           </Button>
@@ -155,20 +157,22 @@ export default function Candidats() {
         </div>
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>
+          <DialogContent className="max-w-[800px] min-h-[650px] flex flex-col">
+            <DialogHeader className="border-b pb-2 mb-2">
+              <DialogTitle className="text-2xl font-semibold">
                 {editingCandidate ? "Modifier le candidat" : "Ajouter un candidat"}
               </DialogTitle>
             </DialogHeader>
-            <CandidateFormTabs
-              initialData={editingCandidate}
-              onSubmit={handleSubmit}
-              onCancel={() => {
-                setDialogOpen(false)
-                setEditingCandidate(null)
-              }}
-            />
+            <div className="flex-1 overflow-y-auto overflow-x-hidden pr-4 scrollbar-none">
+              <CandidateFormTabs
+                initialData={editingCandidate}
+                onSubmit={handleSubmit}
+                onCancel={() => {
+                  setDialogOpen(false)
+                  setEditingCandidate(null)
+                }}
+              />
+            </div>
           </DialogContent>
         </Dialog>
       </div>

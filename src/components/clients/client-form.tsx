@@ -3,27 +3,12 @@ import { useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useQuery } from "@tanstack/react-query"
-import { Utensils, Sofa, ShowerHead, Building, Star } from "lucide-react"
 import { supabase } from "@/integrations/supabase/client"
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MultiSelect } from "@/components/ui/multi-select"
 
 export const formSchema = z.object({
@@ -38,21 +23,29 @@ export const formSchema = z.object({
   actif: z.boolean().default(true),
 })
 
+const secteurs = [
+  { value: "etages", label: "Étages", icon: "🛏" },
+  { value: "cuisine", label: "Cuisine", icon: "👨‍🍳" },
+  { value: "salle", label: "Salle", icon: "🍴" },
+  { value: "plonge", label: "Plonge", icon: "🍷" },
+  { value: "reception", label: "Réception", icon: "🛎" },
+]
+
 type ClientFormProps = {
   initialData?: z.infer<typeof formSchema>
   onSubmit: (data: z.infer<typeof formSchema>) => void
   onCancel: () => void
+  onSecteursChange?: (secteurs: string[]) => void
+  onServicesChange?: (services: string[]) => void
 }
 
-const secteurs = [
-  { value: "cuisine", label: "Cuisine", icon: Utensils },
-  { value: "salle", label: "Salle", icon: Sofa },
-  { value: "plonge", label: "Plonge", icon: ShowerHead },
-  { value: "reception", label: "Réception", icon: Building },
-  { value: "etages", label: "Étages", icon: Star },
-]
-
-export function ClientForm({ initialData, onSubmit, onCancel }: ClientFormProps) {
+export function ClientForm({
+  initialData,
+  onSubmit,
+  onCancel,
+  onSecteursChange,
+  onServicesChange,
+}: ClientFormProps) {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -92,13 +85,7 @@ export function ClientForm({ initialData, onSubmit, onCancel }: ClientFormProps)
         .select("valeur")
         .eq("categorie", "service")
         .order("valeur")
-
-      if (error) {
-        console.error("Erreur chargement services:", error)
-        return []
-      }
-
-      return data.map((item) => item.valeur).filter((v): v is string => !!v && v.trim() !== "")
+      return error ? [] : (data || []).map((i) => i.valeur).filter((v) => !!v)
     },
   })
 
@@ -110,13 +97,7 @@ export function ClientForm({ initialData, onSubmit, onCancel }: ClientFormProps)
         .select("valeur")
         .eq("categorie", "groupe")
         .order("valeur")
-
-      if (error) {
-        console.error("Erreur chargement groupes:", error)
-        return []
-      }
-
-      return data.map((item) => item.valeur).filter((v): v is string => !!v && v.trim() !== "")
+      return error ? [] : (data || []).map((i) => i.valeur).filter((v) => !!v)
     },
   })
 
@@ -124,52 +105,58 @@ export function ClientForm({ initialData, onSubmit, onCancel }: ClientFormProps)
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className="space-y-4 p-3 max-h-[calc(100vh-200px)] overflow-y-auto"
+        className="space-y-6 px-2 overflow-x-hidden scrollbar-none"
       >
+        <h3 className="text-lg font-semibold mb-2">🏢 Informations générales</h3>
         <FormField control={form.control} name="nom" render={({ field }) => (
           <FormItem>
             <FormLabel>Nom du client</FormLabel>
-            <FormControl><Input placeholder="Nom du client" {...field} /></FormControl>
+            <FormControl><Input {...field} /></FormControl>
             <FormMessage />
           </FormItem>
         )} />
 
-        <FormField control={form.control} name="secteurs" render={({ field }) => (
-          <FormItem>
-            <FormLabel>Secteurs</FormLabel>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              {secteurs.map((secteur) => {
-                const Icon = secteur.icon
-                return (
-                  <div key={secteur.value} className="flex items-center space-x-3">
-                    <Checkbox
-                      checked={field.value?.includes(secteur.value)}
-                      onCheckedChange={(checked) => {
-                        const updatedValue = checked
-                          ? [...(field.value || []), secteur.value]
-                          : (field.value || []).filter((value) => value !== secteur.value)
-                        field.onChange(updatedValue)
-                      }}
-                    />
-                    <div className="flex items-center space-x-2">
-                      <Icon className="h-4 w-4" />
-                      <span>{secteur.label}</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <FormMessage />
-          </FormItem>
-        )} />
+        <h3 className="text-lg font-semibold mb-2">🏷 Secteurs</h3>
+        <FormField
+          control={form.control}
+          name="secteurs"
+          render={({ field }) => (
+            <FormItem>
+              <div className="flex gap-2 flex-wrap">
+                {secteurs.map((secteur) => (
+                  <Button
+                    key={secteur.value}
+                    type="button"
+                    variant={field.value.includes(secteur.value) ? "default" : "outline"}
+                    onClick={() => {
+                      const newValue = field.value.includes(secteur.value)
+                        ? field.value.filter((v: string) => v !== secteur.value)
+                        : [...field.value, secteur.value]
+                      field.onChange(newValue)
+                      onSecteursChange?.(newValue)
+                    }}
+                  >
+                    <span className="mr-2">{secteur.icon}</span>
+                    {secteur.label}
+                  </Button>
+                ))}
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
+        <h3 className="text-lg font-semibold mb-2">🛎 Services & Groupe</h3>
         <FormField control={form.control} name="services" render={({ field }) => (
           <FormItem>
             <FormLabel>Services</FormLabel>
             <MultiSelect
               options={services}
               selected={field.value || []}
-              onChange={field.onChange}
+              onChange={(values) => {
+                field.onChange(values)
+                onServicesChange?.(values)
+              }}
               placeholder="Sélectionner un ou plusieurs services"
             />
             <FormMessage />
@@ -191,46 +178,65 @@ export function ClientForm({ initialData, onSubmit, onCancel }: ClientFormProps)
           </FormItem>
         )} />
 
-        <FormField control={form.control} name="adresse" render={({ field }) => (
-          <FormItem>
-            <FormLabel>Adresse</FormLabel>
-            <FormControl><Input placeholder="Adresse" {...field} /></FormControl>
-          </FormItem>
-        )} />
-
-        <div className="grid grid-cols-2 gap-4">
+        <h3 className="text-lg font-semibold mb-2">📍 Adresse</h3>
+        <div className="grid grid-cols-3 gap-4">
+          <FormField control={form.control} name="adresse" render={({ field }) => (
+            <FormItem className="col-span-3">
+              <FormLabel>Adresse</FormLabel>
+              <FormControl><Input {...field} /></FormControl>
+              <FormMessage />
+            </FormItem>
+          )} />
           <FormField control={form.control} name="code_postal" render={({ field }) => (
             <FormItem>
               <FormLabel>Code postal</FormLabel>
-              <FormControl><Input placeholder="Code postal" {...field} /></FormControl>
+              <FormControl><Input {...field} inputMode="numeric" maxLength={5} /></FormControl>
+              <FormMessage />
             </FormItem>
           )} />
           <FormField control={form.control} name="ville" render={({ field }) => (
-            <FormItem>
+            <FormItem className="col-span-2">
               <FormLabel>Ville</FormLabel>
-              <FormControl><Input placeholder="Ville" {...field} /></FormControl>
+              <FormControl><Input {...field} /></FormControl>
+              <FormMessage />
             </FormItem>
           )} />
         </div>
 
+        <h3 className="text-lg font-semibold mb-2">📞 Téléphone</h3>
         <FormField control={form.control} name="telephone" render={({ field }) => (
           <FormItem>
-            <FormLabel>Téléphone</FormLabel>
-            <FormControl><Input placeholder="Téléphone" {...field} /></FormControl>
+            <FormControl>
+              <Input
+                {...field}
+                inputMode="numeric"
+                maxLength={14}
+                placeholder="06 00 00 00 00"
+                onChange={(e) => {
+                  const cleaned = e.target.value.replace(/\D/g, "").slice(0, 10)
+                  const formatted = cleaned.replace(/(\d{2})(?=\d)/g, "$1 ").trim()
+                  field.onChange(formatted)
+                }}
+              />
+            </FormControl>
+            <FormMessage />
           </FormItem>
         )} />
 
+        <h3 className="text-lg font-semibold mb-2">⚙️ Actif</h3>
         <FormField control={form.control} name="actif" render={({ field }) => (
-          <FormItem className="flex flex-row items-center justify-between">
-            <FormLabel>Client actif</FormLabel>
+          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+            <FormLabel className="text-base">Client actif</FormLabel>
             <FormControl>
               <Switch checked={field.value} onCheckedChange={field.onChange} />
             </FormControl>
           </FormItem>
         )} />
 
-        <div className="flex justify-end space-x-2 pt-4">
-          <Button type="button" variant="outline" onClick={onCancel}>Annuler</Button>
+        <div className="flex justify-end gap-2 pt-4">
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Annuler
+          </Button>
           <Button type="submit">Enregistrer</Button>
         </div>
       </form>

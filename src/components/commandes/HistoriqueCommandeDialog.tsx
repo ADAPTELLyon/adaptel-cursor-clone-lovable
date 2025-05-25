@@ -219,10 +219,7 @@ export function HistoriqueCommandeDialog({
             </div>
 
             <div className="h-[600px] overflow-y-auto pr-2">
-              <PlanningCandidatsSemaine
-                secteur={secteur}
-                semaineDate={semaineDate}
-              />
+              <PlanningCandidatsSemaine semaineDate={semaineDate} />
             </div>
           </div>
         </DialogContent>

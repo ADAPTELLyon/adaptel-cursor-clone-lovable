@@ -13,8 +13,8 @@ export type Candidat = {
   commentaire?: string | null;
   prioritaire: boolean;
   created_at: string;
-  secteurs?: string[]; // ✅ Pour filtre secteur
-  vehicule?: boolean;  // ✅ Ajout requis pour affichage icône véhicule
+  secteurs?: string[];
+  vehicule?: boolean;
 };
 
 // === TABLE: disponibilites ===
@@ -31,7 +31,7 @@ export type CandidatDispo = {
   commentaire?: string | null;
   created_at: string;
   updated_at?: string | null;
-  creneaux: string[]; // ✅ Obligatoire pour affichage et insertions
+  creneaux?: string[];
 };
 
 export type CandidatDispoWithNom = CandidatDispo & {
@@ -44,7 +44,7 @@ export type JourPlanningCandidat = {
   secteur: string;
   service?: string | null;
   disponibilite?: CandidatDispoWithNom;
-  commande?: CommandeFull; // ✅ Ajout pour prise en charge des planifications
+  commande?: CommandeFull;
 };
 
 // === TABLE: clients ===
@@ -60,9 +60,10 @@ export type Client = {
   created_at: string;
   secteurs?: string[] | null;
   services?: string[] | null;
+  postes_bases_actifs?: string[]; // ✅ requis pour postes
 };
 
-// === TYPE: Statuts de commande ===
+// === TABLE: commandes ===
 export type StatutCommande =
   | "En recherche"
   | "Validé"
@@ -72,7 +73,6 @@ export type StatutCommande =
   | "Absence"
   | "Non pourvue";
 
-// === TABLE: commandes ===
 export type Commande = {
   id: string;
   date: string;
@@ -119,19 +119,32 @@ export type PosteType = {
   heure_fin_matin?: string | null;
   heure_debut_soir?: string | null;
   heure_fin_soir?: string | null;
-  temps_pause?: string | null;
+  temps_pause_minutes?: string;
+  repas_fournis?: boolean;
   created_at: string;
   poste_base?: PosteBase | null;
 };
 
-// === Commande + Candidat + Client
-export type CommandeWithCandidat = Commande & {
-  candidat?: Pick<Candidat, "nom" | "prenom"> | null;
+export type PosteTypeInsert = {
+  client_id: string;
+  poste_base_id: string;
+  nom: string; // ✅ requis par Supabase
+  heure_debut_matin?: string | null;
+  heure_fin_matin?: string | null;
+  heure_debut_soir?: string | null;
+  heure_fin_soir?: string | null;
+  repas_fournis?: boolean;
+  temps_pause_minutes?: string;
 };
 
-export type CommandeFull = Commande & {
-  candidat?: Pick<Candidat, "nom" | "prenom"> | null;
-  client?: Pick<Client, "nom"> | null;
+// === TABLE: parametrages ===
+export type Parametrage = {
+  id: string;
+  valeur: string;
+  description?: string;
+  categorie: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 // === TABLE: historique ===
@@ -151,7 +164,16 @@ export type Historique = {
   };
 };
 
-// === TYPE: JourPlanning pour planning client
+// === Planning client
+export type CommandeWithCandidat = Commande & {
+  candidat?: Pick<Candidat, "nom" | "prenom"> | null;
+};
+
+export type CommandeFull = Commande & {
+  candidat?: Pick<Candidat, "nom" | "prenom"> | null;
+  client?: Pick<Client, "nom"> | null;
+};
+
 export type JourPlanning = {
   date: string;
   secteur: string;

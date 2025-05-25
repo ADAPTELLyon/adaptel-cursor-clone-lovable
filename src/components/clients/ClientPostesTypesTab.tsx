@@ -1,82 +1,90 @@
-import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useState } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { supabase } from "@/integrations/supabase/client"
 import {
   Client,
   PosteBase,
   PosteType,
   PosteTypeInsert,
   Parametrage,
-} from "@/types/types-front";
-import { secteursList } from "@/lib/secteurs";
+} from "@/types/types-front"
+import { secteursList } from "@/lib/secteurs"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { toast } from "@/components/ui/use-toast";
+} from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import { toast } from "@/components/ui/use-toast"
 
-// Fonction pour comparer proprement (sans accents + lowercase)
 const normalize = (str: string) =>
-  str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
 
 type Props = {
-  client: Client;
-};
+  client: Client
+}
 
 export function ClientPostesTypesTab({ client }: Props) {
-  const [postesBases, setPostesBases] = useState<PosteBase[]>([]);
-  const [postesTypes, setPostesTypes] = useState<PosteType[]>([]);
-  const [editingPosteType, setEditingPosteType] = useState<PosteType | null>(null);
-  const [newPosteType, setNewPosteType] = useState<Partial<PosteTypeInsert>>({});
-  const [loading, setLoading] = useState(false);
-  const [tenues, setTenues] = useState<Parametrage[]>([]);
-  const [posteBaseIdForTenue, setPosteBaseIdForTenue] = useState<string | null>(null);
-  const [selectedTenues, setSelectedTenues] = useState<Record<string, Parametrage | null>>({});
+  const [postesBases, setPostesBases] = useState<PosteBase[]>([])
+  const [postesTypes, setPostesTypes] = useState<PosteType[]>([])
+  const [editingPosteType, setEditingPosteType] = useState<PosteType | null>(null)
+  const [newPosteType, setNewPosteType] = useState<Partial<PosteTypeInsert>>({})
+  const [loading, setLoading] = useState(false)
+  const [tenues, setTenues] = useState<Parametrage[]>([])
+  const [posteBaseIdForTenue, setPosteBaseIdForTenue] = useState<string | null>(null)
+  const [selectedTenues, setSelectedTenues] = useState<Record<string, Parametrage | null>>({})
 
   useEffect(() => {
-    fetchPostesBases();
-    fetchPostesTypes();
-    fetchTenues();
-    fetchPostesBasesClients();
-  }, []);
+    fetchPostesBases()
+    fetchPostesTypes()
+    fetchTenues()
+    fetchPostesBasesClients()
+  }, [])
 
   const fetchPostesBases = async () => {
-    const { data } = await supabase.from("postes_bases").select("*");
-    if (data) setPostesBases(data);
-  };
+    const { data } = await supabase.from("postes_bases").select("*")
+    if (data) {
+      const cleaned: PosteBase[] = data.map((item: any) => ({
+        id: item.id,
+        nom: item.nom,
+        secteur: item.secteur,
+        created_at: item.created_at,
+        actif: typeof item.actif === "boolean" ? item.actif : true,
+      }))
+      setPostesBases(cleaned)
+    }
+  }
 
   const fetchPostesTypes = async () => {
-    if (!client.id) return;
+    if (!client.id) return
     const { data } = await supabase
       .from("postes_types_clients")
       .select("*")
-      .eq("client_id", client.id);
-    if (data) setPostesTypes(data);
-  };
+      .eq("client_id", client.id)
+    if (data) setPostesTypes(data)
+  }
 
   const fetchTenues = async () => {
     const { data } = await supabase
       .from("parametrages")
       .select("*")
-      .eq("categorie", "tenue");
-    if (data) setTenues(data);
-  };
+      .eq("categorie", "tenue")
+    if (data) setTenues(data)
+  }
 
   const fetchPostesBasesClients = async () => {
-    if (!client.id) return;
+    if (!client.id) return
     const { data } = await supabase
       .from("postes_bases_clients")
       .select("poste_base_id, tenue_id, parametrages!tenue_id (id, valeur, description)")
-      .eq("client_id", client.id);
+      .eq("client_id", client.id)
     if (data) {
-      const mapping: Record<string, Parametrage | null> = {};
+      const mapping: Record<string, Parametrage | null> = {}
       data.forEach((row: any) => {
         mapping[row.poste_base_id] = row.parametrages
           ? {
@@ -87,105 +95,122 @@ export function ClientPostesTypesTab({ client }: Props) {
               created_at: "",
               updated_at: "",
             }
-          : null;
-      });
-      setSelectedTenues(mapping);
+          : null
+      })
+      setSelectedTenues(mapping)
     }
-  };
+  }
 
   const handleTogglePosteBase = async (posteBaseId: string, isActive: boolean) => {
-    if (!client.id) return;
-    setLoading(true);
-    const postesActuels = client.postes_bases_actifs ?? [];
+    if (!client.id) return
+    setLoading(true)
+    const postesActuels = client.postes_bases_actifs ?? []
     const nouveauxPostes = isActive
       ? [...postesActuels, posteBaseId]
-      : postesActuels.filter((id) => id !== posteBaseId);
+      : postesActuels.filter((id) => id !== posteBaseId)
 
     const { error } = await supabase
       .from("clients")
       .update({ postes_bases_actifs: nouveauxPostes })
-      .eq("id", client.id);
+      .eq("id", client.id)
 
     if (!error) {
-      toast({ title: "Succès", description: "Poste mis à jour." });
-      client.postes_bases_actifs = nouveauxPostes;
+      toast({ title: "Succès", description: "Poste mis à jour." })
+      client.postes_bases_actifs = nouveauxPostes
     }
-    setLoading(false);
-  };
+    setLoading(false)
+  }
 
   const handleSaveTenue = async (posteBaseId: string, tenue: Parametrage) => {
-    if (!client.id) return;
+    if (!client.id) return
     const { error } = await supabase
       .from("postes_bases_clients")
       .upsert({
         client_id: client.id,
         poste_base_id: posteBaseId,
         tenue_id: tenue.id,
-      });
+      })
     if (!error) {
-      toast({ title: "Succès", description: "Tenue assignée." });
-      setSelectedTenues((prev) => ({ ...prev, [posteBaseId]: tenue }));
-      setPosteBaseIdForTenue(null);
+      toast({ title: "Succès", description: "Tenue assignée." })
+      setSelectedTenues((prev) => ({ ...prev, [posteBaseId]: tenue }))
+      setPosteBaseIdForTenue(null)
     }
-  };
+  }
 
   const handleSavePosteType = async () => {
-    if (!client.id || !editingPosteType) return;
+    if (!client.id || !editingPosteType) return
 
-    const dataToSave = {
-      ...newPosteType,
+    if (!newPosteType.nom || newPosteType.nom.trim() === "") {
+      toast({
+        title: "Erreur",
+        description: "Le nom du poste est requis",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const dataToSave: PosteTypeInsert = {
       client_id: client.id,
       poste_base_id: editingPosteType.poste_base_id,
-    };
+      nom: newPosteType.nom,
+      heure_debut_matin: newPosteType.heure_debut_matin || null,
+      heure_fin_matin: newPosteType.heure_fin_matin || null,
+      heure_debut_soir: newPosteType.heure_debut_soir || null,
+      heure_fin_soir: newPosteType.heure_fin_soir || null,
+      repas_fournis: newPosteType.repas_fournis ?? false,
+      temps_pause_minutes: newPosteType.temps_pause_minutes || "",
+    }
 
-    let res;
+    let res
     if (editingPosteType.id) {
       res = await supabase
         .from("postes_types_clients")
         .update(dataToSave)
-        .eq("id", editingPosteType.id);
+        .eq("id", editingPosteType.id)
     } else {
-      res = await supabase.from("postes_types_clients").insert([dataToSave]);
+      res = await supabase
+        .from("postes_types_clients")
+        .insert([dataToSave])
     }
 
     if (!res.error) {
-      toast({ title: "Succès", description: "Poste type enregistré." });
-      setEditingPosteType(null);
-      setNewPosteType({});
-      fetchPostesTypes();
+      toast({ title: "Succès", description: "Poste type enregistré." })
+      setEditingPosteType(null)
+      setNewPosteType({})
+      fetchPostesTypes()
     } else {
       toast({
         title: "Erreur",
         description: "Une erreur est survenue.",
         variant: "destructive",
-      });
+      })
     }
-  };
+  }
 
   const handleDeletePosteType = async (posteTypeId: string) => {
     const { error } = await supabase
       .from("postes_types_clients")
       .delete()
-      .eq("id", posteTypeId);
+      .eq("id", posteTypeId)
 
     if (!error) {
-      toast({ title: "Supprimé", description: "Poste type supprimé." });
-      fetchPostesTypes();
+      toast({ title: "Supprimé", description: "Poste type supprimé." })
+      fetchPostesTypes()
     }
-  };
+  }
 
   const postesParSecteur = (secteur: string) =>
-    postesBases.filter((pb) => normalize(pb.secteur) === normalize(secteur));
+    postesBases.filter((pb) => normalize(pb.secteur) === normalize(secteur))
 
   const postesTypesParPosteBase = (posteBaseId: string) =>
-    postesTypes.filter((pt) => pt.poste_base_id === posteBaseId);
+    postesTypes.filter((pt) => pt.poste_base_id === posteBaseId)
 
   if (!client.secteurs || client.secteurs.length === 0) {
     return (
       <p className="text-sm italic text-muted-foreground">
         Aucun secteur n'est défini pour ce client.
       </p>
-    );
+    )
   }
 
   return (
@@ -193,8 +218,8 @@ export function ClientPostesTypesTab({ client }: Props) {
       {client.secteurs.map((secteurClient) => {
         const secteurInfo = secteursList.find(
           (s) => normalize(s.value) === normalize(secteurClient)
-        );
-        const postesDuSecteur = postesParSecteur(secteurClient);
+        )
+        const postesDuSecteur = postesParSecteur(secteurClient)
 
         return (
           <Card key={secteurClient} className="flex flex-col justify-between">
@@ -231,18 +256,12 @@ export function ClientPostesTypesTab({ client }: Props) {
                     </DialogHeader>
                     <div className="space-y-6">
                       {postesDuSecteur.map((poste) => {
-                        const isActive = client.postes_bases_actifs?.includes(
-                          poste.id
-                        );
-                        const postesTypesExistants =
-                          postesTypesParPosteBase(poste.id);
-                        const tenue = selectedTenues[poste.id];
+                        const isActive = client.postes_bases_actifs?.includes(poste.id)
+                        const postesTypesExistants = postesTypesParPosteBase(poste.id)
+                        const tenue = selectedTenues[poste.id]
 
                         return (
-                          <div
-                            key={poste.id}
-                            className="border p-4 rounded space-y-3"
-                          >
+                          <div key={poste.id} className="border p-4 rounded space-y-3">
                             <div className="flex items-center justify-between">
                               <Label>{poste.nom}</Label>
                               <Switch
@@ -300,8 +319,8 @@ export function ClientPostesTypesTab({ client }: Props) {
                                         variant="outline"
                                         size="sm"
                                         onClick={() => {
-                                          setEditingPosteType(pt);
-                                          setNewPosteType(pt);
+                                          setEditingPosteType(pt)
+                                          setNewPosteType(pt)
                                         }}
                                       >
                                         Modifier
@@ -310,9 +329,7 @@ export function ClientPostesTypesTab({ client }: Props) {
                                         variant="outline"
                                         size="sm"
                                         className="text-red-500 border-red-500"
-                                        onClick={() =>
-                                          handleDeletePosteType(pt.id)
-                                        }
+                                        onClick={() => handleDeletePosteType(pt.id)}
                                       >
                                         Supprimer
                                       </Button>
@@ -335,7 +352,7 @@ export function ClientPostesTypesTab({ client }: Props) {
                               </div>
                             )}
                           </div>
-                        );
+                        )
                       })}
                     </div>
                   </DialogContent>
@@ -343,144 +360,8 @@ export function ClientPostesTypesTab({ client }: Props) {
               </div>
             </CardContent>
           </Card>
-        );
+        )
       })}
-
-      {/* Dialog pour choisir une tenue */}
-      <Dialog
-        open={!!posteBaseIdForTenue}
-        onOpenChange={() => setPosteBaseIdForTenue(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Choisir une tenue</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {tenues.map((tenue) => (
-              <div
-                key={tenue.id}
-                className="border p-3 rounded flex justify-between items-center"
-              >
-                <div className="flex-1 pr-4">
-                  <p className="font-medium">{tenue.valeur}</p>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap mt-1">
-                    {tenue.description}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() =>
-                    handleSaveTenue(posteBaseIdForTenue!, tenue)
-                  }
-                >
-                  Sélectionner
-                </Button>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Pop-up créer/modifier poste type */}
-      <Dialog
-        open={!!editingPosteType}
-        onOpenChange={() => setEditingPosteType(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {editingPosteType?.id
-                ? "Modifier le poste type"
-                : "Créer un poste type"}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Input
-              placeholder="Nom du poste type"
-              value={newPosteType.nom || ""}
-              onChange={(e) =>
-                setNewPosteType((prev) => ({
-                  ...prev,
-                  nom: e.target.value,
-                }))
-              }
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                type="time"
-                placeholder="Début Matin"
-                value={newPosteType.heure_debut_matin || ""}
-                onChange={(e) =>
-                  setNewPosteType((prev) => ({
-                    ...prev,
-                    heure_debut_matin: e.target.value,
-                  }))
-                }
-              />
-              <Input
-                type="time"
-                placeholder="Fin Matin"
-                value={newPosteType.heure_fin_matin || ""}
-                onChange={(e) =>
-                  setNewPosteType((prev) => ({
-                    ...prev,
-                    heure_fin_matin: e.target.value,
-                  }))
-                }
-              />
-              <Input
-                type="time"
-                placeholder="Début Soir"
-                value={newPosteType.heure_debut_soir || ""}
-                onChange={(e) =>
-                  setNewPosteType((prev) => ({
-                    ...prev,
-                    heure_debut_soir: e.target.value,
-                  }))
-                }
-              />
-              <Input
-                type="time"
-                placeholder="Fin Soir"
-                value={newPosteType.heure_fin_soir || ""}
-                onChange={(e) =>
-                  setNewPosteType((prev) => ({
-                    ...prev,
-                    heure_fin_soir: e.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div>
-              <Label>Temps de pause</Label>
-              <Input
-                type="time"
-                step="60"
-                value={newPosteType.temps_pause_minutes || ""}
-                onChange={(e) =>
-                  setNewPosteType((prev) => ({
-                    ...prev,
-                    temps_pause_minutes: e.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="flex items-center space-x-2">
-              <Switch
-                checked={newPosteType.repas_fournis ?? false}
-                onCheckedChange={(checked) =>
-                  setNewPosteType((prev) => ({
-                    ...prev,
-                    repas_fournis: checked,
-                  }))
-                }
-              />
-              <Label>Repas fournis</Label>
-            </div>
-            <Button onClick={handleSavePosteType}>Valider</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
-  );
+  )
 }
