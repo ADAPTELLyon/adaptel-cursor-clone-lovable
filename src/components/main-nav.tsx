@@ -39,6 +39,7 @@ export function MainNav() {
   const { toast } = useToast()
 
   const [nomComplet, setNomComplet] = useState<string | null>(null)
+  const [feteDuJour, setFeteDuJour] = useState<string>("")
 
   const handleSignOut = async () => {
     const { error } = await signOut()
@@ -59,11 +60,11 @@ export function MainNav() {
     navigate("/login")
   }
 
-  const today = format(new Date(), "EEEE d MMMM yyyy", { locale: fr })
-  const fete = "Saint Donatien"
+  const today = new Date()
+  const todayText = format(today, "EEEE d MMMM yyyy", { locale: fr })
 
-  // 🔁 Requête pour récupérer nom/prenom depuis la table utilisateurs
   useEffect(() => {
+    // 🔁 Requête pour récupérer nom/prénom depuis la table utilisateurs
     const fetchNomUtilisateur = async () => {
       if (!user?.email) return
       const { data, error } = await supabase
@@ -79,6 +80,27 @@ export function MainNav() {
 
     fetchNomUtilisateur()
   }, [user?.email])
+
+  useEffect(() => {
+    // 🎉 Fête du jour depuis nominis.cef.fr
+    const fetchFete = async () => {
+      const jour = today.getDate()
+      const mois = today.getMonth() + 1
+      const annee = today.getFullYear()
+
+      try {
+        const res = await fetch(`https://nominis.cef.fr/json/saintdujour.php?jour=${jour}&mois=${mois}&annee=${annee}`)
+        const data = await res.json()
+        const nom = data?.response?.saintdujour?.nom || ""
+        if (nom) setFeteDuJour(`Fête du jour : ${nom.replace(/^Saint\s+/i, "")}`)
+      } catch (err) {
+        console.error("Erreur récupération fête du jour :", err)
+        setFeteDuJour("")
+      }
+    }
+
+    fetchFete()
+  }, [])
 
   const nomAffiche = nomComplet || user?.email?.split("@")[0] || "Utilisateur"
 
@@ -97,21 +119,24 @@ export function MainNav() {
           </span>
         </Link>
 
-        {/* Utilisateur connecté */}
         <div className="flex items-center px-3 py-1 rounded-md bg-gray-100 text-sm text-gray-800 font-medium">
           <User2 className="w-4 h-4 mr-1 text-gray-500" />
           {nomAffiche}
         </div>
       </div>
 
-      {/* Date + fête au centre */}
+      {/* Date + fête du jour */}
       <div className="hidden md:flex items-center gap-3 text-sm text-gray-700 font-medium">
-        <span className="capitalize">{today}</span>
-        <div className="h-4 w-px bg-gray-300" />
-        <span>{fete}</span>
+        <span className="capitalize">{todayText}</span>
+        {feteDuJour && (
+          <>
+            <div className="h-4 w-px bg-gray-300" />
+            <span>{feteDuJour}</span>
+          </>
+        )}
       </div>
 
-      {/* Navigation + logout à droite */}
+      {/* Menu + logout */}
       <div className="flex items-center gap-4">
         <NavigationMenu>
           <NavigationMenuList>
@@ -137,7 +162,6 @@ export function MainNav() {
           </NavigationMenuList>
         </NavigationMenu>
 
-        {/* Déconnexion */}
         <button
           onClick={handleSignOut}
           className="p-2 rounded-md hover:bg-gray-100 transition"
