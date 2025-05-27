@@ -38,22 +38,22 @@ export function ColonneCandidate({
         </div>
       </div>
 
-      <div className="flex justify-between items-center mt-1">
-        <div className="flex flex-wrap gap-2">
-          {secteurInfo && (
-            <div className="text-[13px] font-semibold px-2 py-1 rounded border bg-white text-gray-800 flex items-center gap-1">
-              <secteurInfo.icon className="h-3 w-3" />
-              {secteurInfo.label}
-            </div>
-          )}
-          {service && (
-            <div className="text-[13px] px-2 py-1 rounded border bg-white text-gray-800">
-              {service}
-            </div>
-          )}
+      {/* Étiquette secteur toujours visible en-dessous du nom */}
+      {secteurInfo && (
+        <div className="mt-2 text-[13px] font-semibold px-2 py-1 rounded border bg-white text-gray-800 inline-flex items-center gap-1">
+          <secteurInfo.icon className="h-3 w-3" />
+          {secteurInfo.label}
         </div>
-      </div>
+      )}
 
+      {/* Étiquette service si présent */}
+      {service && (
+        <div className="mt-1 text-[13px] px-2 py-1 rounded border bg-white text-gray-800">
+          {service}
+        </div>
+      )}
+
+      {/* Semaine toujours en bas */}
       <div className="text-[13px] text-gray-500 mt-1">{`Semaine ${semaine}`}</div>
     </div>
   )

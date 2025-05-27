@@ -100,13 +100,24 @@ export function PlanningCandidateTable({
               const ligne = jours.map(j => jourMap[j.dateStr]?.[0] ?? null)
               const disponibilites = ligne.map((j) => j?.disponibilite?.statut)
               const hasDispo = disponibilites.includes("Dispo")
-              const candidatId = ligne[0]?.disponibilite?.candidat_id || ligne[0]?.commande?.candidat_id || ""
+
+              // ✅ récupération fiable depuis premier jour non nul
+              const premiereLigneValide = ligne.find((j) => j !== null)
+
+              const candidatId =
+                premiereLigneValide?.disponibilite?.candidat_id ||
+                premiereLigneValide?.commande?.candidat_id ||
+                ""
+
               const nomPrenom =
-                ligne[0]?.disponibilite?.candidat
-                  ? `${ligne[0].disponibilite.candidat.nom} ${ligne[0].disponibilite.candidat.prenom}`
-                  : ligne[0]?.commande?.candidat
-                  ? `${ligne[0].commande.candidat.nom} ${ligne[0].commande.candidat.prenom}`
+                premiereLigneValide?.disponibilite?.candidat
+                  ? `${premiereLigneValide.disponibilite.candidat.nom} ${premiereLigneValide.disponibilite.candidat.prenom}`
+                  : premiereLigneValide?.commande?.candidat
+                  ? `${premiereLigneValide.commande.candidat.nom} ${premiereLigneValide.commande.candidat.prenom}`
                   : key
+
+              const secteur = premiereLigneValide?.secteur || ""
+              const service = premiereLigneValide?.service || ""
 
               return (
                 <div
@@ -115,8 +126,8 @@ export function PlanningCandidateTable({
                 >
                   <ColonneCandidate
                     nomComplet={nomPrenom}
-                    secteur={ligne[0]?.secteur || ""}
-                    service={ligne[0]?.service || ""}
+                    secteur={secteur}
+                    service={service}
                     semaine={semaine}
                     statutGlobal={hasDispo ? "Dispo" : "Non Dispo"}
                     candidatId={candidatId}
@@ -135,10 +146,10 @@ export function PlanningCandidateTable({
                         <CellulePlanningCandidate
                           disponibilite={dispo}
                           commande={commande}
-                          secteur={ligne[0]?.secteur || ""}
+                          secteur={secteur}
                           date={jour.dateStr}
                           candidatId={candidatId}
-                          service={ligne[0]?.service || ""}
+                          service={service}
                           onSuccess={onRefresh}
                           nomPrenom={nomPrenom}
                         />

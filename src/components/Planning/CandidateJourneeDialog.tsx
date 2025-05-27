@@ -66,7 +66,25 @@ export function CandidateJourneeDialog({
     }
 
     if (statut === "Non Renseigné") {
-      toast({ title: "Erreur", description: "Veuillez choisir un statut." })
+      // ✅ Suppression en base si une ligne existe
+      if (disponibilite?.id) {
+        const { error } = await supabase
+          .from("disponibilites")
+          .delete()
+          .eq("id", disponibilite.id)
+
+        if (error) {
+          console.error("Erreur Supabase (delete):", error)
+          toast({ title: "Erreur", description: "Échec de suppression", variant: "destructive" })
+        } else {
+          toast({ title: "Disponibilité supprimée" })
+          onSuccess()
+          onClose()
+        }
+      } else {
+        // rien à faire si aucune ligne → juste fermer
+        onClose()
+      }
       return
     }
 

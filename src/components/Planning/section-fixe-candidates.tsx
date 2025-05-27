@@ -4,10 +4,10 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { Plus, CalendarCheck, AlertCircle, RotateCcw } from "lucide-react"
-import { indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
 import { startOfWeek } from "date-fns"
 import AjoutDispoCandidat from "@/components/Planning/AjoutDispoCandidat"
+import SectionStatutPlanning, { StatsPlanning } from "@/components/Planning/SectionStatutPlanning"
 
 export function SectionFixeCandidates({
   selectedSecteurs,
@@ -34,7 +34,7 @@ export function SectionFixeCandidates({
 }: {
   selectedSecteurs: string[]
   setSelectedSecteurs: (val: string[]) => void
-  stats: { [key: string]: number }
+  stats: StatsPlanning
   semaine: string
   setSemaine: (s: string) => void
   selectedSemaine: string
@@ -58,20 +58,7 @@ export function SectionFixeCandidates({
 
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 space-y-6">
-      <div className="grid grid-cols-4 gap-2">
-        {["Non renseigné", "Dispo", "Non Dispo", "Planifié"].map((label) => (
-          <div
-            key={label}
-            className="rounded-xl p-3"
-            style={{ backgroundColor: indicateurColors[label] || "#ccc" }}
-          >
-            <div className="text-xs text-white">{label}</div>
-            <div className="text-2xl font-bold text-white">
-              {stats[label] || 0}
-            </div>
-          </div>
-        ))}
-      </div>
+      <SectionStatutPlanning stats={stats} />
 
       <div className="grid grid-cols-5 gap-2">
         {secteursList.map(({ label, icon: Icon }) => {
@@ -182,6 +169,7 @@ export function SectionFixeCandidates({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+
         <Button
           variant="outline"
           size="sm"
@@ -221,7 +209,6 @@ function getWeekNumber(date: Date) {
   const diff =
     (+date -
       +start +
-      (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) /
-    86400000
+      (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) / 86400000
   return Math.floor((diff + start.getDay() + 6) / 7)
 }

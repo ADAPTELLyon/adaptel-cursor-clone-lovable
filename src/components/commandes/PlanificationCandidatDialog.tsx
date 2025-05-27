@@ -7,12 +7,45 @@ import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { toast } from "@/hooks/use-toast"
 import type { CommandeWithCandidat } from "@/types/types-front"
+import { Badge } from "@/components/ui/badge"
+import { CheckCircle2, Clock, AlertCircle, Car, Ban, Check, History, ChevronRight } from "lucide-react"
+import { cn } from "@/lib/utils"
+
+const statusConfig = {
+  dispo: {
+    title: "Disponibles",
+    icon: <CheckCircle2 className="w-4 h-4" />,
+    color: "bg-[#8ea9db]",
+    textColor: "text-[#8ea9db]",
+    borderColor: "border-[#8ea9db]",
+    badgeColor: "bg-[#8ea9db]/10 text-[#8ea9db]"
+  },
+  nonRenseigne: {
+    title: "Non renseignés",
+    icon: <Clock className="w-4 h-4" />,
+    color: "bg-[#e5e7eb]",
+    textColor: "text-[#6b7280]",
+    borderColor: "border-[#e5e7eb]",
+    badgeColor: "bg-[#e5e7eb]/10 text-[#6b7280]"
+  },
+  planifie: {
+    title: "Déjà planifiés",
+    icon: <AlertCircle className="w-4 h-4" />,
+    color: "bg-[#a9d08e]",
+    textColor: "text-[#a9d08e]",
+    borderColor: "border-[#a9d08e]",
+    badgeColor: "bg-[#a9d08e]/10 text-[#a9d08e]"
+  }
+}
 
 type CandidatMini = {
   id: string
   nom: string
   prenom: string
   vehicule?: boolean
+  interditClient?: boolean
+  prioritaire?: boolean
+  dejaPlanifie?: boolean
 }
 
 interface PlanificationCandidatDialogProps {
@@ -38,6 +71,7 @@ export function PlanificationCandidatDialog({
   const [dispos, setDispos] = useState<CandidatMini[]>([])
   const [nonRenseignes, setNonRenseignes] = useState<CandidatMini[]>([])
   const [planifies, setPlanifies] = useState<CandidatMini[]>([])
+  const [planificationDetails, setPlanificationDetails] = useState<Record<string, any>>({})
 
   useEffect(() => {
     if (!open || candidats.length === 0) return
@@ -60,12 +94,27 @@ export function PlanificationCandidatDialog({
 
       const { data: planifData } = await supabase
         .from("planification")
-        .select("candidat_id")
+        .select("candidat_id, commande_id, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
         .eq("secteur", secteur)
         .eq("date", jour)
         .in("candidat_id", candidatIds)
 
-      const planifieSet = new Set(planifData?.map((p) => p.candidat_id) || [])
+      // Stocker les détails de planification pour affichage
+      const detailsMap: Record<string, any> = {}
+      planifData?.forEach(p => {
+        detailsMap[p.candidat_id] = {
+          heure_debut_matin: p.heure_debut_matin,
+          heure_fin_matin: p.heure_fin_matin,
+          heure_debut_soir: p.heure_debut_soir,
+          heure_fin_soir: p.heure_fin_soir,
+          commande_id: p.commande_id
+        }
+      })
+      setPlanificationDetails(detailsMap)
+
+      const planifieSet = new Map(
+        planifData?.map(p => [p.candidat_id, p]) || []
+      )
 
       const dispoList: CandidatMini[] = []
       const planifieList: CandidatMini[] = []
@@ -77,6 +126,9 @@ export function PlanificationCandidatDialog({
           nom: c.nom,
           prenom: c.prenom,
           vehicule: c.vehicule,
+          interditClient: false, // À implémenter
+          prioritaire: false, // À implémenter
+          dejaPlanifie: false // À implémenter
         }
 
         if (planifieSet.has(c.id)) {
@@ -135,7 +187,7 @@ export function PlanificationCandidatDialog({
       candidat_id: candidatId,
       date,
       secteur,
-      statut: "Validé", // ✅ OBLIGATOIRE dans ta table
+      statut: "Validé",
       heure_debut_matin: commande.heure_debut_matin,
       heure_fin_matin: commande.heure_fin_matin,
       heure_debut_soir: commande.heure_debut_soir,
@@ -204,63 +256,160 @@ export function PlanificationCandidatDialog({
 
   const dateFormatee = format(new Date(date), "eeee d MMMM", { locale: fr })
 
+  const StatusColumn = ({
+    statusKey,
+    candidats,
+  }: {
+    statusKey: keyof typeof statusConfig
+    candidats: CandidatMini[]
+  }) => {
+    const config = statusConfig[statusKey]
+    
+    return (
+      <div className={cn(
+        "flex-1 rounded-lg border overflow-hidden",
+        config.borderColor,
+        "border-2 flex flex-col h-full"
+      )}>
+        <div className={cn(
+          "w-full flex items-center justify-between p-3",
+          config.color,
+          "bg-opacity-20"
+        )}>
+          <div className="flex items-center gap-3">
+            <div className={cn("p-2 rounded-full", config.badgeColor)}>
+              {config.icon}
+            </div>
+            <h3 className="font-medium">
+              {config.title} <span className="text-muted-foreground">({candidats.length})</span>
+            </h3>
+          </div>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto max-h-[400px] p-2 space-y-1">
+          {candidats.length === 0 ? (
+            <p className="text-sm text-muted-foreground italic p-3 text-center">
+              Aucun candidat dans cette catégorie
+            </p>
+          ) : (
+            candidats.map((c) => (
+              <CandidatItem 
+                key={c.id} 
+                candidat={c} 
+                status={statusKey} 
+                onSelect={handleSelect}
+                planification={planificationDetails[c.id]}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const CandidatItem = ({
+    candidat,
+    status,
+    onSelect,
+    planification
+  }: {
+    candidat: CandidatMini
+    status: keyof typeof statusConfig
+    onSelect: (id: string) => void
+    planification?: any
+  }) => {
+    const config = statusConfig[status]
+    
+    const formatHeure = (heure: string | null | undefined) => {
+      if (!heure) return ''
+      return heure.slice(0, 5)
+    }
+
+    return (
+      <div 
+        className={cn(
+          "flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer",
+          "hover:bg-muted/50",
+          status === 'planifie' ? 'cursor-default' : ''
+        )}
+        onClick={() => status !== 'planifie' && onSelect(candidat.id)}
+      >
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <p className="font-medium">
+              {candidat.nom} {candidat.prenom}
+            </p>
+            <div className="flex items-center gap-1">
+              {candidat.vehicule && (
+                <span className="p-1 rounded-full bg-muted" title="Véhicule">
+                  <Car className="w-3 h-3 text-blue-500" />
+                </span>
+              )}
+              {candidat.interditClient && (
+                <span className="p-1 rounded-full bg-muted" title="Interdit sur ce client">
+                  <Ban className="w-3 h-3 text-red-500" />
+                </span>
+              )}
+              {candidat.prioritaire && (
+                <span className="p-1 rounded-full bg-muted" title="Prioritaire">
+                  <Check className="w-3 h-3 text-green-500" />
+                </span>
+              )}
+              {candidat.dejaPlanifie && (
+                <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce client">
+                  <History className="w-3 h-3 text-amber-500" />
+                </span>
+              )}
+            </div>
+          </div>
+          
+          {status === 'planifie' && planification && (
+            <div className="text-xs text-muted-foreground mt-1">
+              <div className="flex gap-2">
+                {planification.heure_debut_matin && (
+                  <span>Matin: {formatHeure(planification.heure_debut_matin)}-{formatHeure(planification.heure_fin_matin)}</span>
+                )}
+                {planification.heure_debut_soir && (
+                  <span>Soir: {formatHeure(planification.heure_debut_soir)}-{formatHeure(planification.heure_fin_soir)}</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {status !== 'planifie' && (
+          <div className={cn(
+            "p-1 rounded-full",
+            config.badgeColor,
+            "hover:bg-[#8ea9db] hover:text-white"
+          )}>
+            <ChevronRight className="w-4 h-4" />
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            Planifier un candidat – {secteur}, {dateFormatee}
+          <DialogTitle className="text-lg flex items-center gap-2">
+            <span className="p-2 rounded-lg bg-primary/10 text-primary">
+              <CheckCircle2 className="w-5 h-5" />
+            </span>
+            Planifier un candidat • {secteur}
           </DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            {dateFormatee}
+            {service && ` • ${service}`}
+          </p>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
-          <div>
-            <h4 className="font-semibold mb-2 text-green-700">🟢 Disponibles</h4>
-            {dispos.length === 0 && <div className="text-muted-foreground italic">Aucun</div>}
-            {dispos.map((c) => (
-              <Button
-                key={c.id}
-                variant="outline"
-                className="w-full mb-2 justify-between"
-                onClick={() => handleSelect(c.id)}
-              >
-                {c.nom} {c.prenom}
-                {c.vehicule && <span className="ml-2">🚗</span>}
-              </Button>
-            ))}
-          </div>
-
-          <div>
-            <h4 className="font-semibold mb-2 text-gray-600">⚪️ Non renseignés</h4>
-            {nonRenseignes.length === 0 && <div className="text-muted-foreground italic">Aucun</div>}
-            {nonRenseignes.map((c) => (
-              <Button
-                key={c.id}
-                variant="ghost"
-                className="w-full mb-2 justify-between"
-                onClick={() => handleSelect(c.id)}
-              >
-                {c.nom} {c.prenom}
-                {c.vehicule && <span className="ml-2">🚗</span>}
-              </Button>
-            ))}
-          </div>
-
-          <div>
-            <h4 className="font-semibold mb-2 text-yellow-800">🟡 Déjà planifiés</h4>
-            {planifies.length === 0 && <div className="text-muted-foreground italic">Aucun</div>}
-            {planifies.map((c) => (
-              <Button
-                key={c.id}
-                variant="secondary"
-                className="w-full mb-2 justify-between"
-                onClick={() => handleSelect(c.id)}
-              >
-                {c.nom} {c.prenom}
-                {c.vehicule && <span className="ml-2">🚗</span>}
-              </Button>
-            ))}
-          </div>
+        <div className="flex gap-4 h-[500px]">
+          <StatusColumn statusKey="dispo" candidats={dispos} />
+          <StatusColumn statusKey="nonRenseigne" candidats={nonRenseignes} />
+          <StatusColumn statusKey="planifie" candidats={planifies} />
         </div>
       </DialogContent>
     </Dialog>

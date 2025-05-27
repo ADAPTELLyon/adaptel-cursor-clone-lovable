@@ -20,10 +20,9 @@ export default function Planning() {
   const [refreshTrigger, setRefreshTrigger] = useState(0)
 
   const [stats, setStats] = useState({
-    "Non renseigné": 0,
-    "Dispo": 0,
+    Dispo: 0,
     "Non Dispo": 0,
-    "Planifié": 0,
+    Planifié: 0,
   })
 
   const fetchPlanning = async () => {
@@ -98,22 +97,23 @@ export default function Planning() {
 
     setFilteredPlanning(newFiltered)
 
-    let nr = 0, d = 0, nd = 0, p = 0
+    let d = 0,
+      nd = 0,
+      p = 0
 
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) => {
-        const s = j.disponibilite?.statut || "Non renseigné"
+        const s = j.disponibilite?.statut
         if (s === "Dispo") d++
         else if (s === "Non Dispo") nd++
-        else nr++
+        if (j.commande?.candidat_id) p++
       })
     )
 
     setStats({
-      "Non renseigné": nr,
-      "Dispo": d,
+      Dispo: d,
       "Non Dispo": nd,
-      "Planifié": p,
+      Planifié: p,
     })
   }, [planning, selectedSecteurs, selectedSemaine, candidat, search, dispo, toutAfficher])
 
