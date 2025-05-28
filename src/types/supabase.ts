@@ -408,7 +408,10 @@ export type Database = {
           client_id: string
           commentaire: string | null
           created_at: string | null
+          created_by: string | null
           id: string
+          secteur: string
+          service: string | null
           type: string
         }
         Insert: {
@@ -416,7 +419,10 @@ export type Database = {
           client_id: string
           commentaire?: string | null
           created_at?: string | null
+          created_by?: string | null
           id?: string
+          secteur: string
+          service?: string | null
           type: string
         }
         Update: {
@@ -424,7 +430,10 @@ export type Database = {
           client_id?: string
           commentaire?: string | null
           created_at?: string | null
+          created_by?: string | null
           id?: string
+          secteur?: string
+          service?: string | null
           type?: string
         }
         Relationships: [
@@ -440,6 +449,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "interdictions_priorites_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "utilisateurs"
             referencedColumns: ["id"]
           },
         ]

@@ -180,3 +180,17 @@ export type JourPlanning = {
   service?: string | null;
   commandes: CommandeWithCandidat[];
 };
+
+// === TABLE: interdictions_priorites ===
+export type InterdictionPriorite = {
+  id: string;
+  candidat_id: string;
+  client_id: string;
+  secteur: string;
+  service?: string | null;
+  type: "interdiction" | "priorite";
+  commentaire?: string | null;
+  created_at?: string;
+  created_by?: string | null;
+  candidat?: Pick<Candidat, "id" | "nom" | "prenom">;
+};
