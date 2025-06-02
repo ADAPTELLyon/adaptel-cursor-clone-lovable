@@ -100,12 +100,19 @@ export function PlanningCandidateTable({
               const ligne = jours.map(j => jourMap[j.dateStr]?.[0] ?? null)
               const disponibilites = ligne.map((j) => j?.disponibilite?.statut)
               const hasDispo = disponibilites.includes("Dispo")
-              const candidatId = ligne[0]?.disponibilite?.candidat_id || ligne[0]?.commande?.candidat_id || ""
+
+              const premierJour = ligne.find(j => j)
+              const secteur = premierJour?.secteur || ""
+              const service = premierJour?.service || ""
+              const candidatId =
+                premierJour?.disponibilite?.candidat_id ||
+                premierJour?.commande?.candidat_id ||
+                ""
               const nomPrenom =
-                ligne[0]?.disponibilite?.candidat
-                  ? `${ligne[0].disponibilite.candidat.nom} ${ligne[0].disponibilite.candidat.prenom}`
-                  : ligne[0]?.commande?.candidat
-                  ? `${ligne[0].commande.candidat.nom} ${ligne[0].commande.candidat.prenom}`
+                premierJour?.disponibilite?.candidat
+                  ? `${premierJour.disponibilite.candidat.nom} ${premierJour.disponibilite.candidat.prenom}`
+                  : premierJour?.commande?.candidat
+                  ? `${premierJour.commande.candidat.nom} ${premierJour.commande.candidat.prenom}`
                   : key
 
               return (
@@ -115,8 +122,8 @@ export function PlanningCandidateTable({
                 >
                   <ColonneCandidate
                     nomComplet={nomPrenom}
-                    secteur={ligne[0]?.secteur || ""}
-                    service={ligne[0]?.service || ""}
+                    secteur={secteur}
+                    service={service}
                     semaine={semaine}
                     statutGlobal={hasDispo ? "Dispo" : "Non Dispo"}
                     candidatId={candidatId}
@@ -135,10 +142,10 @@ export function PlanningCandidateTable({
                         <CellulePlanningCandidate
                           disponibilite={dispo}
                           commande={commande}
-                          secteur={ligne[0]?.secteur || ""}
+                          secteur={secteur}
                           date={jour.dateStr}
                           candidatId={candidatId}
-                          service={ligne[0]?.service || ""}
+                          service={service}
                           onSuccess={onRefresh}
                           nomPrenom={nomPrenom}
                         />

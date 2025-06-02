@@ -61,28 +61,7 @@ export function CandidateJourneeDialog({
 
   const handleSave = async () => {
     if (!candidatId || !secteur || !date) {
-      toast({ title: "Erreur", description: "Données manquantes" })
-      return
-    }
-
-    if (statut === "Non Renseigné") {
-      if (disponibilite?.id) {
-        const { error } = await supabase
-          .from("disponibilites")
-          .delete()
-          .eq("id", disponibilite.id)
-
-        if (error) {
-          console.error("Erreur Supabase (delete):", error)
-          toast({ title: "Erreur", description: "Échec de suppression", variant: "destructive" })
-        } else {
-          toast({ title: "Disponibilité supprimée" })
-          onSuccess()
-          onClose()
-        }
-      } else {
-        onClose()
-      }
+      toast({ title: "Erreur", description: "Données manquantes", variant: "destructive" })
       return
     }
 
@@ -100,22 +79,33 @@ export function CandidateJourneeDialog({
 
     let error = null
 
-    if (disponibilite?.id) {
-      const { error: err } = await supabase
-        .from("disponibilites")
-        .update(payload)
-        .eq("id", disponibilite.id)
-      error = err
+    if (statut === "Non Renseigné") {
+      if (disponibilite?.id) {
+        const { error: err } = await supabase
+          .from("disponibilites")
+          .delete()
+          .eq("id", disponibilite.id)
+        error = err
+        if (!error) toast({ title: "Disponibilité supprimée" })
+      }
     } else {
-      const { error: err } = await supabase.from("disponibilites").insert([payload])
-      error = err
+      if (disponibilite?.id) {
+        const { error: err } = await supabase
+          .from("disponibilites")
+          .update(payload)
+          .eq("id", disponibilite.id)
+        error = err
+      } else {
+        const { error: err } = await supabase.from("disponibilites").insert([payload])
+        error = err
+      }
+      if (!error) toast({ title: "Disponibilité enregistrée" })
     }
 
     if (error) {
       console.error("Erreur Supabase:", error)
       toast({ title: "Erreur", description: "Échec enregistrement", variant: "destructive" })
     } else {
-      toast({ title: "Disponibilité enregistrée" })
       onSuccess()
       onClose()
     }
@@ -170,7 +160,7 @@ export function CandidateJourneeDialog({
           <div className="space-y-1">
             <Label>Commentaire</Label>
             <Textarea
-              value={commentaire}
+              value={commentaire || ""}
               onChange={(e) => setCommentaire(e.target.value)}
               placeholder="Commentaire (optionnel)"
             />

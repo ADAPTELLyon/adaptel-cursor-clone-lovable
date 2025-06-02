@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
+import ephemeris from "@/lib/ephemeris-data.json"
 
 const routes = [
   { title: "Back Office", href: "/back-office", icon: Home },
@@ -37,7 +38,6 @@ export function MainNav() {
   const navigate = useNavigate()
   const location = useLocation()
   const { toast } = useToast()
-
   const [nomComplet, setNomComplet] = useState<string | null>(null)
 
   const handleSignOut = async () => {
@@ -59,10 +59,13 @@ export function MainNav() {
     navigate("/login")
   }
 
-  const today = format(new Date(), "EEEE d MMMM yyyy", { locale: fr })
-  const fete = "Saint Donatien"
+  // Date + fête du jour
+  const today = new Date()
+  const todayFormatted = format(today, "EEEE d MMMM yyyy", { locale: fr })
+  const month = String(today.getMonth() + 1).padStart(2, "0")
+  const day = String(today.getDate()).padStart(2, "0")
+  const fete = ephemeris[month]?.[day] || "—"
 
-  // 🔁 Requête pour récupérer nom/prenom depuis la table utilisateurs
   useEffect(() => {
     const fetchNomUtilisateur = async () => {
       if (!user?.email) return
@@ -97,21 +100,20 @@ export function MainNav() {
           </span>
         </Link>
 
-        {/* Utilisateur connecté */}
         <div className="flex items-center px-3 py-1 rounded-md bg-gray-100 text-sm text-gray-800 font-medium">
           <User2 className="w-4 h-4 mr-1 text-gray-500" />
           {nomAffiche}
         </div>
       </div>
 
-      {/* Date + fête au centre */}
+      {/* Date + fête */}
       <div className="hidden md:flex items-center gap-3 text-sm text-gray-700 font-medium">
-        <span className="capitalize">{today}</span>
+        <span className="capitalize">{todayFormatted}</span>
         <div className="h-4 w-px bg-gray-300" />
         <span>{fete}</span>
       </div>
 
-      {/* Navigation + logout à droite */}
+      {/* Navigation + logout */}
       <div className="flex items-center gap-4">
         <NavigationMenu>
           <NavigationMenuList>
@@ -137,7 +139,6 @@ export function MainNav() {
           </NavigationMenuList>
         </NavigationMenu>
 
-        {/* Déconnexion */}
         <button
           onClick={handleSignOut}
           className="p-2 rounded-md hover:bg-gray-100 transition"

@@ -1,5 +1,3 @@
-// components/clients/ClientSuiviTab.tsx
-
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
@@ -30,7 +28,7 @@ export function ClientSuiviTab({ clientId, secteurs, services }: Props) {
       .from("interdictions_priorites")
       .select(`
         id, secteur, service, commentaire, type, created_at, created_by, actif,
-        candidat:candidat_id(nom, prenom),
+        candidat:candidat_id(nom,prenom),
         user:created_by(prenom)
       `)
       .eq("client_id", clientId)
@@ -41,7 +39,7 @@ export function ClientSuiviTab({ clientId, secteurs, services }: Props) {
       return
     }
 
-    const propres = data as unknown as InterdictionPriorite[]
+    const propres = data as InterdictionPriorite[]
     setPrioritaires(propres.filter((d) => d.type === "priorite"))
     setInterdits(propres.filter((d) => d.type === "interdiction"))
   }
@@ -53,7 +51,10 @@ export function ClientSuiviTab({ clientId, secteurs, services }: Props) {
   const handleDelete = async (id: string) => {
     const { error } = await supabase
       .from("interdictions_priorites")
-      .update({ actif: false, updated_at: new Date().toISOString() } as never)
+      .update({
+        actif: false,
+        updated_at: new Date().toISOString(),
+      } as never)
       .eq("id", id)
 
     if (error) {
@@ -82,15 +83,14 @@ export function ClientSuiviTab({ clientId, secteurs, services }: Props) {
 
   const renderCarte = (item: InterdictionPriorite) => {
     const nom = (item as any)?.candidat?.nom?.toLowerCase() || ""
-    if (!nom.includes(search.toLowerCase())) return null
+    const prenom = (item as any)?.candidat?.prenom?.toLowerCase() || ""
+    if (!`${prenom} ${nom}`.includes(search.toLowerCase())) return null
 
     return (
       <li key={item.id} className="border rounded p-3 text-sm bg-white shadow-sm space-y-2 relative">
         <div className="flex justify-between items-start">
           <div>
-            <div className="font-semibold text-base">
-              {(item as any)?.candidat?.nom} {(item as any)?.candidat?.prenom || ""}
-            </div>
+            <div className="font-semibold text-base">{item.candidat?.prenom} {item.candidat?.nom}</div>
             <div className="text-xs text-gray-600">{item.secteur}{item.service ? ` • ${item.service}` : ""}</div>
           </div>
           <div className="flex items-center gap-2">

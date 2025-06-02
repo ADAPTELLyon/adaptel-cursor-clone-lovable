@@ -102,10 +102,14 @@ export default function Planning() {
 
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) => {
-        const s = j.disponibilite?.statut || "Non renseigné"
-        if (s === "Dispo") d++
-        else if (s === "Non Dispo") nd++
-        else nr++
+        if (j.commande) {
+          p++
+        } else {
+          const s = j.disponibilite?.statut || "Non renseigné"
+          if (s === "Dispo") d++
+          else if (s === "Non Dispo") nd++
+          else nr++
+        }
       })
     )
 

@@ -4,10 +4,12 @@ import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import { Plus, CalendarCheck, AlertCircle, RotateCcw } from "lucide-react"
-import { indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
 import { startOfWeek } from "date-fns"
 import AjoutDispoCandidat from "@/components/Planning/AjoutDispoCandidat"
+import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
+import SaisirIncidentDialog from "@/components/commandes/SaisirIncidentDialog"
+import SectionStatutPlanning from "@/components/Planning/SectionStatutPlanning"
 
 export function SectionFixeCandidates({
   selectedSecteurs,
@@ -34,7 +36,7 @@ export function SectionFixeCandidates({
 }: {
   selectedSecteurs: string[]
   setSelectedSecteurs: (val: string[]) => void
-  stats: { [key: string]: number }
+  stats: { Dispo: number; "Non Dispo": number; Planifié: number }
   semaine: string
   setSemaine: (s: string) => void
   selectedSemaine: string
@@ -54,24 +56,13 @@ export function SectionFixeCandidates({
   candidatsDisponibles: string[]
   setRefreshTrigger: React.Dispatch<React.SetStateAction<number>>
 }) {
-  const [openDialog, setOpenDialog] = useState(false)
+  const [openDispo, setOpenDispo] = useState(false)
+  const [openCommande, setOpenCommande] = useState(false)
+  const [openIncident, setOpenIncident] = useState(false)
 
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 space-y-6">
-      <div className="grid grid-cols-4 gap-2">
-        {["Non renseigné", "Dispo", "Non Dispo", "Planifié"].map((label) => (
-          <div
-            key={label}
-            className="rounded-xl p-3"
-            style={{ backgroundColor: indicateurColors[label] || "#ccc" }}
-          >
-            <div className="text-xs text-white">{label}</div>
-            <div className="text-2xl font-bold text-white">
-              {stats[label] || 0}
-            </div>
-          </div>
-        ))}
-      </div>
+      <SectionStatutPlanning stats={stats} />
 
       <div className="grid grid-cols-5 gap-2">
         {secteursList.map(({ label, icon: Icon }) => {
@@ -182,6 +173,7 @@ export function SectionFixeCandidates({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+
         <Button
           variant="outline"
           size="sm"
@@ -195,22 +187,42 @@ export function SectionFixeCandidates({
       <div className="flex flex-wrap items-center gap-4">
         <Button
           className="bg-[#840404] hover:bg-[#750303] text-white flex items-center gap-2"
-          onClick={() => setOpenDialog(true)}
+          onClick={() => setOpenDispo(true)}
         >
           <CalendarCheck size={16} /> Saisir disponibilités
         </Button>
-        <Button variant="outline" className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          className="flex items-center gap-2"
+          onClick={() => setOpenCommande(true)}
+        >
           <Plus size={16} /> Nouvelle commande
         </Button>
-        <Button variant="outline" className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          className="flex items-center gap-2"
+          onClick={() => setOpenIncident(true)}
+        >
           <AlertCircle size={16} /> Saisir incident
         </Button>
       </div>
 
       <AjoutDispoCandidat
-        open={openDialog}
-        onOpenChange={setOpenDialog}
+        open={openDispo}
+        onOpenChange={setOpenDispo}
         onSuccess={() => setRefreshTrigger((x) => x + 1)}
+      />
+
+      <NouvelleCommandeDialog
+        open={openCommande}
+        onOpenChange={setOpenCommande}
+        onRefresh={async () => setRefreshTrigger((x) => x + 1)}
+        onRefreshDone={() => {}}
+      />
+
+      <SaisirIncidentDialog
+        open={openIncident}
+        onOpenChange={setOpenIncident}
       />
     </div>
   )

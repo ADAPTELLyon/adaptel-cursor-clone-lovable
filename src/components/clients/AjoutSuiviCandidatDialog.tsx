@@ -1,153 +1,214 @@
 import { useEffect, useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { toast } from "@/hooks/use-toast"
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import type { Candidat, Client } from "@/types/types-front"
+import { useAuth } from "@/contexts/auth-context"
+import { toast } from "@/hooks/use-toast"
+import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 
 type Props = {
   open: boolean
   onClose: () => void
-  onSaved: () => void
-  client: Client
+  clientId: string
   secteurs: string[]
   services: string[]
   type: "priorite" | "interdiction"
+  onSaved: () => void
 }
 
-export function AjoutSuiviCandidatDialog({ open, onClose, onSaved, client, secteurs, services, type }: Props) {
+export function AjoutSuiviCandidatDialog({
+  open,
+  onClose,
+  clientId,
+  secteurs,
+  services,
+  type,
+  onSaved,
+}: Props) {
+  const { user } = useAuth()
   const [secteur, setSecteur] = useState("")
   const [service, setService] = useState("")
-  const [candidats, setCandidats] = useState<Candidat[]>([])
-  const [search, setSearch] = useState("")
-  const [selectedCandidat, setSelectedCandidat] = useState<Candidat | null>(null)
+  const [candidatId, setCandidatId] = useState("")
   const [commentaire, setCommentaire] = useState("")
-  const [loading, setLoading] = useState(false)
+  const [createdBy, setCreatedBy] = useState<string | null>(null)
 
-  useEffect(() => {
-    const load = async () => {
-      const { data, error } = await supabase
-        .from("candidats")
-        .select("id, nom, prenom")
-        .eq("actif", true)
+  const { data: candidats = [], isLoading, refetch } = useCandidatsBySecteur(secteur)
 
-      if (!error && data) setCandidats(data)
-    }
-
-    if (open) load()
-  }, [open])
-
+  // Auto-assign secteur si un seul
   useEffect(() => {
     if (secteurs.length === 1) setSecteur(secteurs[0])
-    if (services.length === 1) setService(services[0])
-  }, [secteurs, services])
+  }, [secteurs])
+
+  // Récupération ID utilisateur
+  useEffect(() => {
+    const fetchCreatedBy = async () => {
+      if (!user?.email) return
+      const { data, error } = await supabase
+        .from("utilisateurs")
+        .select("id")
+        .eq("email", user.email)
+        .single()
+
+      if (!error && data?.id) setCreatedBy(data.id)
+    }
+
+    fetchCreatedBy()
+  }, [user?.email])
 
   const handleSave = async () => {
-    if (!selectedCandidat || !secteur) {
-      toast({ title: "Champs requis", description: "Merci de renseigner un candidat et un secteur", variant: "destructive" })
+    if (!secteur || !candidatId || !createdBy) {
+      toast({ title: "Erreur", description: "Champs obligatoires manquants", variant: "destructive" })
       return
     }
 
-    setLoading(true)
+    // Vérifier si ce candidat a déjà un statut sur ce client
+    const { data: existants, error: checkError } = await supabase
+      .from("interdictions_priorites")
+      .select("id, type")
+      .eq("client_id", clientId)
+      .eq("candidat_id", candidatId)
+      .eq("actif", true)
 
-    const { error } = await supabase.from("interdictions_priorites").insert({
-      candidat_id: selectedCandidat.id,
-      client_id: client.id,
+    if (checkError) {
+      toast({ title: "Erreur", description: "Erreur de vérification", variant: "destructive" })
+      return
+    }
+
+    const dejaPrioritaire = existants?.some((e) => e.type === "priorite")
+    const dejaInterdit = existants?.some((e) => e.type === "interdiction")
+
+    if (type === "priorite" && dejaPrioritaire) {
+      toast({ title: "Erreur", description: "Ce candidat est déjà prioritaire pour ce client." })
+      return
+    }
+
+    if (type === "interdiction" && dejaInterdit) {
+      toast({ title: "Erreur", description: "Ce candidat est déjà interdit pour ce client." })
+      return
+    }
+
+    if ((type === "priorite" && dejaInterdit) || (type === "interdiction" && dejaPrioritaire)) {
+      toast({
+        title: "Incohérence",
+        description: `Ce candidat est déjà ${type === "priorite" ? "interdit" : "prioritaire"} pour ce client. Supprimez ce statut avant de le modifier.`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    const payload = {
+      client_id: clientId,
+      candidat_id: candidatId,
       secteur,
       service: service || null,
-      commentaire,
       type,
+      commentaire: commentaire || null,
+      created_by: createdBy,
       actif: true,
-    })
-
-    setLoading(false)
-
-    if (error) {
-      toast({ title: "Erreur", description: "Échec de l'enregistrement", variant: "destructive" })
-    } else {
-      toast({ title: "Ajouté" })
-      onSaved()
-      onClose()
-      setSelectedCandidat(null)
-      setCommentaire("")
     }
+
+    const { error: insertError } = await supabase
+      .from("interdictions_priorites")
+      .insert(payload)
+
+    if (insertError) {
+      toast({ title: "Erreur", description: `Échec de l’enregistrement : ${insertError.message}`, variant: "destructive" })
+      return
+    }
+
+    toast({ title: "Ajout réussi" })
+    onSaved()
+    onClose()
+    setSecteur("")
+    setService("")
+    setCandidatId("")
+    setCommentaire("")
   }
+
+  const titre = type === "priorite" ? "Ajouter une priorité" : "Ajouter une interdiction"
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Ajouter une {type === "priorite" ? "priorité" : "interdiction"}</DialogTitle>
+          <DialogTitle>{titre}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Secteur */}
+        <div className="space-y-4 pt-2">
           {secteurs.length > 1 && (
             <div>
-              <label className="text-sm font-medium">Secteur</label>
-              <select
-                className="w-full border rounded p-2 text-sm"
-                value={secteur}
-                onChange={(e) => setSecteur(e.target.value)}
-              >
-                <option value="">-- Choisir un secteur --</option>
-                {secteurs.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+              <Label>Secteur *</Label>
+              <Select value={secteur} onValueChange={(val) => {
+                setSecteur(val)
+                setCandidatId("")
+                refetch()
+              }}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner un secteur" /></SelectTrigger>
+                <SelectContent>
+                  {secteurs.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
-          {/* Service */}
-          {services.length > 1 && (
+          {services.length > 0 && (
             <div>
-              <label className="text-sm font-medium">Service</label>
-              <select
-                className="w-full border rounded p-2 text-sm"
-                value={service}
-                onChange={(e) => setService(e.target.value)}
-              >
-                <option value="">-- Choisir un service --</option>
-                {services.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+              <Label>Service (facultatif)</Label>
+              <Select value={service} onValueChange={setService}>
+                <SelectTrigger><SelectValue placeholder="Sélectionner un service" /></SelectTrigger>
+                <SelectContent>
+                  {services.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
-          {/* Recherche candidat */}
           <div>
-            <label className="text-sm font-medium">Candidat</label>
-            <Input placeholder="Rechercher..." value={search} onChange={(e) => setSearch(e.target.value)} />
-            <ScrollArea className="h-40 mt-2 border rounded p-2">
-              {candidats
-                .filter((c) =>
-                  `${c.prenom} ${c.nom}`.toLowerCase().includes(search.toLowerCase()))
-                .map((c) => (
-                  <div
-                    key={c.id}
-                    onClick={() => setSelectedCandidat(c)}
-                    className={`p-2 text-sm cursor-pointer rounded ${
-                      selectedCandidat?.id === c.id ? "bg-blue-100" : "hover:bg-gray-100"
-                    }`}
-                  >
-                    {c.prenom} {c.nom}
-                  </div>
-                ))}
-            </ScrollArea>
+            <Label>Candidat *</Label>
+            <Select value={candidatId} onValueChange={setCandidatId}>
+              <SelectTrigger>
+                <SelectValue placeholder={isLoading ? "Chargement..." : "Sélectionner un candidat"} />
+              </SelectTrigger>
+              <SelectContent>
+                {candidats.length === 0 ? (
+                  <div className="text-sm px-3 py-2 italic text-muted-foreground">Aucun candidat pour ce secteur</div>
+                ) : (
+                  candidats.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nom} {c.prenom}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Commentaire */}
-          <Textarea placeholder="Commentaire (optionnel)" value={commentaire} onChange={(e) => setCommentaire(e.target.value)} />
+          <div>
+            <Label>Commentaire (facultatif)</Label>
+            <Textarea value={commentaire} onChange={(e) => setCommentaire(e.target.value)} />
+          </div>
 
-          {/* Bouton */}
-          <div className="text-right">
-            <Button onClick={handleSave} disabled={loading || !selectedCandidat || !secteur}>
-              Enregistrer
-            </Button>
+          <div className="flex justify-end pt-4">
+            <Button onClick={handleSave}>Ajouter</Button>
           </div>
         </div>
       </DialogContent>
