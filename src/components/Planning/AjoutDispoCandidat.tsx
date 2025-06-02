@@ -8,15 +8,13 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
-import { Input } from "@/components/ui/input"
 import { secteursList } from "@/lib/secteurs"
-import { disponibiliteColors } from "@/lib/colors"
 import { format, startOfWeek, addDays, getWeek } from "date-fns"
 import { fr } from "date-fns/locale"
 import type { Candidat } from "@/types/types-front"
 import { supabase } from "@/integrations/supabase/client"
 import { toast } from "@/hooks/use-toast"
+import DispoSemainePanel from "@/components/Planning/DispoSemainePanel"
 
 export default function AjoutDispoCandidat({
   open,
@@ -36,6 +34,9 @@ export default function AjoutDispoCandidat({
   >([])
   const [dispos, setDispos] = useState<
     Record<string, { statut: "dispo" | "absence" | "non"; matin: boolean; soir: boolean }>
+  >({})
+  const [planningMap, setPlanningMap] = useState<
+    Record<string, { client: string; horaire: string }[]>
   >({})
   const [allMatin, setAllMatin] = useState(true)
   const [allSoir, setAllSoir] = useState(true)
@@ -59,6 +60,22 @@ export default function AjoutDispoCandidat({
     setSemainesDisponibles(semaines)
   }, [])
 
+  const semaineObj = semainesDisponibles.find((s) => s.value === semaine)
+  const joursSemaine = semaineObj
+    ? Array.from({ length: 7 }, (_, i) => {
+        const date = addDays(semaineObj.startDate, i)
+        const now = new Date()
+        const key = format(date, "yyyy-MM-dd")
+        const isPast = date < startOfWeek(now, { weekStartsOn: 1 }) || key < format(now, "yyyy-MM-dd")
+        return {
+          key,
+          jour: format(date, "EEEE d MMM", { locale: fr }),
+          isPast,
+          planifies: planningMap[key] || [],
+        }
+      })
+    : []
+
   useEffect(() => {
     if (!open) {
       setSecteur("")
@@ -67,22 +84,74 @@ export default function AjoutDispoCandidat({
       setCommentaire("")
       setAllMatin(true)
       setAllSoir(true)
+      setPlanningMap({})
     }
   }, [open])
 
-  const semaineObj = semainesDisponibles.find((s) => s.value === semaine)
-  const joursSemaine = semaineObj
-    ? Array.from({ length: 7 }, (_, i) => {
-        const date = addDays(semaineObj.startDate, i)
-        const now = new Date()
-        const isPast = date < startOfWeek(now, { weekStartsOn: 1 }) || format(date, "yyyy-MM-dd") < format(now, "yyyy-MM-dd")
-        return {
-          key: format(date, "yyyy-MM-dd"),
-          jour: format(date, "EEEE d MMM", { locale: fr }),
-          isPast,
+  useEffect(() => {
+    const fetchDispoAndPlanning = async () => {
+      if (!candidat || !secteur || !semaineObj) return
+
+      const dates = joursSemaine.map((j) => j.key)
+
+      const [disposRes, planningRes] = await Promise.all([
+        supabase
+          .from("disponibilites")
+          .select("*")
+          .eq("candidat_id", candidat.id)
+          .eq("secteur", secteur)
+          .in("date", dates),
+        supabase
+          .from("commandes")
+          .select("date, client:clients(nom), heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+          .eq("candidat_id", candidat.id)
+          .eq("secteur", secteur)
+          .in("date", dates),
+      ])
+
+      if (disposRes.error || planningRes.error) return
+
+      const dispoMap: typeof dispos = {}
+      for (const ligne of disposRes.data) {
+        dispoMap[ligne.date] = {
+          statut: ligne.statut === "Dispo" ? "dispo" : "absence",
+          matin: ligne.dispo_matin,
+          soir: ligne.dispo_soir,
         }
-      })
-    : []
+      }
+
+      const planMap: Record<string, { client: string; horaire: string }[]> = {}
+      for (const p of planningRes.data) {
+        const date = p.date
+        const client = p.client?.nom || "Client"
+        const plans: { client: string; horaire: string }[] = []
+
+        if (p.heure_debut_matin) {
+          plans.push({
+            client,
+            horaire: `${p.heure_debut_matin.slice(0, 5)} → ${p.heure_fin_matin?.slice(0, 5) || "--:--"}`,
+          })
+        }
+
+        if (p.heure_debut_soir) {
+          plans.push({
+            client,
+            horaire: `${p.heure_debut_soir.slice(0, 5)} → ${p.heure_fin_soir?.slice(0, 5) || "--:--"}`,
+          })
+        }
+
+        if (plans.length) {
+          if (!planMap[date]) planMap[date] = []
+          planMap[date].push(...plans)
+        }
+      }
+
+      setDispos(dispoMap)
+      setPlanningMap(planMap)
+    }
+
+    fetchDispoAndPlanning()
+  }, [candidat, secteur, semaineObj])
 
   const toggleStatut = (key: string) => {
     setDispos((prev) => {
@@ -123,7 +192,7 @@ export default function AjoutDispoCandidat({
   const appliquerTous = (statut: "dispo" | "absence") => {
     const updated: typeof dispos = {}
     joursSemaine.forEach((j) => {
-      if (!j.isPast) {
+      if (!j.isPast && !(planningMap[j.key]?.length)) {
         updated[j.key] = {
           statut,
           matin: allMatin,
@@ -147,9 +216,25 @@ export default function AjoutDispoCandidat({
   const handleSave = async () => {
     if (!candidat || !secteur) return
 
-    const lignes = Object.entries(dispos)
-      .filter(([_, d]) => d.statut !== "non")
-      .map(([date, d]) => ({
+    const { data: existantes, error: fetchErr } = await supabase
+      .from("disponibilites")
+      .select("id, date")
+      .eq("candidat_id", candidat.id)
+      .eq("secteur", secteur)
+
+    if (fetchErr) {
+      toast({ title: "Erreur", description: "Chargement échoué", variant: "destructive" })
+      return
+    }
+
+    const update: any[] = []
+    const insert: any[] = []
+
+    for (const [date, d] of Object.entries(dispos)) {
+      if (!["dispo", "absence"].includes(d.statut)) continue
+      if (planningMap[date]?.length) continue
+
+      const payload = {
         candidat_id: candidat.id,
         date,
         secteur,
@@ -159,17 +244,31 @@ export default function AjoutDispoCandidat({
         dispo_matin: d.matin,
         dispo_soir: d.soir,
         dispo_nuit: false,
-      }))
+      }
 
-    if (lignes.length === 0) {
-      toast({ title: "Aucune ligne à enregistrer", variant: "destructive" })
-      return
+      const existe = existantes?.find((e) => e.date === date)
+      if (existe) {
+        update.push({ ...payload, id: existe.id })
+      } else {
+        insert.push(payload)
+      }
     }
 
-    const { error } = await supabase.from("disponibilites").insert(lignes)
+    const [{ error: errInsert }, { error: errUpdate }] = await Promise.all([
+      insert.length > 0
+        ? supabase.from("disponibilites").insert(insert)
+        : Promise.resolve({ error: null }),
+      update.length > 0
+        ? Promise.all(
+            update.map((u) =>
+              supabase.from("disponibilites").update(u).eq("id", u.id)
+            )
+          ).then(() => ({ error: null }))
+        : Promise.resolve({ error: null }),
+    ])
 
-    if (error) {
-      toast({ title: "Erreur", description: "Insertion échouée", variant: "destructive" })
+    if (errInsert || errUpdate) {
+      toast({ title: "Erreur", description: "Échec d'enregistrement", variant: "destructive" })
       return
     }
 
@@ -198,6 +297,7 @@ export default function AjoutDispoCandidat({
         <div className="grid grid-cols-2 gap-6 mt-4">
           {/* Partie gauche */}
           <div className="space-y-6 border p-4 rounded-lg shadow-md bg-white">
+            {/* Secteurs */}
             <div className="space-y-2">
               <div className="font-semibold text-sm">Secteur</div>
               <div className="grid grid-cols-5 gap-2">
@@ -265,105 +365,20 @@ export default function AjoutDispoCandidat({
           </div>
 
           {/* Partie droite */}
-          <div className="space-y-4 border p-4 rounded-lg shadow-md bg-white">
-            <div className="grid grid-cols-2 gap-4">
-              <Button
-                className="w-full bg-gray-200 text-black hover:bg-gray-300"
-                onClick={() => appliquerTous("dispo")}
-              >
-                Toutes Dispo
-              </Button>
-              <Button
-                className="w-full bg-gray-200 text-black hover:bg-gray-300"
-                onClick={() => appliquerTous("absence")}
-              >
-                Non Dispo
-              </Button>
-            </div>
-
-            <div className="flex items-center gap-4 mt-2">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">Matin / Midi</span>
-                <Switch
-                  checked={allMatin}
-                  onCheckedChange={(val) => {
-                    setAllMatin(val)
-                    appliquerMatinSoir("matin", val)
-                  }}
-                  className="scale-90"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm">Soir</span>
-                <Switch
-                  checked={allSoir}
-                  onCheckedChange={(val) => {
-                    setAllSoir(val)
-                    appliquerMatinSoir("soir", val)
-                  }}
-                  className="scale-90"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2">
-              {joursSemaine.map((j) => {
-                const dispo = dispos[j.key]?.statut || "non"
-                const bgColor = disponibiliteColors[
-                  dispo === "dispo"
-                    ? "Dispo"
-                    : dispo === "absence"
-                    ? "Non Dispo"
-                    : "Non Renseigné"
-                ].bg
-
-                return (
-                  <div
-                    key={j.key}
-                    className={`border rounded p-3 shadow-sm flex justify-between items-center`}
-                    style={{ backgroundColor: j.isPast ? "#e5e7eb" : bgColor }}
-                  >
-                    <div
-                      onClick={() => !j.isPast && toggleStatut(j.key)}
-                      className="cursor-pointer select-none flex-1"
-                    >
-                      <div className="text-sm font-medium">{j.jour}</div>
-                    </div>
-
-                    {dispos[j.key]?.statut === "dispo" && !j.isPast && (
-                      <div className="flex gap-4 ml-4">
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs">Matin</span>
-                          <Switch
-                            checked={dispos[j.key]?.matin}
-                            onCheckedChange={() => handleToggleMatin(j.key)}
-                            className="scale-90"
-                          />
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs">Soir</span>
-                          <Switch
-                            checked={dispos[j.key]?.soir}
-                            onCheckedChange={() => handleToggleSoir(j.key)}
-                            className="scale-90"
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="pt-4">
-              <Button
-                className="w-full bg-[#840404] hover:bg-[#750303] text-white"
-                onClick={handleSave}
-              >
-                Valider
-              </Button>
-            </div>
-          </div>
+          <DispoSemainePanel
+            joursSemaine={joursSemaine}
+            dispos={dispos}
+            toggleStatut={toggleStatut}
+            handleToggleMatin={handleToggleMatin}
+            handleToggleSoir={handleToggleSoir}
+            appliquerMatinSoir={appliquerMatinSoir}
+            allMatin={allMatin}
+            setAllMatin={setAllMatin}
+            allSoir={allSoir}
+            setAllSoir={setAllSoir}
+            handleSave={handleSave}
+            appliquerTous={appliquerTous}
+          />
         </div>
       </DialogContent>
     </Dialog>

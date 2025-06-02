@@ -1,265 +1,219 @@
 import { useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
-import { supabase } from "@/lib/supabase"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
+import { toast } from "@/hooks/use-toast"
+import { supabase } from "@/integrations/supabase/client"
+import type { CandidatDispoWithNom } from "@/types/types-front"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
-import { toast } from "@/hooks/use-toast"
-import type { CommandeWithCandidat } from "@/types/types-front"
+import { CheckCircle2, XCircle, HelpCircle, Sun, Moon } from "lucide-react"
+import { cn } from "@/lib/utils"
 
-type CandidatMini = {
-  id: string
-  nom: string
-  prenom: string
-  vehicule?: boolean
-}
-
-interface PlanificationCandidatDialogProps {
+interface Props {
   open: boolean
   onClose: () => void
   date: string
   secteur: string
-  service?: string
-  commande: CommandeWithCandidat
+  candidatId: string
+  service: string
+  disponibilite?: CandidatDispoWithNom
   onSuccess: () => void
+  candidatNomPrenom: string
 }
 
-export function PlanificationCandidatDialog({
+type Statut = "Dispo" | "Non dispo" | "Non renseigné"
+
+export function CandidateJourneeDialog({
   open,
   onClose,
   date,
   secteur,
+  candidatId,
   service,
-  commande,
+  disponibilite,
   onSuccess,
-}: PlanificationCandidatDialogProps) {
-  const { data: candidats = [] } = useCandidatsBySecteur(secteur)
-  const [dispos, setDispos] = useState<CandidatMini[]>([])
-  const [nonRenseignes, setNonRenseignes] = useState<CandidatMini[]>([])
-  const [planifies, setPlanifies] = useState<CandidatMini[]>([])
+  candidatNomPrenom,
+}: Props) {
+  const [statut, setStatut] = useState<Statut>("Non renseigné")
+  const [matin, setMatin] = useState(false)
+  const [soir, setSoir] = useState(false)
+  const [commentaire, setCommentaire] = useState("")
 
   useEffect(() => {
-    if (!open || candidats.length === 0) return
-
-    const fetchDispoEtPlanif = async () => {
-      const jour = date.slice(0, 10)
-      const candidatIds = candidats.map((c) => c.id)
-
-      const { data: dispoData } = await supabase
-        .from("disponibilites")
-        .select("candidat_id, statut")
-        .eq("secteur", secteur)
-        .eq("date", jour)
-        .in("candidat_id", candidatIds)
-
-      const dispoMap = new Map<string, string>()
-      for (const d of dispoData || []) {
-        dispoMap.set(d.candidat_id, d.statut)
-      }
-
-      const { data: planifData } = await supabase
-        .from("planification")
-        .select("candidat_id")
-        .eq("secteur", secteur)
-        .eq("date", jour)
-        .in("candidat_id", candidatIds)
-
-      const planifieSet = new Set(planifData?.map((p) => p.candidat_id) || [])
-
-      const dispoList: CandidatMini[] = []
-      const planifieList: CandidatMini[] = []
-      const nonList: CandidatMini[] = []
-
-      for (const c of candidats) {
-        const mini: CandidatMini = {
-          id: c.id,
-          nom: c.nom,
-          prenom: c.prenom,
-          vehicule: c.vehicule,
-        }
-
-        if (planifieSet.has(c.id)) {
-          planifieList.push(mini)
-        } else if (dispoMap.get(c.id) === "Dispo") {
-          dispoList.push(mini)
-        } else if (!dispoMap.has(c.id)) {
-          nonList.push(mini)
-        }
-      }
-
-      setDispos(dispoList)
-      setPlanifies(planifieList)
-      setNonRenseignes(nonList)
+    if (disponibilite) {
+      setStatut((disponibilite.statut as Statut) || "Non renseigné")
+      setMatin(disponibilite.matin || false)
+      setSoir(disponibilite.soir || false)
+      setCommentaire(disponibilite.commentaire || "")
+    } else {
+      setStatut("Non renseigné")
+      setMatin(false)
+      setSoir(false)
+      setCommentaire("")
     }
+  }, [disponibilite, open])
 
-    fetchDispoEtPlanif()
-  }, [open, date, secteur, candidats])
+  useEffect(() => {
+    if (statut === "Dispo" && !disponibilite) {
+      setMatin(true)
+      setSoir(secteur !== "Étages")
+    }
+  }, [statut, secteur, disponibilite])
 
-  const hasHeures = (debut?: string | null, fin?: string | null) => !!(debut && fin)
-
-  const handleSelect = async (candidatId: string) => {
-    const jour = date.slice(0, 10)
-    const candidat = candidats.find((c) => c.id === candidatId)
-
-    const { data: existingPlanifs, error: planifError } = await supabase
-      .from("planification")
-      .select("heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
-      .eq("candidat_id", candidatId)
-      .eq("date", jour)
-
-    if (planifError) {
-      toast({ title: "Erreur", description: "Erreur vérification conflit", variant: "destructive" })
+  const handleSave = async () => {
+    if (!candidatId || !secteur || !date) {
+      toast({ title: "Erreur", description: "Données manquantes", variant: "destructive" })
       return
     }
 
-    const conflitMatin =
-      hasHeures(commande.heure_debut_matin, commande.heure_fin_matin) &&
-      existingPlanifs?.some((p) => hasHeures(p.heure_debut_matin, p.heure_fin_matin))
+    const statutToSend = statut === "Non renseigné" ? null : statut
 
-    const conflitSoir =
-      hasHeures(commande.heure_debut_soir, commande.heure_fin_soir) &&
-      existingPlanifs?.some((p) => hasHeures(p.heure_debut_soir, p.heure_fin_soir))
-
-    if (conflitMatin || conflitSoir) {
-      toast({
-        title: "Conflit de créneau",
-        description: "Ce candidat a déjà une mission sur ce créneau.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    const { error: errInsertPlanif } = await supabase.from("planification").insert({
-      commande_id: commande.id,
+    const payload = {
       candidat_id: candidatId,
       date,
       secteur,
-      statut: "Validé", // ✅ OBLIGATOIRE dans ta table
-      heure_debut_matin: commande.heure_debut_matin,
-      heure_fin_matin: commande.heure_fin_matin,
-      heure_debut_soir: commande.heure_debut_soir,
-      heure_fin_soir: commande.heure_fin_soir,
-      heure_debut_nuit: null,
-      heure_fin_nuit: null,
-    })
-
-    if (errInsertPlanif) {
-      toast({ title: "Erreur", description: "Échec insertion planification", variant: "destructive" })
-      return
+      service: service || null,
+      statut: statutToSend,
+      commentaire: commentaire || null,
+      dispo_matin: matin,
+      dispo_soir: soir,
+      dispo_nuit: false,
     }
 
-    const { error: errUpdateCommande } = await supabase
-      .from("commandes")
-      .update({
-        candidat_id: candidatId,
-        statut: "Validé",
-      })
-      .eq("id", commande.id)
+    const { error } = disponibilite?.id
+      ? await supabase.from("disponibilites").update(payload).eq("id", disponibilite.id)
+      : await supabase.from("disponibilites").insert([payload])
 
-    if (errUpdateCommande) {
-      toast({ title: "Erreur", description: "Échec mise à jour commande", variant: "destructive" })
-      return
+    if (error) {
+      console.error("Erreur Supabase:", error)
+      toast({ title: "Erreur", description: "Échec enregistrement", variant: "destructive" })
+    } else {
+      toast({ title: "Disponibilité enregistrée" })
+      onSuccess()
+      onClose()
     }
-
-    const { data: authData } = await supabase.auth.getUser()
-    const userEmail = authData?.user?.email || null
-
-    if (userEmail) {
-      const { data: userApp } = await supabase
-        .from("utilisateurs")
-        .select("id")
-        .eq("email", userEmail)
-        .single()
-
-      const userId = userApp?.id || null
-
-      if (userId) {
-        await supabase.from("historique").insert({
-          table_cible: "commandes",
-          ligne_id: commande.id,
-          action: "planification",
-          description: "Planification via popup PlanificationCandidatDialog",
-          user_id: userId,
-          date_action: new Date().toISOString(),
-          apres: {
-            date,
-            candidat: {
-              nom: candidat?.nom || "",
-              prenom: candidat?.prenom || "",
-            },
-            heure_debut_matin: commande.heure_debut_matin,
-            heure_fin_matin: commande.heure_fin_matin,
-            heure_debut_soir: commande.heure_debut_soir,
-            heure_fin_soir: commande.heure_fin_soir,
-          },
-        })
-      }
-    }
-
-    toast({ title: "Candidat planifié avec succès" })
-    onClose()
-    onSuccess()
   }
 
-  const dateFormatee = format(new Date(date), "eeee d MMMM", { locale: fr })
+  const dateAffichee = format(new Date(date), "EEEE d MMMM", { locale: fr })
+
+  const statusConfig = {
+    "Dispo": {
+      icon: <CheckCircle2 className="w-4 h-4" />,
+      color: "bg-green-100 text-green-800",
+      activeColor: "bg-green-600 text-white hover:bg-green-700",
+      iconColor: "text-green-600"
+    },
+    "Non dispo": {
+      icon: <XCircle className="w-4 h-4" />,
+      color: "bg-red-100 text-red-800",
+      activeColor: "bg-red-600 text-white hover:bg-red-700",
+      iconColor: "text-red-600"
+    },
+    "Non renseigné": {
+      icon: <HelpCircle className="w-4 h-4" />,
+      color: "bg-gray-100 text-gray-800",
+      activeColor: "bg-gray-600 text-white hover:bg-gray-700",
+      iconColor: "text-gray-600"
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            Planifier un candidat – {secteur}, {dateFormatee}
+          <DialogTitle className="text-lg flex items-center gap-2">
+            <div className="p-2 rounded-lg bg-primary/10 text-primary">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div>Disponibilité du candidat</div>
+              <div className="text-sm font-normal text-muted-foreground">
+                {candidatNomPrenom} • {dateAffichee}
+                {service && ` • ${service}`}
+              </div>
+            </div>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-sm">
-          <div>
-            <h4 className="font-semibold mb-2 text-green-700">🟢 Disponibles</h4>
-            {dispos.length === 0 && <div className="text-muted-foreground italic">Aucun</div>}
-            {dispos.map((c) => (
-              <Button
-                key={c.id}
-                variant="outline"
-                className="w-full mb-2 justify-between"
-                onClick={() => handleSelect(c.id)}
-              >
-                {c.nom} {c.prenom}
-                {c.vehicule && <span className="ml-2">🚗</span>}
-              </Button>
-            ))}
+        <div className="space-y-6">
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">Statut de disponibilité</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {(["Dispo", "Non dispo", "Non renseigné"] as Statut[]).map((val) => (
+                <button
+                  key={val}
+                  className={cn(
+                    "flex items-center justify-center gap-2 p-3 rounded-lg border transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    statut === val 
+                      ? statusConfig[val].activeColor 
+                      : `${statusConfig[val].color} hover:bg-opacity-80 border-border`
+                  )}
+                  onClick={() => setStatut(val)}
+                >
+                  <span className={cn(
+                    "p-1 rounded-full",
+                    statut === val ? "bg-white/20" : statusConfig[val].color
+                  )}>
+                    {React.cloneElement(statusConfig[val].icon, {
+                      className: cn("w-4 h-4", statut === val ? "text-white" : statusConfig[val].iconColor)
+                    })}
+                  </span>
+                  <span>{val}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div>
-            <h4 className="font-semibold mb-2 text-gray-600">⚪️ Non renseignés</h4>
-            {nonRenseignes.length === 0 && <div className="text-muted-foreground italic">Aucun</div>}
-            {nonRenseignes.map((c) => (
-              <Button
-                key={c.id}
-                variant="ghost"
-                className="w-full mb-2 justify-between"
-                onClick={() => handleSelect(c.id)}
-              >
-                {c.nom} {c.prenom}
-                {c.vehicule && <span className="ml-2">🚗</span>}
-              </Button>
-            ))}
+          {statut === "Dispo" && (
+            <div className="space-y-3">
+              <Label className="text-sm font-medium">Créneaux disponibles</Label>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="flex items-center justify-between gap-3 p-3 rounded-lg border hover:bg-muted/50 cursor-pointer">
+                    <div className="flex items-center gap-2">
+                      <Sun className="w-4 h-4 text-amber-500" />
+                      <span>Matin / Midi</span>
+                    </div>
+                    <Switch checked={matin} onCheckedChange={setMatin} />
+                  </label>
+                </div>
+                
+                {secteur !== "Étages" && (
+                  <div className="flex-1">
+                    <label className="flex items-center justify-between gap-3 p-3 rounded-lg border hover:bg-muted/50 cursor-pointer">
+                      <div className="flex items-center gap-2">
+                        <Moon className="w-4 h-4 text-indigo-500" />
+                        <span>Soir</span>
+                      </div>
+                      <Switch checked={soir} onCheckedChange={setSoir} />
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">Commentaire</Label>
+            <Textarea
+              value={commentaire}
+              onChange={(e) => setCommentaire(e.target.value)}
+              placeholder="Ajouter un commentaire (optionnel)"
+              className="min-h-[100px]"
+            />
           </div>
 
-          <div>
-            <h4 className="font-semibold mb-2 text-yellow-800">🟡 Déjà planifiés</h4>
-            {planifies.length === 0 && <div className="text-muted-foreground italic">Aucun</div>}
-            {planifies.map((c) => (
-              <Button
-                key={c.id}
-                variant="secondary"
-                className="w-full mb-2 justify-between"
-                onClick={() => handleSelect(c.id)}
-              >
-                {c.nom} {c.prenom}
-                {c.vehicule && <span className="ml-2">🚗</span>}
-              </Button>
-            ))}
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={onClose}>
+              Annuler
+            </Button>
+            <Button onClick={handleSave}>
+              Enregistrer
+            </Button>
           </div>
         </div>
       </DialogContent>

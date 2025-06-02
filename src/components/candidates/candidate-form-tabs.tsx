@@ -1,9 +1,10 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { CandidateForm, formSchema } from "@/components/candidates/candidate-form"
+import { CandidatSuiviTab } from "./CandidatSuiviTab"
 import type { z } from "zod"
 
 type CandidateFormTabsProps = {
-  initialData?: z.infer<typeof formSchema>
+  initialData?: z.infer<typeof formSchema> & { id?: string }
   onSubmit: (data: z.infer<typeof formSchema>) => void
   onCancel: () => void
 }
@@ -18,7 +19,7 @@ export function CandidateFormTabs({
       <Tabs defaultValue="informations" className="flex-1 flex flex-col overflow-hidden">
         <TabsList className="grid grid-cols-3 w-full mb-4 border bg-muted text-muted-foreground rounded-lg">
           <TabsTrigger value="informations">📝 Informations</TabsTrigger>
-          <TabsTrigger value="priorities">🚫 Priorités</TabsTrigger>
+          <TabsTrigger value="priorities">🚫 Suivi</TabsTrigger>
           <TabsTrigger value="history">📜 Historique</TabsTrigger>
         </TabsList>
 
@@ -37,7 +38,16 @@ export function CandidateFormTabs({
           value="priorities"
           className="flex-1 overflow-y-auto px-4 text-sm text-muted-foreground"
         >
-          (Contenu à venir)
+          {initialData?.id && initialData.secteurs ? (
+            <CandidatSuiviTab
+              candidatId={initialData.id}
+              secteurs={initialData.secteurs}
+            />
+          ) : (
+            <p className="italic text-sm text-muted-foreground">
+              Enregistrez d'abord les informations du candidat pour gérer les priorités et interdictions.
+            </p>
+          )}
         </TabsContent>
 
         <TabsContent

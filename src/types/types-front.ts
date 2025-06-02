@@ -60,7 +60,7 @@ export type Client = {
   created_at: string;
   secteurs?: string[] | null;
   services?: string[] | null;
-  postes_bases_actifs?: string[]; // ✅ requis pour postes
+  postes_bases_actifs?: string[];
 };
 
 // === TABLE: commandes ===
@@ -128,7 +128,7 @@ export type PosteType = {
 export type PosteTypeInsert = {
   client_id: string;
   poste_base_id: string;
-  nom: string; // ✅ requis par Supabase
+  nom: string;
   heure_debut_matin?: string | null;
   heure_fin_matin?: string | null;
   heure_debut_soir?: string | null;
@@ -161,6 +161,49 @@ export type Historique = {
   created_at: string;
   user?: {
     prenom: string;
+  };
+};
+
+// === TABLE: incidents ===
+export type Incident = {
+  id: string;
+  client_id: string;
+  candidat_id: string;
+  type_incident: string;
+  description?: string;
+  date_incident: string;
+  heure_incident: string;
+  mise_en_interdiction: boolean;
+  created_at: string;
+};
+
+// === TABLE: interdictions_priorites ===
+export type InterdictionPriorite = {
+  id: string;
+  client_id: string;
+  candidat_id: string;
+  secteur: string;
+  service?: string | null;
+  type: "priorite" | "interdiction";
+  commentaire?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+  created_by: string;
+  actif: boolean;
+  candidat?: {
+    id: string;
+    nom: string;
+    prenom: string;
+  };
+  user?: {
+    prenom: string;
+  };
+};
+
+// ✅ EXTENSION pour jointure client → utilisée dans fiche candidat
+export type InterdictionPrioriteWithClient = InterdictionPriorite & {
+  client?: {
+    nom: string;
   };
 };
 

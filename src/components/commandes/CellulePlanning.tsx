@@ -1,8 +1,12 @@
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { Plus, Info } from "lucide-react"
+import { Plus, Info, Pencil, Check } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
 import { statutColors } from "@/lib/colors"
 import type { CommandeWithCandidat } from "@/types/types-front"
@@ -10,6 +14,9 @@ import { CommandeJourneeDialog } from "@/components/commandes/CommandeJourneeDia
 import { PlanificationCandidatDialog } from "@/components/commandes/PlanificationCandidatDialog"
 import { PopoverPlanificationRapide } from "@/components/commandes/PopoverPlanificationRapide"
 import { PopoverChangementStatut } from "@/components/commandes/PopoverChangementStatut"
+import { Textarea } from "@/components/ui/textarea"
+import { supabase } from "@/lib/supabase"
+import { toast } from "@/hooks/use-toast"
 
 interface CellulePlanningProps {
   commande?: CommandeWithCandidat
@@ -53,6 +60,28 @@ export function CellulePlanning({
   const isEtages = secteur === "Étages"
   const [openDialog, setOpenDialog] = useState(false)
   const [openPlanifDialog, setOpenPlanifDialog] = useState(false)
+  const [editingCommentaire, setEditingCommentaire] = useState(false)
+  const [tempCommentaire, setTempCommentaire] = useState("")
+
+  const handleSaveCommentaire = async () => {
+    if (!commande) return
+    const { error } = await supabase
+      .from("commandes")
+      .update({ commentaire: tempCommentaire })
+      .eq("id", commande.id)
+
+    if (error) {
+      toast({
+        title: "Erreur",
+        description: "Échec enregistrement",
+        variant: "destructive",
+      })
+    } else {
+      toast({ title: "Commentaire mis à jour" })
+      setEditingCommentaire(false)
+      onSuccess?.()
+    }
+  }
 
   if (!commande) {
     return (
@@ -166,44 +195,43 @@ export function CellulePlanning({
         />
       </div>
 
-      {commande.commentaire && (
-        <div className="absolute bottom-1 right-1">
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" className="p-0 h-auto w-auto text-black hover:text-black">
-                <Info className="h-4 w-4" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 text-sm">
-              {editingCommentId === commande.id ? (
-                <div className="space-y-2">
-                  <Input
-                    value={commentaireTemp}
-                    onChange={(e) => setCommentaireTemp(e.target.value)}
-                  />
-                  <Button size="sm" onClick={() => setEditingCommentId(null)}>
-                    Sauvegarder
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div>{commande.commentaire}</div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setEditingCommentId(commande.id)
-                      setCommentaireTemp(commande.commentaire || "")
-                    }}
-                  >
-                    Modifier
-                  </Button>
-                </div>
-              )}
-            </PopoverContent>
-          </Popover>
-        </div>
-      )}
+      <div className="absolute bottom-1 right-1 z-20">
+        <Popover open={editingCommentaire} onOpenChange={setEditingCommentaire}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setTempCommentaire(commande.commentaire || "")
+                setEditingCommentaire(true)
+              }}
+              className="p-0 h-auto w-auto text-black hover:text-black"
+            >
+              {commande.commentaire ? <Info className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="text-sm w-[300px] p-3">
+            <div className="flex flex-col gap-2">
+              <Textarea
+                value={tempCommentaire}
+                onChange={(e) => setTempCommentaire(e.target.value)}
+                placeholder="Commentaire"
+                className="resize-none min-h-[80px]"
+              />
+              <div className="flex justify-end">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={handleSaveCommentaire}
+                  className="text-black"
+                >
+                  <Check className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
 
       <PlanificationCandidatDialog
         open={openPlanifDialog}

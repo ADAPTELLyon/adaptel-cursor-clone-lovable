@@ -3,10 +3,18 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
-import { Plus, CalendarCheck, AlertCircle, RotateCcw, SlidersHorizontal } from "lucide-react"
+import {
+  Plus,
+  CalendarCheck,
+  AlertCircle,
+  RotateCcw,
+  SlidersHorizontal,
+} from "lucide-react"
 import { secteursList } from "@/lib/secteurs"
 import { startOfWeek, getWeek } from "date-fns"
-import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
+import NouvelleCommandeDialog from "../../components/commandes/NouvelleCommandeDialog"
+import AjoutDispoCandidat from "../../components/Planning/AjoutDispoCandidat"
+import SaisirIncidentDialog from "../../components/commandes/SaisirIncidentDialog"
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -33,10 +41,11 @@ export function SectionFixeCommandes({
   clientsDisponibles,
 }: any) {
   const [openNouvelleCommande, setOpenNouvelleCommande] = useState(false)
+  const [openDispo, setOpenDispo] = useState(false)
+  const [openIncident, setOpenIncident] = useState(false)
 
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm px-6 py-4 space-y-4">
-      {/* ✅ Secteurs modernisés */}
       <div className="grid grid-cols-5 gap-2">
         {secteursList.map(({ label, icon: Icon }) => {
           const selected = selectedSecteurs.includes(label)
@@ -61,16 +70,13 @@ export function SectionFixeCommandes({
         })}
       </div>
 
-      {/* ✅ Bloc central avec fond neutre et structure */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-gray-600">
           <SlidersHorizontal className="w-4 h-4" />
           Filtres planning
         </div>
 
-        {/* Interrupteurs + filtres alignés avec séparateur */}
         <div className="flex flex-wrap items-center gap-4">
-          {/* Interrupteurs */}
           <div className="flex flex-wrap items-center gap-6">
             <div className="flex items-center gap-2">
               <Switch
@@ -116,10 +122,8 @@ export function SectionFixeCommandes({
             </div>
           </div>
 
-          {/* Séparateur vertical */}
           <div className="w-px h-6 bg-gray-300" />
 
-          {/* Filtres */}
           <select
             className="border rounded px-2 py-2 text-sm w-[160px]"
             value={selectedSemaine}
@@ -135,7 +139,7 @@ export function SectionFixeCommandes({
             }}
           >
             <option value="Toutes">Toutes les semaines</option>
-            {semainesDisponibles.map((s) => (
+            {semainesDisponibles.map((s: string) => (
               <option key={s} value={s}>
                 Semaine {s}
               </option>
@@ -148,7 +152,7 @@ export function SectionFixeCommandes({
             onChange={(e) => setClient(e.target.value)}
           >
             <option value="">Tous les clients</option>
-            {clientsDisponibles.map((nom) => (
+            {clientsDisponibles.map((nom: string) => (
               <option key={nom} value={nom}>
                 {nom}
               </option>
@@ -163,7 +167,6 @@ export function SectionFixeCommandes({
           />
         </div>
 
-        {/* ✅ Actions + bouton reset bien positionné */}
         <div className="flex flex-wrap items-center gap-4">
           <Button
             className="bg-[#840404] hover:bg-[#750303] text-white flex items-center gap-2"
@@ -171,14 +174,21 @@ export function SectionFixeCommandes({
           >
             <Plus size={16} /> Nouvelle commande
           </Button>
-          <Button variant="outline" className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="flex items-center gap-2"
+            onClick={() => setOpenDispo(true)}
+          >
             <CalendarCheck size={16} /> Saisir disponibilités
           </Button>
-          <Button variant="outline" className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            className="flex items-center gap-2"
+            onClick={() => setOpenIncident(true)}
+          >
             <AlertCircle size={16} /> Saisir incident
           </Button>
 
-          {/* Séparateur */}
           <div className="w-px h-6 bg-gray-300" />
 
           <Button
@@ -196,6 +206,17 @@ export function SectionFixeCommandes({
         open={openNouvelleCommande}
         onOpenChange={setOpenNouvelleCommande}
       />
+
+      <AjoutDispoCandidat
+        open={openDispo}
+        onOpenChange={setOpenDispo}
+        onSuccess={() => {}}
+      />
+
+      <SaisirIncidentDialog
+        open={openIncident}
+        onOpenChange={setOpenIncident}
+      />
     </div>
   )
 }
@@ -203,6 +224,7 @@ export function SectionFixeCommandes({
 function getWeekNumber(date: Date) {
   const start = new Date(date.getFullYear(), 0, 1)
   const diff =
-    (+date - +start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) / 86400000
+    (+date - +start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) /
+    86400000
   return Math.floor((diff + start.getDay() + 6) / 7)
 }

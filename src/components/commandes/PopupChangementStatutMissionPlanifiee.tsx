@@ -1,13 +1,21 @@
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import {
+  RadioGroup,
+  RadioGroupItem,
+} from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { toast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
 import type { CommandeWithCandidat, StatutCommande } from "@/types/types-front"
-import { Dialog as DialogShad, DialogContent as DialogBox, DialogHeader as DialogBoxHeader, DialogTitle as DialogBoxTitle } from "@/components/ui/dialog"
+import { X } from "lucide-react"
 
 interface Props {
   statut: StatutCommande
@@ -46,7 +54,7 @@ export function PopupChangementStatutMissionPlanifiee({
 
     const candidatId = commande.candidat_id
 
-    // Étape 1 — Supprimer la planification
+    // Supprimer la planification
     if (candidatId) {
       await supabase
         .from("planification")
@@ -54,14 +62,14 @@ export function PopupChangementStatutMissionPlanifiee({
         .eq("commande_id", commande.id)
         .eq("candidat_id", candidatId)
 
-      // Étape 2 — Mise à jour commande
+      // Mise à jour commande
       await supabase.from("commandes").update({
         statut,
         candidat_id: null,
-        ...(motif ? { complement_motif: motif } : {})
+        ...(motif ? { complement_motif: motif } : {}),
       }).eq("id", commande.id)
 
-      // Étape 3 — Mise à jour planning candidat (disponibilites)
+      // Mise à jour disponibilités
       const statutPourCandidat =
         askStatutCandidat
           ? statutCandidat
@@ -79,7 +87,7 @@ export function PopupChangementStatutMissionPlanifiee({
         updated_at: new Date().toISOString(),
       }, { onConflict: "candidat_id,date,secteur" })
 
-      // Étape 4 — Historique enrichi
+      // Historique
       await supabase.from("historique").insert({
         table_cible: "commandes",
         ligne_id: commande.id,
@@ -96,7 +104,6 @@ export function PopupChangementStatutMissionPlanifiee({
         }
       })
 
-      // Étape 5 — Recréation commande si besoin
       if (remettreEnRecherche) {
         await supabase.from("commandes").insert({
           client_id: commande.client_id,
@@ -119,34 +126,34 @@ export function PopupChangementStatutMissionPlanifiee({
 
   if (askRemettreEnRecherche && !askRechercheOpen) {
     return (
-      <DialogShad open onOpenChange={() => setAskRechercheOpen(false)}>
-        <DialogBox>
-          <DialogBoxHeader>
-            <DialogBoxTitle>Remettre en “En recherche” ?</DialogBoxTitle>
-          </DialogBoxHeader>
-          <div className="p-4 space-y-4 text-sm">
-            <p>Souhaitez-vous remettre automatiquement cette mission en statut <strong>En recherche</strong> ?</p>
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remettre en “En recherche” ?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <p>Souhaitez-vous remettre cette mission en statut <strong>En recherche</strong> ?</p>
             <div className="flex justify-end gap-4 pt-2">
-              <Button variant="outline" onClick={() => {
-                setAskRechercheOpen(true)
-                handleValider(false)
-              }}>Non</Button>
+              <Button variant="outline" onClick={() => handleValider(false)}>Non</Button>
               <Button onClick={() => handleValider(true)}>Oui</Button>
             </div>
           </div>
-        </DialogBox>
-      </DialogShad>
+        </DialogContent>
+      </Dialog>
     )
   }
 
   return (
-    <Dialog open onOpenChange={() => {}}>
+    <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md">
-        <DialogHeader>
+        <DialogHeader className="flex items-center justify-between">
           <DialogTitle>{`Statut “${statut}”`}</DialogTitle>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="w-4 h-4" />
+          </Button>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-4 mt-2">
           {showMotif && (
             <div>
               <Label>Motif</Label>
@@ -157,7 +164,11 @@ export function PopupChangementStatutMissionPlanifiee({
           {askStatutCandidat && (
             <div>
               <Label>Statut à appliquer dans le planning du candidat</Label>
-              <RadioGroup value={statutCandidat} onValueChange={(v) => setStatutCandidat(v as any)} className="space-y-2 mt-2">
+              <RadioGroup
+                value={statutCandidat}
+                onValueChange={(v) => setStatutCandidat(v as any)}
+                className="space-y-2 mt-2"
+              >
                 <div className="flex items-center space-x-2">
                   <RadioGroupItem value="Dispo" id="dispo" />
                   <Label htmlFor="dispo">Dispo</Label>
@@ -174,8 +185,12 @@ export function PopupChangementStatutMissionPlanifiee({
             </div>
           )}
 
-          <div className="flex justify-end pt-2">
-            <Button onClick={() => handleValider()} disabled={loading || (showMotif && !motif.trim())}>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" onClick={onClose}>Annuler</Button>
+            <Button
+              onClick={() => handleValider()}
+              disabled={loading || (showMotif && !motif.trim())}
+            >
               Valider
             </Button>
           </div>

@@ -304,6 +304,72 @@ export type Database = {
           },
         ]
       }
+      donnees: {
+        Row: {
+          annee: string
+          candidat_id: string | null
+          client_id: string | null
+          created_at: string | null
+          date: string
+          id: string
+          mois: string
+          nombre: number
+          poste: string | null
+          secteur: string
+          semaine: string
+          service: string | null
+          statut: string
+          updated_at: string | null
+        }
+        Insert: {
+          annee: string
+          candidat_id?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          date: string
+          id?: string
+          mois: string
+          nombre?: number
+          poste?: string | null
+          secteur: string
+          semaine: string
+          service?: string | null
+          statut: string
+          updated_at?: string | null
+        }
+        Update: {
+          annee?: string
+          candidat_id?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          date?: string
+          id?: string
+          mois?: string
+          nombre?: number
+          poste?: string | null
+          secteur?: string
+          semaine?: string
+          service?: string | null
+          statut?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "donnees_candidat_id_fkey"
+            columns: ["candidat_id"]
+            isOneToOne: false
+            referencedRelation: "candidats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "donnees_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       historique: {
         Row: {
           action: string
@@ -404,28 +470,43 @@ export type Database = {
       }
       interdictions_priorites: {
         Row: {
+          actif: boolean
           candidat_id: string
           client_id: string
           commentaire: string | null
           created_at: string | null
+          created_by: string | null
           id: string
+          secteur: string
+          service: string | null
           type: string
+          updated_at: string | null
         }
         Insert: {
+          actif?: boolean
           candidat_id: string
           client_id: string
           commentaire?: string | null
           created_at?: string | null
+          created_by?: string | null
           id?: string
+          secteur: string
+          service?: string | null
           type: string
+          updated_at?: string | null
         }
         Update: {
+          actif?: boolean
           candidat_id?: string
           client_id?: string
           commentaire?: string | null
           created_at?: string | null
+          created_by?: string | null
           id?: string
+          secteur?: string
+          service?: string | null
           type?: string
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -440,6 +521,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "interdictions_priorites_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "utilisateurs"
             referencedColumns: ["id"]
           },
         ]

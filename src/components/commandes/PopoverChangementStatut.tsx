@@ -1,5 +1,9 @@
-import { useState } from "react"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useState, useRef } from "react"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
 import { statutColors } from "@/lib/colors"
 import { supabase } from "@/lib/supabase"
@@ -30,23 +34,27 @@ export function PopoverChangementStatut({ commande, onSuccess, trigger }: Props)
 
   const [popupAnnuleAda, setPopupAnnuleAda] = useState(false)
   const [popupPlanifiee, setPopupPlanifiee] = useState<StatutCommande | null>(null)
+  const [openPopover, setOpenPopover] = useState(false)
+  const popoverRef = useRef<HTMLDivElement>(null)
 
   const handleChange = async (nouveau: StatutCommande) => {
     if (!nouveau || nouveau === statutActuel) return
 
-    // Cas 1 – Mission planifiée : ouvrir popup avancée
+    setOpenPopover(false)
+
+    // Mission planifiée : popup spécifique
     if (statutActuel === "Validé") {
       setPopupPlanifiee(nouveau)
       return
     }
 
-    // Cas 2 – En recherche + Annule ADA = ouvrir popup justification simple
+    // Annule ADA depuis En recherche
     if (statutActuel === "En recherche" && nouveau === "Annule ADA") {
       setPopupAnnuleAda(true)
       return
     }
 
-    // Cas 3 – En recherche + autre statut = mise à jour simple
+    // Mise à jour simple
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
     if (!userEmail) return
@@ -79,15 +87,22 @@ export function PopoverChangementStatut({ commande, onSuccess, trigger }: Props)
       toast({ title: "Statut mis à jour" })
       onSuccess()
     } else {
-      toast({ title: "Erreur", description: "Impossible de changer le statut", variant: "destructive" })
+      toast({
+        title: "Erreur",
+        description: "Impossible de changer le statut",
+        variant: "destructive",
+      })
     }
   }
 
   return (
     <>
-      <Popover>
+      <Popover open={openPopover} onOpenChange={setOpenPopover}>
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-        <PopoverContent className="w-fit px-4 py-3 bg-white shadow-md border rounded space-y-2">
+        <PopoverContent
+          ref={popoverRef}
+          className="w-fit px-4 py-3 bg-white shadow-md border rounded space-y-2"
+        >
           <div className="grid grid-cols-2 gap-2">
             {statuts.map((statut) => (
               <div

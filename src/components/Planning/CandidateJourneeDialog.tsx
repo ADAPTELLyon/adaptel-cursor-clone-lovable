@@ -66,7 +66,23 @@ export function CandidateJourneeDialog({
     }
 
     if (statut === "Non Renseigné") {
-      toast({ title: "Erreur", description: "Veuillez choisir un statut." })
+      if (disponibilite?.id) {
+        const { error } = await supabase
+          .from("disponibilites")
+          .delete()
+          .eq("id", disponibilite.id)
+
+        if (error) {
+          console.error("Erreur Supabase (delete):", error)
+          toast({ title: "Erreur", description: "Échec de suppression", variant: "destructive" })
+        } else {
+          toast({ title: "Disponibilité supprimée" })
+          onSuccess()
+          onClose()
+        }
+      } else {
+        onClose()
+      }
       return
     }
 
@@ -116,15 +132,17 @@ export function CandidateJourneeDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-6 pt-2">
+          {/* Statut */}
           <div className="space-y-2">
-            <Label>Statut</Label>
-            <div className="flex gap-2">
+            <Label className="text-sm font-medium">Statut</Label>
+            <div className="grid grid-cols-3 gap-2">
               {["Dispo", "Non Dispo", "Non Renseigné"].map((val) => (
                 <Button
                   key={val}
                   variant={statut === val ? "default" : "outline"}
                   onClick={() => setStatut(val as any)}
+                  className="w-full py-2 text-sm"
                 >
                   {val}
                 </Button>
@@ -132,21 +150,23 @@ export function CandidateJourneeDialog({
             </div>
           </div>
 
+          {/* Créneaux */}
           {statut === "Dispo" && (
             <div className="flex gap-6 items-center">
               <div className="flex items-center gap-2">
                 <Switch checked={matin} onCheckedChange={setMatin} />
-                <span>Matin / Midi</span>
+                <span className="text-sm">Matin / Midi</span>
               </div>
               {secteur !== "Étages" && (
                 <div className="flex items-center gap-2">
                   <Switch checked={soir} onCheckedChange={setSoir} />
-                  <span>Soir</span>
+                  <span className="text-sm">Soir</span>
                 </div>
               )}
             </div>
           )}
 
+          {/* Commentaire */}
           <div className="space-y-1">
             <Label>Commentaire</Label>
             <Textarea
@@ -156,8 +176,11 @@ export function CandidateJourneeDialog({
             />
           </div>
 
+          {/* Bouton Enregistrer */}
           <div className="pt-4 flex justify-end">
-            <Button onClick={handleSave}>Enregistrer</Button>
+            <Button onClick={handleSave} className="bg-[#840404] text-white hover:bg-[#750303]">
+              Enregistrer
+            </Button>
           </div>
         </div>
       </DialogContent>

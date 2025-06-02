@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ClientForm, formSchema } from "./client-form"
 import { ClientContactsTab } from "./ClientContactsTab"
 import { ClientPostesTypesTab } from "./ClientPostesTypesTab"
+import { ClientSuiviTab } from "./ClientSuiviTab"
 import type { z } from "zod"
 import type { Client } from "@/types/types-front"
 
@@ -40,7 +41,7 @@ export function ClientFormTabs({
           <TabsTrigger value="contacts">📇 Contacts</TabsTrigger>
           <TabsTrigger value="postes">🧩 Postes</TabsTrigger>
           <TabsTrigger value="missions">📆 Missions</TabsTrigger>
-          <TabsTrigger value="interdits">🚫 Interdits</TabsTrigger>
+          <TabsTrigger value="interdits">🚫 Suivi</TabsTrigger>
           <TabsTrigger value="historique">📜 Historique</TabsTrigger>
           <TabsTrigger value="stats">📊 Stats</TabsTrigger>
         </TabsList>
@@ -96,8 +97,18 @@ export function ClientFormTabs({
           <p className="italic">À venir</p>
         </TabsContent>
 
-        <TabsContent value="interdits" className="px-4 text-sm text-muted-foreground">
-          <p className="italic">À venir</p>
+        <TabsContent value="interdits" className="flex-1 overflow-y-auto px-2 text-sm text-muted-foreground">
+          {initialData?.id ? (
+            <ClientSuiviTab
+              clientId={initialData.id}
+              secteurs={secteurs}
+              services={services}
+            />
+          ) : (
+            <p className="text-sm italic text-muted-foreground mt-4">
+              Enregistrez les informations du client pour voir ou gérer les priorités/interdictions.
+            </p>
+          )}
         </TabsContent>
 
         <TabsContent value="historique" className="px-4 text-sm text-muted-foreground">
