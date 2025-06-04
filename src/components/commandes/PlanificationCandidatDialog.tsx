@@ -1,5 +1,4 @@
-import React from "react"
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -7,7 +6,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import { supabase } from "@/integrations/supabase/client"
-import type { CandidatDispoWithNom } from "@/types/types-front"
+import type { CandidatDispoWithNom, CommandeWithCandidat } from "@/types/types-front"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { CheckCircle2, XCircle, HelpCircle, Sun, Moon } from "lucide-react"
@@ -18,11 +17,12 @@ interface Props {
   onClose: () => void
   date: string
   secteur: string
-  candidatId: string
   service: string
-  disponibilite?: CandidatDispoWithNom
+  commande: CommandeWithCandidat
   onSuccess: () => void
-  candidatNomPrenom: string
+  candidatId?: string
+  disponibilite?: CandidatDispoWithNom
+  candidatNomPrenom?: string
 }
 
 type Statut = "Dispo" | "Non dispo" | "Non renseigné"
@@ -32,10 +32,11 @@ export function PlanificationCandidatDialog({
   onClose,
   date,
   secteur,
-  candidatId,
   service,
-  disponibilite,
+  commande,
   onSuccess,
+  candidatId,
+  disponibilite,
   candidatNomPrenom,
 }: Props) {
   const [statut, setStatut] = useState<Statut>("Non renseigné")
@@ -65,7 +66,7 @@ export function PlanificationCandidatDialog({
   }, [statut, secteur, disponibilite])
 
   const handleSave = async () => {
-    if (!candidatId || !secteur || !date) {
+    if (!commande || !commande.id || !commande.client_id || !secteur || !date) {
       toast({ title: "Erreur", description: "Données manquantes", variant: "destructive" })
       return
     }
@@ -73,7 +74,7 @@ export function PlanificationCandidatDialog({
     const statutToSend = statut === "Non renseigné" ? null : statut
 
     const payload = {
-      candidat_id: candidatId,
+      candidat_id: commande.candidat_id,
       date,
       secteur,
       service: service || null,
@@ -132,7 +133,7 @@ export function PlanificationCandidatDialog({
             <div>
               <div>Disponibilité du candidat</div>
               <div className="text-sm font-normal text-muted-foreground">
-                {candidatNomPrenom} • {dateAffichee}
+                {candidatNomPrenom || "-"} • {dateAffichee}
                 {service && ` • ${service}`}
               </div>
             </div>
@@ -149,8 +150,8 @@ export function PlanificationCandidatDialog({
                   className={cn(
                     "flex items-center justify-center gap-2 p-3 rounded-lg border transition-colors",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    statut === val 
-                      ? statusConfig[val].activeColor 
+                    statut === val
+                      ? statusConfig[val].activeColor
                       : `${statusConfig[val].color} hover:bg-opacity-80 border-border`
                   )}
                   onClick={() => setStatut(val)}
@@ -182,7 +183,7 @@ export function PlanificationCandidatDialog({
                     <Switch checked={matin} onCheckedChange={setMatin} />
                   </label>
                 </div>
-                
+
                 {secteur !== "Étages" && (
                   <div className="flex-1">
                     <label className="flex items-center justify-between gap-3 p-3 rounded-lg border hover:bg-muted/50 cursor-pointer">

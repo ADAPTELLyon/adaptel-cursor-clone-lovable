@@ -28,12 +28,23 @@ export function PlanningClientTable({
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [commentaireTemp, setCommentaireTemp] = useState<string>("")
 
+  const champsHoraire: (keyof CommandeWithCandidat)[] = [
+    "heure_debut_matin",
+    "heure_fin_matin",
+    "heure_debut_soir",
+    "heure_fin_soir",
+  // "heure_debut_nuit", // Désactivé pour l’instant
+  // "heure_fin_nuit",   // En attente du poste "Night audit"
+  ]
+
   const updateHeure = async (
     commande: CommandeWithCandidat,
     champ: keyof CommandeWithCandidat,
     nouvelleValeur: string
   ) => {
-    const isValidTime = /^\d{2}:\d{2}$/.test(nouvelleValeur)
+    const isChampHoraire = champsHoraire.includes(champ)
+    const isValidTime = !isChampHoraire || /^\d{2}:\d{2}$/.test(nouvelleValeur)
+
     if (!isValidTime) return
 
     const { data: authData } = await supabase.auth.getUser()
@@ -59,14 +70,13 @@ export function PlanningClientTable({
         await supabase.from("historique").insert({
           table_cible: "commandes",
           ligne_id: commande.id,
-          action: "modification_horaire",
-          description: `Changement de ${champ} à ${nouvelleValeur}`,
+          action: isChampHoraire ? "modification_horaire" : "modification_commentaire",
+          description: isChampHoraire
+            ? `Changement de ${champ} à ${nouvelleValeur}`
+            : `Nouveau commentaire : ${nouvelleValeur}`,
           user_id: userId,
           date_action: new Date().toISOString(),
-          apres: {
-            champ,
-            valeur: nouvelleValeur,
-          },
+          apres: { champ, valeur: nouvelleValeur },
         })
       }
     }
@@ -141,18 +151,10 @@ export function PlanningClientTable({
                     <div className="text-xs">{jour.label.split(" ").slice(1).join(" ")}</div>
                     {totalMissions === 0 ? (
                       <div className="absolute top-1 right-1">
-                        <div className="h-5 w-5 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs">
-                          –
-                        </div>
+                        <div className="h-5 w-5 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs">–</div>
                       </div>
                     ) : nbEnRecherche > 0 ? (
-                      <div
-                        className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center"
-                        style={{
-                          backgroundColor: indicateurColors["En recherche"],
-                          color: "white",
-                        }}
-                      >
+                      <div className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center" style={{ backgroundColor: indicateurColors["En recherche"], color: "white" }}>
                         {nbEnRecherche}
                       </div>
                     ) : (
@@ -197,7 +199,7 @@ export function PlanningClientTable({
                       const jourCell = ligne.find(
                         (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
                       )
-                      const commande = jourCell?.commandes[0]
+                      const commande = jourCell?.commandes.find((c) => commandeIdsLigne.includes(c.id))
 
                       return (
                         <div key={index} className="border-r p-2 h-28 relative">

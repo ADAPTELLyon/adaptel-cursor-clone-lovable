@@ -154,75 +154,77 @@ export function CellulePlanning({
         })}
       </div>
 
-      {/* Bouton + */}
-      <div className="absolute top-1 right-1">
-        <PopoverPlanificationRapide
-          open={popoverOpen}
-          onOpen={() => setPopoverOpen(true)}
-          onClose={() => setPopoverOpen(false)}
-          commande={commande}
-          date={date}
-          secteur={secteur}
-          service={service || ""}
-          onSuccess={onSuccess || (() => {})}
-        />
-      </div>
+      {/* Bouton + planification rapide */}
+      {commande.statut === "En recherche" && (
+        <button
+          className="absolute top-1 right-1 h-5 w-5 rounded-full bg-white/60 flex items-center justify-center hover:bg-white/80 transition"
+          onClick={(e) => {
+            e.stopPropagation()
+            setPopoverOpen(true)
+          }}
+        >
+          <Plus className="h-3 w-3 text-gray-400" />
+        </button>
+      )}
+      <PopoverPlanificationRapide
+        open={popoverOpen}
+        onOpen={() => setPopoverOpen(true)}
+        onClose={() => setPopoverOpen(false)}
+        commande={commande}
+        date={date}
+        secteur={secteur}
+        service={service || ""}
+        onSuccess={onSuccess || (() => {})}
+      />
 
       {/* Commentaire */}
       <div className="absolute bottom-1 right-1 z-20">
-        {commande.commentaire ? (
-          <Popover
-            open={editingCommentId === commande.id}
-            onOpenChange={(open) => !open && setEditingCommentId(null)}
-          >
-            <PopoverTrigger asChild>
+        <Popover
+          open={editingCommentId === commande.id}
+          onOpenChange={(open) => !open && setEditingCommentId(null)}
+        >
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              className={cn(
+                "p-0 h-auto w-auto",
+                commande.commentaire ? "text-gray-800" : "text-white"
+              )}
+              onClick={(e) => {
+                e.stopPropagation()
+                setEditingCommentId(commande.id)
+                setCommentaireTemp(commande.commentaire || "")
+              }}
+            >
+              {commande.commentaire ? (
+                <Info className="h-4 w-4" />
+              ) : (
+                <Pencil className="h-4 w-4" />
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-2 space-y-2">
+            <textarea
+              value={commentaireTemp}
+              onChange={(e) => setCommentaireTemp(e.target.value)}
+              rows={4}
+              className="w-full border rounded px-2 py-1 text-sm"
+            />
+            <div className="flex justify-end">
               <Button
                 variant="ghost"
-                className="p-0 h-auto w-auto text-gray-800 hover:text-black"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setEditingCommentId(commande.id)
-                  setCommentaireTemp(commande.commentaire || "")
+                size="icon"
+                onClick={async () => {
+                  await updateHeure(commande, "commentaire" as any, commentaireTemp)
+                  setEditingCommentId(null)
+                  onSuccess?.()
                 }}
               >
-                <Info className="h-4 w-4" />
+                <Check className="w-4 h-4 text-green-600" />
               </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-2 space-y-2">
-              <textarea
-                value={commentaireTemp}
-                onChange={(e) => setCommentaireTemp(e.target.value)}
-                rows={4}
-                className="w-full border rounded px-2 py-1 text-sm"
-              />
-              <div className="flex justify-end">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={async () => {
-                    await updateHeure(commande, "commentaire" as any, commentaireTemp)
-                    setEditingCommentId(null)
-                    onSuccess?.()
-                  }}
-                >
-                  <Check className="w-4 h-4 text-green-600" />
-                </Button>
-              </div>
-            </PopoverContent>
-          </Popover>
-        ) : (
-          <Button
-            variant="ghost"
-            className="p-0 h-auto w-auto text-white hover:text-white"
-            onClick={(e) => {
-              e.stopPropagation()
-              setEditingCommentId(commande.id)
-              setCommentaireTemp("")
-            }}
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-        )}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <PlanificationCandidatDialog
@@ -230,9 +232,13 @@ export function CellulePlanning({
         onClose={() => setOpenPlanifDialog(false)}
         date={date}
         secteur={secteur}
-        service={service}
-        commande={commande}
+        service={service || ""}
         onSuccess={onSuccess || (() => {})}
+        commande={commande}
+        candidatId={commande.candidat_id || ""}
+        candidatNomPrenom={
+          commande?.candidat ? `${commande.candidat.nom} ${commande.candidat.prenom}` : ""
+        }
       />
     </div>
   )

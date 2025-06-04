@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 import { supabase } from "@/lib/supabase"
@@ -7,8 +12,18 @@ import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { toast } from "@/hooks/use-toast"
 import type { CommandeWithCandidat } from "@/types/types-front"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { CheckCircle2, Clock, AlertCircle, Car, Ban, Check, History } from "lucide-react"
+import {
+  Avatar,
+  AvatarFallback,
+} from "@/components/ui/avatar"
+import {
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Car,
+  Ban,
+  Check,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const statusConfig = {
@@ -51,6 +66,7 @@ type CandidatMini = {
 export interface PopoverPlanificationRapideProps {
   open: boolean
   onClose: () => void
+  onOpen?: () => void
   date: string
   secteur: string
   service?: string
@@ -62,6 +78,7 @@ export interface PopoverPlanificationRapideProps {
 export function PopoverPlanificationRapide({
   open,
   onClose,
+  onOpen,
   date,
   secteur,
   service,
@@ -103,6 +120,15 @@ export function PopoverPlanificationRapide({
 
       const planifieSet = new Set(planifData?.map(p => p.candidat_id) || [])
 
+      const { data: interditData } = await supabase
+        .from("interdictions_priorites")
+        .select("candidat_id")
+        .eq("client_id", commande.client_id)
+        .eq("type", "interdiction")
+        .in("candidat_id", candidatIds)
+
+      const interditSet = new Set(interditData?.map(i => i.candidat_id) || [])
+
       const dispoList: CandidatMini[] = []
       const planifieList: CandidatMini[] = []
       const nonList: CandidatMini[] = []
@@ -113,9 +139,9 @@ export function PopoverPlanificationRapide({
           nom: c.nom,
           prenom: c.prenom,
           vehicule: c.vehicule,
-          interditClient: c.interditClient,
+          interditClient: interditSet.has(c.id),
           prioritaire: c.prioritaire,
-          dejaPlanifie: planifieSet.has(c.id)
+          dejaPlanifie: planifieSet.has(c.id),
         }
 
         if (mini.dejaPlanifie) {
@@ -130,7 +156,7 @@ export function PopoverPlanificationRapide({
       setDispos(dispoList)
       setPlanifies(planifieList)
       setNonRenseignes(nonList)
-      
+
       if (dispoList.length > 0) {
         setExpandedSection('dispo')
       }
@@ -161,7 +187,7 @@ export function PopoverPlanificationRapide({
 
     const { error: commandeError } = await supabase
       .from("commandes")
-      .update({ 
+      .update({
         candidat_id: candidatId,
         statut: "Validé"
       })
@@ -212,7 +238,7 @@ export function PopoverPlanificationRapide({
   }) => {
     const config = statusConfig[statusKey]
     const isExpanded = expandedSection === statusKey
-    
+
     return (
       <div className={cn("rounded-lg border overflow-hidden transition-all", config.borderColor, isExpanded ? "border-2" : "border")}>
         <button
@@ -256,7 +282,7 @@ export function PopoverPlanificationRapide({
     status: keyof typeof statusConfig
   }) => {
     const config = statusConfig[status]
-    
+
     return (
       <div className="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors">
         <div className="flex items-center gap-3">
@@ -310,7 +336,16 @@ export function PopoverPlanificationRapide({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (isOpen) {
+          onOpen?.()
+        } else {
+          onClose()
+        }
+      }}
+    >
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg flex items-center gap-2">

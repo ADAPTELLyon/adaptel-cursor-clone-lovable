@@ -9,7 +9,7 @@ interface ColonneClientProps {
   semaine: string
   nbEnRecherche: number
   commandeIdsLigne: string[]
-  semaineDate: string // Ajouté pour corriger l’erreur TS sans changer la logique
+  semaineDate: string
 }
 
 export function ColonneClient({
@@ -19,6 +19,7 @@ export function ColonneClient({
   semaine,
   nbEnRecherche,
   commandeIdsLigne,
+  semaineDate,
 }: ColonneClientProps) {
   const secteurInfo = secteursList.find((s) => s.value === secteur)
 
@@ -28,7 +29,11 @@ export function ColonneClient({
         <span className="font-semibold">{clientNom}</span>
         {commandeIdsLigne?.length > 0 && (
           <div className="h-5 w-5 rounded-full bg-white border shadow flex items-center justify-center">
-            <HistoriqueCommandeDialog commandeIds={commandeIdsLigne} />
+            <HistoriqueCommandeDialog
+              commandeIds={commandeIdsLigne}
+              secteur={secteur}
+              semaineDate={semaineDate}
+            />
           </div>
         )}
       </div>
