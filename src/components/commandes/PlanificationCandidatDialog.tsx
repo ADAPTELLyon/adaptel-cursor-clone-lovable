@@ -1,3 +1,4 @@
+import React from "react"
 import { useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -26,7 +27,7 @@ interface Props {
 
 type Statut = "Dispo" | "Non dispo" | "Non renseigné"
 
-export function CandidateJourneeDialog({
+export function PlanificationCandidatDialog({
   open,
   onClose,
   date,

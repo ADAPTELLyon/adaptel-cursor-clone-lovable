@@ -7,8 +7,7 @@ import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { toast } from "@/hooks/use-toast"
 import type { CommandeWithCandidat } from "@/types/types-front"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { CheckCircle2, Clock, AlertCircle, Car, Ban, Check, History } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -19,7 +18,7 @@ const statusConfig = {
     color: "bg-[#8ea9db]",
     textColor: "text-[#8ea9db]",
     borderColor: "border-[#8ea9db]",
-    badgeColor: "bg-[#8ea9db]/10 text-[#8ea9db]"
+    badgeColor: "bg-[#8ea9db]/10 text-[#8ea9db]",
   },
   nonRenseigne: {
     title: "Non renseignés",
@@ -27,7 +26,7 @@ const statusConfig = {
     color: "bg-[#e5e7eb]",
     textColor: "text-[#6b7280]",
     borderColor: "border-[#e5e7eb]",
-    badgeColor: "bg-[#e5e7eb]/10 text-[#6b7280]"
+    badgeColor: "bg-[#e5e7eb]/10 text-[#6b7280]",
   },
   planifie: {
     title: "Déjà planifiés",
@@ -35,8 +34,8 @@ const statusConfig = {
     color: "bg-[#a9d08e]",
     textColor: "text-[#a9d08e]",
     borderColor: "border-[#a9d08e]",
-    badgeColor: "bg-[#a9d08e]/10 text-[#a9d08e]"
-  }
+    badgeColor: "bg-[#a9d08e]/10 text-[#a9d08e]",
+  },
 }
 
 type CandidatMini = {
@@ -44,13 +43,12 @@ type CandidatMini = {
   nom: string
   prenom: string
   vehicule?: boolean
-  // Ces champs seront ajoutés plus tard
   interditClient?: boolean
   prioritaire?: boolean
   dejaPlanifie?: boolean
 }
 
-interface PlanificationCandidatDialogProps {
+export interface PopoverPlanificationRapideProps {
   open: boolean
   onClose: () => void
   date: string
@@ -58,9 +56,10 @@ interface PlanificationCandidatDialogProps {
   service?: string
   commande: CommandeWithCandidat
   onSuccess: () => void
+  onOpenListes?: () => void
 }
 
-export function PlanificationCandidatDialog({
+export function PopoverPlanificationRapide({
   open,
   onClose,
   date,
@@ -68,7 +67,8 @@ export function PlanificationCandidatDialog({
   service,
   commande,
   onSuccess,
-}: PlanificationCandidatDialogProps) {
+  onOpenListes,
+}: PopoverPlanificationRapideProps) {
   const { data: candidats = [] } = useCandidatsBySecteur(secteur)
   const [dispos, setDispos] = useState<CandidatMini[]>([])
   const [nonRenseignes, setNonRenseignes] = useState<CandidatMini[]>([])
@@ -76,7 +76,7 @@ export function PlanificationCandidatDialog({
   const [expandedSection, setExpandedSection] = useState<'dispo' | 'nonRenseigne' | 'planifie' | null>(null)
 
   useEffect(() => {
-    if (!open || candidats.length === 0) return
+    if (!open || !candidats) return
 
     const fetchDispoEtPlanif = async () => {
       const jour = date.slice(0, 10)
@@ -96,14 +96,12 @@ export function PlanificationCandidatDialog({
 
       const { data: planifData } = await supabase
         .from("planification")
-        .select("candidat_id, commande_id, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+        .select("candidat_id")
         .eq("secteur", secteur)
         .eq("date", jour)
         .in("candidat_id", candidatIds)
 
-      const planifieSet = new Map(
-        planifData?.map(p => [p.candidat_id, p]) || []
-      )
+      const planifieSet = new Set(planifData?.map(p => p.candidat_id) || [])
 
       const dispoList: CandidatMini[] = []
       const planifieList: CandidatMini[] = []
@@ -115,17 +113,16 @@ export function PlanificationCandidatDialog({
           nom: c.nom,
           prenom: c.prenom,
           vehicule: c.vehicule,
-          // TODO: Récupérer ces informations depuis Supabase
-          interditClient: false,
-          prioritaire: false,
-          dejaPlanifie: false
+          interditClient: c.interditClient,
+          prioritaire: c.prioritaire,
+          dejaPlanifie: planifieSet.has(c.id)
         }
 
-        if (planifieSet.has(c.id)) {
+        if (mini.dejaPlanifie) {
           planifieList.push(mini)
         } else if (dispoMap.get(c.id) === "Dispo") {
           dispoList.push(mini)
-        } else if (!dispoMap.has(c.id)) {
+        } else {
           nonList.push(mini)
         }
       }
@@ -134,7 +131,6 @@ export function PlanificationCandidatDialog({
       setPlanifies(planifieList)
       setNonRenseignes(nonList)
       
-      // Ouvrir par défaut la section des disponibles si elle n'est pas vide
       if (dispoList.length > 0) {
         setExpandedSection('dispo')
       }
@@ -143,110 +139,66 @@ export function PlanificationCandidatDialog({
     fetchDispoEtPlanif()
   }, [open, date, secteur, candidats])
 
-  const hasHeures = (debut?: string | null, fin?: string | null) => !!(debut && fin)
-
   const handleSelect = async (candidatId: string) => {
-    const jour = date.slice(0, 10)
-    const candidat = candidats.find((c) => c.id === candidatId)
-
-    const { data: existingPlanifs, error: planifError } = await supabase
+    const { error: planifError } = await supabase
       .from("planification")
-      .select("heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
-      .eq("candidat_id", candidatId)
-      .eq("date", jour)
+      .insert({
+        commande_id: commande.id,
+        candidat_id: candidatId,
+        date,
+        secteur,
+        statut: "Validé",
+        heure_debut_matin: commande.heure_debut_matin,
+        heure_fin_matin: commande.heure_fin_matin,
+        heure_debut_soir: commande.heure_debut_soir,
+        heure_fin_soir: commande.heure_fin_soir
+      })
 
     if (planifError) {
-      toast({ title: "Erreur", description: "Erreur vérification conflit", variant: "destructive" })
-      return
-    }
-
-    const conflitMatin =
-      hasHeures(commande.heure_debut_matin, commande.heure_fin_matin) &&
-      existingPlanifs?.some((p) => hasHeures(p.heure_debut_matin, p.heure_fin_matin))
-
-    const conflitSoir =
-      hasHeures(commande.heure_debut_soir, commande.heure_fin_soir) &&
-      existingPlanifs?.some((p) => hasHeures(p.heure_debut_soir, p.heure_fin_soir))
-
-    if (conflitMatin || conflitSoir) {
-      toast({
-        title: "Conflit de créneau",
-        description: "Ce candidat a déjà une mission sur ce créneau.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    const { error: errInsertPlanif } = await supabase.from("planification").insert({
-      commande_id: commande.id,
-      candidat_id: candidatId,
-      date,
-      secteur,
-      statut: "Validé",
-      heure_debut_matin: commande.heure_debut_matin,
-      heure_fin_matin: commande.heure_fin_matin,
-      heure_debut_soir: commande.heure_debut_soir,
-      heure_fin_soir: commande.heure_fin_soir,
-      heure_debut_nuit: null,
-      heure_fin_nuit: null,
-    })
-
-    if (errInsertPlanif) {
       toast({ title: "Erreur", description: "Échec insertion planification", variant: "destructive" })
       return
     }
 
-    const { error: errUpdateCommande } = await supabase
+    const { error: commandeError } = await supabase
       .from("commandes")
-      .update({
+      .update({ 
         candidat_id: candidatId,
-        statut: "Validé",
+        statut: "Validé"
       })
       .eq("id", commande.id)
 
-    if (errUpdateCommande) {
+    if (commandeError) {
       toast({ title: "Erreur", description: "Échec mise à jour commande", variant: "destructive" })
       return
     }
 
-    const { data: authData } = await supabase.auth.getUser()
-    const userEmail = authData?.user?.email || null
-
-    if (userEmail) {
-      const { data: userApp } = await supabase
+    const { data: user } = await supabase.auth.getUser()
+    if (user.user?.email) {
+      const { data: utilisateur } = await supabase
         .from("utilisateurs")
         .select("id")
-        .eq("email", userEmail)
+        .eq("email", user.user.email)
         .single()
 
-      const userId = userApp?.id || null
-
-      if (userId) {
+      if (utilisateur?.id) {
         await supabase.from("historique").insert({
           table_cible: "commandes",
           ligne_id: commande.id,
           action: "planification",
-          description: "Planification via popup PlanificationCandidatDialog",
-          user_id: userId,
+          description: "Planification via popup rapide",
+          user_id: utilisateur.id,
           date_action: new Date().toISOString(),
           apres: {
-            date,
-            candidat: {
-              nom: candidat?.nom || "",
-              prenom: candidat?.prenom || "",
-            },
-            heure_debut_matin: commande.heure_debut_matin,
-            heure_fin_matin: commande.heure_fin_matin,
-            heure_debut_soir: commande.heure_debut_soir,
-            heure_fin_soir: commande.heure_fin_soir,
-          },
+            candidat_id: candidatId,
+            statut: "Validé"
+          }
         })
       }
     }
 
     toast({ title: "Candidat planifié avec succès" })
-    onClose()
     onSuccess()
+    onClose()
   }
 
   const dateFormatee = format(new Date(date), "eeee d MMMM", { locale: fr })
@@ -262,18 +214,9 @@ export function PlanificationCandidatDialog({
     const isExpanded = expandedSection === statusKey
     
     return (
-      <div className={cn(
-        "rounded-lg border overflow-hidden transition-all",
-        config.borderColor,
-        isExpanded ? "border-2" : "border"
-      )}>
+      <div className={cn("rounded-lg border overflow-hidden transition-all", config.borderColor, isExpanded ? "border-2" : "border")}>
         <button
-          className={cn(
-            "w-full flex items-center justify-between p-3",
-            "hover:bg-muted/50 transition-colors",
-            config.color,
-            isExpanded ? "bg-opacity-20" : "bg-opacity-10"
-          )}
+          className={cn("w-full flex items-center justify-between p-3", "hover:bg-muted/50 transition-colors", config.color, isExpanded ? "bg-opacity-20" : "bg-opacity-10")}
           onClick={() => setExpandedSection(isExpanded ? null : statusKey)}
         >
           <div className="flex items-center gap-3">
@@ -284,14 +227,10 @@ export function PlanificationCandidatDialog({
               {config.title} <span className="text-muted-foreground">({candidats.length})</span>
             </h3>
           </div>
-          <div className={cn(
-            "text-xs px-2 py-1 rounded-full",
-            config.badgeColor
-          )}>
+          <div className={cn("text-xs px-2 py-1 rounded-full", config.badgeColor)}>
             {isExpanded ? "Réduire" : "Voir"}
           </div>
         </button>
-        
         {isExpanded && (
           <div className="p-2 space-y-2">
             {candidats.length === 0 ? (
@@ -332,14 +271,12 @@ export function PlanificationCandidatDialog({
             </p>
             {status === 'planifie' && (
               <p className="text-xs text-muted-foreground">
-                {/* TODO: Afficher les infos de mission quand elles seront disponibles */}
-                Mission prévue: [Nom établissement] • [Heures]
+                Mission prévue
               </p>
             )}
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* Indicateurs visuels */}
           <div className="flex items-center gap-1">
             {candidat.vehicule && (
               <span className="p-1 rounded-full bg-muted" title="Véhicule">
@@ -356,13 +293,7 @@ export function PlanificationCandidatDialog({
                 <Check className="w-4 h-4 text-green-500" />
               </span>
             )}
-            {candidat.dejaPlanifie && (
-              <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce client">
-                <History className="w-4 h-4 text-amber-500" />
-              </span>
-            )}
           </div>
-          
           {status !== 'planifie' && (
             <Button
               variant="outline"
@@ -399,6 +330,14 @@ export function PlanificationCandidatDialog({
           <StatusSection statusKey="nonRenseigne" candidats={nonRenseignes} />
           <StatusSection statusKey="planifie" candidats={planifies} />
         </div>
+
+        {onOpenListes && (
+          <div className="text-right pt-2">
+            <Button variant="link" onClick={onOpenListes} className="text-sm">
+              Ouvrir la fenêtre complète
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
