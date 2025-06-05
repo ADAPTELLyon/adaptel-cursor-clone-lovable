@@ -22,7 +22,6 @@ import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
-import ephemeris from "@/lib/ephemeris-data.json"
 
 const routes = [
   { title: "Back Office", href: "/back-office", icon: Home },
@@ -38,7 +37,9 @@ export function MainNav() {
   const navigate = useNavigate()
   const location = useLocation()
   const { toast } = useToast()
+
   const [nomComplet, setNomComplet] = useState<string | null>(null)
+  const [feteDuJour, setFeteDuJour] = useState<string>("")
 
   const handleSignOut = async () => {
     const { error } = await signOut()
@@ -59,14 +60,11 @@ export function MainNav() {
     navigate("/login")
   }
 
-  // Date + fête du jour
   const today = new Date()
-  const todayFormatted = format(today, "EEEE d MMMM yyyy", { locale: fr })
-  const month = String(today.getMonth() + 1).padStart(2, "0")
-  const day = String(today.getDate()).padStart(2, "0")
-  const fete = ephemeris[month]?.[day] || "—"
+  const todayText = format(today, "EEEE d MMMM yyyy", { locale: fr })
 
   useEffect(() => {
+    // 🔁 Requête pour récupérer nom/prénom depuis la table utilisateurs
     const fetchNomUtilisateur = async () => {
       if (!user?.email) return
       const { data, error } = await supabase
@@ -82,6 +80,27 @@ export function MainNav() {
 
     fetchNomUtilisateur()
   }, [user?.email])
+
+  useEffect(() => {
+    // 🎉 Fête du jour depuis nominis.cef.fr
+    const fetchFete = async () => {
+      const jour = today.getDate()
+      const mois = today.getMonth() + 1
+      const annee = today.getFullYear()
+
+      try {
+        const res = await fetch(`https://nominis.cef.fr/json/saintdujour.php?jour=${jour}&mois=${mois}&annee=${annee}`)
+        const data = await res.json()
+        const nom = data?.response?.saintdujour?.nom || ""
+        if (nom) setFeteDuJour(`Fête du jour : ${nom.replace(/^Saint\s+/i, "")}`)
+      } catch (err) {
+        console.error("Erreur récupération fête du jour :", err)
+        setFeteDuJour("")
+      }
+    }
+
+    fetchFete()
+  }, [])
 
   const nomAffiche = nomComplet || user?.email?.split("@")[0] || "Utilisateur"
 
@@ -106,14 +125,18 @@ export function MainNav() {
         </div>
       </div>
 
-      {/* Date + fête */}
+      {/* Date + fête du jour */}
       <div className="hidden md:flex items-center gap-3 text-sm text-gray-700 font-medium">
-        <span className="capitalize">{todayFormatted}</span>
-        <div className="h-4 w-px bg-gray-300" />
-        <span>{fete}</span>
+        <span className="capitalize">{todayText}</span>
+        {feteDuJour && (
+          <>
+            <div className="h-4 w-px bg-gray-300" />
+            <span>{feteDuJour}</span>
+          </>
+        )}
       </div>
 
-      {/* Navigation + logout */}
+      {/* Menu + logout */}
       <div className="flex items-center gap-4">
         <NavigationMenu>
           <NavigationMenuList>

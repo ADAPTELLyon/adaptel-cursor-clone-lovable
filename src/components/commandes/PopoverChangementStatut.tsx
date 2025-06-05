@@ -1,16 +1,16 @@
-import { useState, useRef } from "react"
+import { useState } from "react"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { Badge } from "@/components/ui/badge"
 import { statutColors } from "@/lib/colors"
 import { supabase } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
 import type { CommandeWithCandidat, StatutCommande } from "@/types/types-front"
 import { PopupsChangementStatutContextuels } from "./PopupsChangementStatutContextuels"
 import { PopupChangementStatutMissionPlanifiee } from "./PopupChangementStatutMissionPlanifiee"
+import { Button } from "@/components/ui/button"
 
 interface Props {
   commande: CommandeWithCandidat
@@ -35,26 +35,22 @@ export function PopoverChangementStatut({ commande, onSuccess, trigger }: Props)
   const [popupAnnuleAda, setPopupAnnuleAda] = useState(false)
   const [popupPlanifiee, setPopupPlanifiee] = useState<StatutCommande | null>(null)
   const [openPopover, setOpenPopover] = useState(false)
-  const popoverRef = useRef<HTMLDivElement>(null)
 
   const handleChange = async (nouveau: StatutCommande) => {
     if (!nouveau || nouveau === statutActuel) return
 
     setOpenPopover(false)
 
-    // Mission planifiée : popup spécifique
     if (statutActuel === "Validé") {
       setPopupPlanifiee(nouveau)
       return
     }
 
-    // Annule ADA depuis En recherche
     if (statutActuel === "En recherche" && nouveau === "Annule ADA") {
       setPopupAnnuleAda(true)
       return
     }
 
-    // Mise à jour simple
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
     if (!userEmail) return
@@ -64,7 +60,6 @@ export function PopoverChangementStatut({ commande, onSuccess, trigger }: Props)
       .select("id")
       .eq("email", userEmail)
       .single()
-
     const userId = userApp?.id || null
     if (!userId) return
 
@@ -83,7 +78,6 @@ export function PopoverChangementStatut({ commande, onSuccess, trigger }: Props)
         date_action: new Date().toISOString(),
         apres: { statut: nouveau },
       })
-
       toast({ title: "Statut mis à jour" })
       onSuccess()
     } else {
@@ -99,33 +93,24 @@ export function PopoverChangementStatut({ commande, onSuccess, trigger }: Props)
     <>
       <Popover open={openPopover} onOpenChange={setOpenPopover}>
         <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-        <PopoverContent
-          ref={popoverRef}
-          className="w-fit px-4 py-3 bg-white shadow-md border rounded space-y-2"
-        >
-          <div className="grid grid-cols-2 gap-2">
-            {statuts.map((statut) => (
-              <div
-                key={statut}
-                className="cursor-pointer flex justify-center"
-                onClick={() => handleChange(statut)}
-              >
-                <Badge
-                  className="w-full justify-center py-1 text-sm font-medium rounded-md"
-                  style={{
-                    backgroundColor: statutColors[statut]?.bg || "#e5e5e5",
-                    color: statutColors[statut]?.text || "#000000",
-                  }}
-                >
-                  {statut}
-                </Badge>
-              </div>
-            ))}
-          </div>
+        <PopoverContent className="p-2 w-52 bg-white border shadow-md rounded-md space-y-1">
+          {statuts.map((statut) => (
+            <Button
+              key={statut}
+              variant="ghost"
+              className="w-full justify-start text-sm font-medium"
+              style={{
+                backgroundColor: statutColors[statut]?.bg || "#f3f4f6",
+                color: statutColors[statut]?.text || "#111827",
+              }}
+              onClick={() => handleChange(statut)}
+            >
+              {statut}
+            </Button>
+          ))}
         </PopoverContent>
       </Popover>
 
-      {/* Popup pour Annule ADA depuis En recherche */}
       {popupAnnuleAda && (
         <PopupsChangementStatutContextuels
           statut="Annule ADA"
@@ -141,7 +126,6 @@ export function PopoverChangementStatut({ commande, onSuccess, trigger }: Props)
         />
       )}
 
-      {/* Popup avancée pour mission planifiée */}
       {popupPlanifiee && (
         <PopupChangementStatutMissionPlanifiee
           statut={popupPlanifiee}

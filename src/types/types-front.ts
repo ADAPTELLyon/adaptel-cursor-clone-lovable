@@ -223,3 +223,14 @@ export type JourPlanning = {
   service?: string | null;
   commandes: CommandeWithCandidat[];
 };
+
+// ✅ AJOUT pour planning historique droite
+export type Planif = {
+  id: string;
+  date: string;
+  statut: StatutCommande;
+  candidat: {
+    nom: string;
+    prenom: string;
+  };
+};

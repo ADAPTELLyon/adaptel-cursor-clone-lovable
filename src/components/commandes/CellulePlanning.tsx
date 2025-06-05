@@ -53,7 +53,6 @@ export function CellulePlanning({
   const isEtages = secteur === "Étages"
   const [openDialog, setOpenDialog] = useState(false)
   const [openPlanifDialog, setOpenPlanifDialog] = useState(false)
-  const [popoverOpen, setPopoverOpen] = useState(false)
 
   if (!commande) {
     return (
@@ -155,27 +154,23 @@ export function CellulePlanning({
       </div>
 
       {/* Bouton + planification rapide */}
-      {commande.statut === "En recherche" && (
-        <button
-          className="absolute top-1 right-1 h-5 w-5 rounded-full bg-white/60 flex items-center justify-center hover:bg-white/80 transition"
-          onClick={(e) => {
-            e.stopPropagation()
-            setPopoverOpen(true)
-          }}
-        >
-          <Plus className="h-3 w-3 text-gray-400" />
-        </button>
+      {["En recherche", "Validé"].includes(commande.statut) && (
+        <PopoverPlanificationRapide
+          commande={commande}
+          date={date}
+          secteur={secteur}
+          onRefresh={onSuccess || (() => {})}
+          trigger={
+            <button
+              className="absolute top-1 right-1 h-5 w-5 rounded-full bg-white/60 flex items-center justify-center hover:bg-white/80 transition"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Plus className="h-3 w-3 text-gray-400" />
+            </button>
+          }
+          onOpenListes={() => setOpenPlanifDialog(true)}
+        />
       )}
-      <PopoverPlanificationRapide
-        open={popoverOpen}
-        onOpen={() => setPopoverOpen(true)}
-        onClose={() => setPopoverOpen(false)}
-        commande={commande}
-        date={date}
-        secteur={secteur}
-        service={service || ""}
-        onSuccess={onSuccess || (() => {})}
-      />
 
       {/* Commentaire */}
       <div className="absolute bottom-1 right-1 z-20">
@@ -235,10 +230,6 @@ export function CellulePlanning({
         service={service || ""}
         onSuccess={onSuccess || (() => {})}
         commande={commande}
-        candidatId={commande.candidat_id || ""}
-        candidatNomPrenom={
-          commande?.candidat ? `${commande.candidat.nom} ${commande.candidat.prenom}` : ""
-        }
       />
     </div>
   )
