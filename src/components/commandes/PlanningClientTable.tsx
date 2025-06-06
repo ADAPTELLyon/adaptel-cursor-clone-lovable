@@ -27,6 +27,7 @@ export function PlanningClientTable({
   const [heureTemp, setHeureTemp] = useState<Record<string, string>>({})
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [commentaireTemp, setCommentaireTemp] = useState<string>("")
+  const [lastClickedCommandeId, setLastClickedCommandeId] = useState<string | null>(null)
 
   const champsHoraire: (keyof CommandeWithCandidat)[] = [
     "heure_debut_matin",
@@ -79,6 +80,7 @@ export function PlanningClientTable({
   }
 
   const groupesParSemaineEtSecteur: Record<string, Record<string, Record<string, JourPlanning[][]>>> = {}
+  const commandeToLigneKey = new Map<string, string>()
 
   Object.entries(planning).forEach(([clientNomStr, jours]) => {
     const clientNom = clientNomStr
@@ -93,9 +95,7 @@ export function PlanningClientTable({
 
       let ligneExistante = groupesParSemaineEtSecteur[semaine][secteur][cle].find((ligne) =>
         !ligne.some(
-          (cell) =>
-            format(new Date(cell.date), "yyyy-MM-dd") ===
-            format(new Date(jour.date), "yyyy-MM-dd")
+          (cell) => format(new Date(cell.date), "yyyy-MM-dd") === format(new Date(jour.date), "yyyy-MM-dd")
         )
       )
 
@@ -104,6 +104,11 @@ export function PlanningClientTable({
         groupesParSemaineEtSecteur[semaine][secteur][cle].push(ligneExistante)
       }
       ligneExistante.push(jour)
+
+      jour.commandes.forEach(cmd => {
+        const ligneIndex = groupesParSemaineEtSecteur[semaine][secteur][cle].indexOf(ligneExistante)
+        commandeToLigneKey.set(cmd.id, `${semaine}||${secteur}||${cle}||${ligneIndex}`)
+      })
     })
   })
 
@@ -198,11 +203,26 @@ export function PlanningClientTable({
                         const jourCell = ligne.find(
                           (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
                         )
-                        const commande = jourCell?.commandes.find((c) => commandeIdsLigne.includes(c.id))
+
+                        const commande = jourCell?.commandes.find(
+                          (cmd) => commandeToLigneKey.get(cmd.id) === `${semaine}||${secteur}||${key}||${ligneIndex}`
+                        )
+
                         return (
-                          <div key={index} className="border-r p-2 h-28 relative">
+                          <div
+                            key={index}
+                            className="border-r p-2 h-28 relative"
+                            data-commande-id={commande?.id}
+                            onClick={(e) => {
+                              if (commande?.id) {
+                                setLastClickedCommandeId(commande.id)
+                                localStorage.setItem('lastClickedCommandeId', commande.id)
+                              }
+                            }}
+                          >
                             <CellulePlanning
                               commande={commande}
+                              commandeId={commande?.id || ""}
                               secteur={secteurNom}
                               editId={editId}
                               heureTemp={heureTemp}
@@ -217,6 +237,7 @@ export function PlanningClientTable({
                               clientId={clientId}
                               service={service}
                               onSuccess={onRefresh}
+                              lastClickedCommandeId={lastClickedCommandeId}
                             />
                           </div>
                         )

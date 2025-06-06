@@ -13,6 +13,7 @@ import { supabase } from "@/lib/supabase";
 import CommandeFormGauche from "./CommandeFormGauche";
 import CommandeFormDroite from "./CommandeFormDroite";
 import type { PosteType } from "@/types/types-front";
+import { v4 as uuidv4 } from "uuid";
 
 export default function NouvelleCommandeDialog({
   open,
@@ -82,12 +83,10 @@ export default function NouvelleCommandeDialog({
   const handleSave = async () => {
     if (!clientId || !secteur || !semaine) return;
 
-    // 🔐 Récupération de l'utilisateur connecté
     const { data: authData } = await supabase.auth.getUser();
     const userEmail = authData?.user?.email || null;
     if (!userEmail) return;
 
-    // 🔎 Recherche dans la table `utilisateurs`
     const { data: userApp, error: userError } = await supabase
       .from("utilisateurs")
       .select("id")
@@ -101,7 +100,8 @@ export default function NouvelleCommandeDialog({
 
     const userId = userApp.id;
 
-    // ➕ Préparation des lignes
+    const idLigneCommande = uuidv4(); // 🆕 ID unique pour toutes les commandes de ce lot
+
     const lignes: any[] = [];
 
     Object.entries(joursState).forEach(([key, isActive]) => {
@@ -124,6 +124,7 @@ export default function NouvelleCommandeDialog({
             motif === "Extra Usage constant" ? null : commentaire || null,
           commentaire: commentaire || null,
           created_by: userId,
+          id_ligne_commande: idLigneCommande, // ✅ Ajout ici
         });
       }
     });
@@ -140,7 +141,6 @@ export default function NouvelleCommandeDialog({
       return;
     }
 
-    // 🧾 Historique
     if (data && data.length > 0) {
       const historique = data.map((cmd) => ({
         table_cible: "commandes",

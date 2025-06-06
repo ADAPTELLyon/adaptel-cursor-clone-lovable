@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { Plus, Info, Pencil, Check } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -13,6 +13,7 @@ import { PopoverChangementStatut } from "@/components/commandes/PopoverChangemen
 
 interface CellulePlanningProps {
   commande?: CommandeWithCandidat
+  commandeId?: string
   secteur: string
   editId: string | null
   heureTemp: Record<string, string>
@@ -31,10 +32,12 @@ interface CellulePlanningProps {
   clientId: string
   service?: string | null
   onSuccess?: () => void
+  lastClickedCommandeId?: string | null
 }
 
 export function CellulePlanning({
   commande,
+  commandeId,
   secteur,
   editId,
   heureTemp,
@@ -49,10 +52,21 @@ export function CellulePlanning({
   clientId,
   service,
   onSuccess,
+  lastClickedCommandeId,
 }: CellulePlanningProps) {
   const isEtages = secteur === "Étages"
   const [openDialog, setOpenDialog] = useState(false)
   const [openPlanifDialog, setOpenPlanifDialog] = useState(false)
+  const [localCommandeId, setLocalCommandeId] = useState<string | null>(commande?.id || commandeId || null)
+
+  useEffect(() => {
+    if (
+      lastClickedCommandeId &&
+      (commande?.id === lastClickedCommandeId || commandeId === lastClickedCommandeId)
+    ) {
+      setLocalCommandeId(lastClickedCommandeId)
+    }
+  }, [lastClickedCommandeId, commande?.id, commandeId])
 
   if (!commande) {
     return (
@@ -78,12 +92,13 @@ export function CellulePlanning({
 
   return (
     <div
-      className={cn(
-        "h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative"
-      )}
-      style={{
-        backgroundColor: statutColor.bg,
-        color: statutColor.text,
+      className={cn("h-full rounded p-2 text-xs flex flex-col justify-start gap-1 border relative")}
+      style={{ backgroundColor: statutColor.bg, color: statutColor.text }}
+      data-commande-id={commande.id}
+      onClick={(e) => {
+        e.stopPropagation()
+        setLocalCommandeId(commande.id)
+        localStorage.setItem("lastClickedCommandeId", commande.id)
       }}
     >
       <PopoverChangementStatut
@@ -153,10 +168,10 @@ export function CellulePlanning({
         })}
       </div>
 
-      {/* Bouton + planification rapide */}
       {["En recherche", "Validé"].includes(commande.statut) && (
         <PopoverPlanificationRapide
           commande={commande}
+          commandeId={localCommandeId || commande.id}
           date={date}
           secteur={secteur}
           onRefresh={onSuccess || (() => {})}
@@ -172,7 +187,6 @@ export function CellulePlanning({
         />
       )}
 
-      {/* Commentaire */}
       <div className="absolute bottom-1 right-1 z-20">
         <Popover
           open={editingCommentId === commande.id}

@@ -19,7 +19,8 @@ type CandidatMini = {
 }
 
 interface PopoverPlanificationRapideProps {
-  commande: CommandeWithCandidat
+  commande?: CommandeWithCandidat
+  commandeId: string
   date: string
   secteur: string
   onRefresh: () => void
@@ -29,6 +30,7 @@ interface PopoverPlanificationRapideProps {
 
 export function PopoverPlanificationRapide({
   commande,
+  commandeId,
   date,
   secteur,
   onRefresh,
@@ -39,6 +41,25 @@ export function PopoverPlanificationRapide({
   const [search, setSearch] = useState("")
   const { data: candidats = [] } = useCandidatsBySecteur(secteur)
   const [filteredCandidats, setFilteredCandidats] = useState<CandidatMini[]>([])
+  const [currentCommande, setCurrentCommande] = useState<CommandeWithCandidat | null>(commande || null)
+
+  useEffect(() => {
+    const fetchCommande = async () => {
+      if (!commande && commandeId) {
+        const { data, error } = await supabase
+          .from("commandes")
+          .select("*, candidat:profil_candidats (nom, prenom)")
+          .eq("id", commandeId)
+          .single()
+
+        if (!error && data) {
+          setCurrentCommande(data as unknown as CommandeWithCandidat)
+        }
+      }
+    }
+
+    fetchCommande()
+  }, [commandeId, commande])
 
   useEffect(() => {
     if (!open || candidats.length === 0) return
@@ -66,35 +87,33 @@ export function PopoverPlanificationRapide({
 
       const planifieSet = new Set(planifData?.map((p) => p.candidat_id) || [])
 
-      const { data: ipData } = await supabase
-        .from("interdictions_priorites")
-        .select("candidat_id, type")
-        .eq("client_id", commande.client_id)
+      const clientId = currentCommande?.client_id || commande?.client_id
+      let interditSet = new Set<string>()
+      let prioritaireSet = new Set<string>()
 
-      const interditSet = new Set(
-        ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id)
-      )
-      const prioritaireSet = new Set(
-        ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id)
-      )
+      if (clientId) {
+        const { data: ipData } = await supabase
+          .from("interdictions_priorites")
+          .select("candidat_id, type")
+          .eq("client_id", clientId)
+
+        interditSet = new Set(ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id))
+        prioritaireSet = new Set(ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id))
+      }
 
       const { data: dejaData } = await supabase
         .from("commandes")
         .select("candidat_id")
-        .eq("client_id", commande.client_id)
+        .eq("client_id", clientId || "")
 
       const dejaTravailleSet = new Set(
         (dejaData || []).map((c) => c.candidat_id).filter(Boolean)
       )
 
       const resultats: CandidatMini[] = candidats
-        .filter((c) => {
-          return (
-            planifieSet.has(c.id) ||
-            dispoMap.get(c.id) === "Dispo" ||
-            !dispoMap.has(c.id)
-          )
-        })
+        .filter((c) =>
+          planifieSet.has(c.id) || dispoMap.get(c.id) === "Dispo" || !dispoMap.has(c.id)
+        )
         .map((c) => ({
           id: c.id,
           nom: c.nom,
@@ -109,23 +128,29 @@ export function PopoverPlanificationRapide({
     }
 
     fetchDispoEtPlanif()
-  }, [open, date, secteur, candidats])
+  }, [open, date, secteur, candidats, currentCommande, commande])
 
   const candidatsVisibles = filteredCandidats.filter((c) =>
     `${c.nom} ${c.prenom}`.toLowerCase().includes(search.toLowerCase().trim())
   )
 
   const planifier = async (candidatId: string) => {
-    const { error } = await supabase.from("planification").insert({
-      commande_id: commande.id,
+    const targetCommande = currentCommande || commande
+    if (!targetCommande) {
+      toast({ title: "Erreur", description: "Commande introuvable", variant: "destructive" })
+      return
+    }
+
+    const { error } = await supabase.from("planification").upsert({
+      commande_id: targetCommande.id,
       candidat_id: candidatId,
       date,
       secteur,
       statut: "Validé",
-      heure_debut_matin: commande.heure_debut_matin,
-      heure_fin_matin: commande.heure_fin_matin,
-      heure_debut_soir: commande.heure_debut_soir,
-      heure_fin_soir: commande.heure_fin_soir,
+      heure_debut_matin: targetCommande.heure_debut_matin,
+      heure_fin_matin: targetCommande.heure_fin_matin,
+      heure_debut_soir: targetCommande.heure_debut_soir,
+      heure_fin_soir: targetCommande.heure_fin_soir,
     })
 
     if (error) {
@@ -135,8 +160,11 @@ export function PopoverPlanificationRapide({
 
     const { error: errUpdate } = await supabase
       .from("commandes")
-      .update({ candidat_id: candidatId, statut: "Validé" })
-      .eq("id", commande.id)
+      .update({
+        candidat_id: candidatId,
+        statut: "Validé"
+      })
+      .eq("id", targetCommande.id)
 
     if (errUpdate) {
       toast({ title: "Erreur", description: "Échec mise à jour", variant: "destructive" })
@@ -159,7 +187,7 @@ export function PopoverPlanificationRapide({
       if (userId && candidat) {
         await supabase.from("historique").insert({
           table_cible: "commandes",
-          ligne_id: commande.id,
+          ligne_id: targetCommande.id,
           action: "planification",
           description: "Planification via PopoverPlanificationRapide",
           user_id: userId,
@@ -170,10 +198,10 @@ export function PopoverPlanificationRapide({
               nom: candidat.nom,
               prenom: candidat.prenom,
             },
-            heure_debut_matin: commande.heure_debut_matin,
-            heure_fin_matin: commande.heure_fin_matin,
-            heure_debut_soir: commande.heure_debut_soir,
-            heure_fin_soir: commande.heure_fin_soir,
+            heure_debut_matin: targetCommande.heure_debut_matin,
+            heure_fin_matin: targetCommande.heure_fin_matin,
+            heure_debut_soir: targetCommande.heure_debut_soir,
+            heure_fin_soir: targetCommande.heure_fin_soir,
           },
         })
       }
