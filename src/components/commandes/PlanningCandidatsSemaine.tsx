@@ -4,12 +4,7 @@ import { addDays, format, startOfWeek } from "date-fns"
 import { fr } from "date-fns/locale"
 import { disponibiliteColors, statutColors } from "@/lib/colors"
 import { CheckCircle2 } from "lucide-react"
-
-type Candidat = {
-  id: string
-  nom: string
-  prenom: string
-}
+import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 
 type PlanifData = {
   candidat_id: string
@@ -36,30 +31,21 @@ export function PlanningCandidatsSemaine({
   semaineDate: string
   secteur: string
 }) {
-  const [candidats, setCandidats] = useState<Candidat[]>([])
+  const { data: candidats = [] } = useCandidatsBySecteur(secteur)
   const [jours, setJours] = useState<Date[]>([])
   const [dispos, setDispos] = useState<DispoData[]>([])
   const [planifs, setPlanifs] = useState<PlanifData[]>([])
 
   useEffect(() => {
-    const fetchAll = async () => {
+    const fetchData = async () => {
       const baseDate = semaineDate ? new Date(semaineDate) : new Date()
       const lundi = startOfWeek(baseDate, { weekStartsOn: 1 })
       const joursSem = Array.from({ length: 7 }, (_, i) => addDays(lundi, i))
       setJours(joursSem)
 
       const dates = joursSem.map((d) => format(d, "yyyy-MM-dd"))
-
-      const { data: candidatsData } = await supabase
-        .from("candidats")
-        .select("id, nom, prenom")
-        .eq("actif", true)
-        .contains("secteurs", [secteur])
-
-      if (!candidatsData) return
-      setCandidats(candidatsData)
-
-      const ids = candidatsData.map((c) => c.id)
+      const ids = candidats.map((c) => c.id)
+      if (ids.length === 0) return
 
       const { data: dispoData } = await supabase
         .from("disponibilites")
@@ -78,8 +64,8 @@ export function PlanningCandidatsSemaine({
       setPlanifs(planifData as PlanifData[] || [])
     }
 
-    fetchAll()
-  }, [semaineDate, secteur])
+    fetchData()
+  }, [semaineDate, secteur, candidats])
 
   const getStatut = (candidatId: string, dateStr: string) => {
     const planif = planifs.find(
@@ -106,7 +92,6 @@ export function PlanningCandidatsSemaine({
       case "planifie":
         const lignes = []
         if (info?.client?.nom) lignes.push(info.client.nom)
-
         const matin =
           info?.heure_debut_matin && info?.heure_fin_matin
             ? `Matin : ${formatHeure(info.heure_debut_matin)} - ${formatHeure(info.heure_fin_matin)}`
@@ -115,18 +100,14 @@ export function PlanningCandidatsSemaine({
           info?.heure_debut_soir && info?.heure_fin_soir
             ? `Soir : ${formatHeure(info.heure_debut_soir)} - ${formatHeure(info.heure_fin_soir)}`
             : null
-
         if (matin) lignes.push(matin)
         if (soir) lignes.push(soir)
 
-        const titlePlanif = lignes.join("\n")
-
         return (
-          <div title={titlePlanif}>
+          <div title={lignes.join("\n")}>
             <CheckCircle2
               className="w-5 h-5 mx-auto"
               style={{ color: statutColors["Validé"]?.bg }}
-              aria-label={titlePlanif}
             />
           </div>
         )

@@ -7,7 +7,7 @@ import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { toast } from "@/hooks/use-toast"
 import type { CommandeWithCandidat } from "@/types/types-front"
-import { CheckCircle2, Clock, AlertCircle, Car, Ban, Check, History, ChevronRight } from "lucide-react"
+import { CheckCircle2, Clock, AlertCircle, Car, Ban, Check, History, ChevronRight,ArrowDownCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const statusConfig = {
@@ -45,6 +45,7 @@ type CandidatMini = {
   interditClient?: boolean
   prioritaire?: boolean
   dejaPlanifie?: boolean
+  dejaTravaille?: boolean
 }
 
 interface PlanificationCandidatDialogProps {
@@ -77,6 +78,27 @@ export function PlanificationCandidatDialog({
 
     const fetchDispoEtPlanif = async () => {
       const jour = date.slice(0, 10)
+// Chargement des priorités et interdictions
+const { data: ipData } = await supabase
+  .from("interdictions_priorites")
+  .select("candidat_id, type")
+  .eq("client_id", commande.client_id)
+
+const interditSet = new Set(
+  ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id)
+)
+
+const prioritaireSet = new Set(
+  ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id)
+)
+const { data: dejaData } = await supabase
+  .from("commandes")
+  .select("candidat_id")
+  .eq("client_id", commande.client_id)
+
+const dejaTravailleSet = new Set(
+  (dejaData || []).map((c) => c.candidat_id).filter(Boolean)
+)
       const candidatIds = candidats.map((c) => c.id)
 
       const { data: dispoData } = await supabase
@@ -115,16 +137,17 @@ export function PlanificationCandidatDialog({
       const dispoList: CandidatMini[] = []
       const planifieList: CandidatMini[] = []
       const nonList: CandidatMini[] = []
-
+      
       for (const c of candidats) {
         const mini: CandidatMini = {
           id: c.id,
           nom: c.nom,
           prenom: c.prenom,
           vehicule: c.vehicule,
-          interditClient: false,
-          prioritaire: false,
+          interditClient: interditSet.has(c.id),
+          prioritaire: prioritaireSet.has(c.id),
           dejaPlanifie: false,
+          dejaTravaille: dejaTravailleSet.has(c.id),
         }
 
         if (planifieSet.has(c.id)) {
@@ -301,28 +324,34 @@ export function PlanificationCandidatDialog({
               {candidat.nom} {candidat.prenom}
             </p>
             <div className="flex items-center gap-1">
-              {candidat.vehicule && (
-                <span className="p-1 rounded-full bg-muted" title="Véhicule">
-                  <Car className="w-3 h-3 text-blue-500" />
-                </span>
-              )}
-              {candidat.interditClient && (
-                <span className="p-1 rounded-full bg-muted" title="Interdit sur ce client">
-                  <Ban className="w-3 h-3 text-red-500" />
-                </span>
-              )}
-              {candidat.prioritaire && (
-                <span className="p-1 rounded-full bg-muted" title="Prioritaire">
-                  <Check className="w-3 h-3 text-green-500" />
-                </span>
-              )}
-              {candidat.dejaPlanifie && (
-                <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce client">
-                  <History className="w-3 h-3 text-amber-500" />
-                </span>
-              )}
-            </div>
-          </div>
+  {candidat.vehicule && (
+    <span className="p-1 rounded-full bg-muted" title="Véhicule">
+      <Car className="w-3 h-3 text-blue-500" />
+    </span>
+  )}
+  {candidat.interditClient && (
+    <span className="p-1 rounded-full bg-muted" title="Interdit sur ce client">
+      <Ban className="w-3 h-3 text-red-500" />
+    </span>
+  )}
+  {candidat.prioritaire && (
+    <span className="p-1 rounded-full bg-muted" title="Prioritaire">
+      <Check className="w-3 h-3 text-green-500" />
+    </span>
+  )}
+  {candidat.dejaPlanifie && (
+    <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce client">
+      <History className="w-3 h-3 text-amber-500" />
+    </span>
+  )}
+  {candidat.dejaTravaille && (
+    <span className="p-1 rounded-full bg-muted" title="A déjà travaillé pour ce client">
+      <ArrowDownCircle className="w-3 h-3 text-violet-600" />
+    </span>
+  )}
+</div>
+</div>
+
 
           {status === "planifie" && planification && (
             <div className="text-xs text-muted-foreground mt-1">

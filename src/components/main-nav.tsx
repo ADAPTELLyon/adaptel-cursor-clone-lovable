@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
+import { fetesOfficielles } from "@/lib/fetes-officielles"
 
 const routes = [
   { title: "Back Office", href: "/back-office", icon: Home },
@@ -64,7 +65,6 @@ export function MainNav() {
   const todayText = format(today, "EEEE d MMMM yyyy", { locale: fr })
 
   useEffect(() => {
-    // 🔁 Requête pour récupérer nom/prénom depuis la table utilisateurs
     const fetchNomUtilisateur = async () => {
       if (!user?.email) return
       const { data, error } = await supabase
@@ -82,31 +82,19 @@ export function MainNav() {
   }, [user?.email])
 
   useEffect(() => {
-    // 🎉 Fête du jour depuis nominis.cef.fr
-    const fetchFete = async () => {
-      const jour = today.getDate()
-      const mois = today.getMonth() + 1
-      const annee = today.getFullYear()
-
-      try {
-        const res = await fetch(`https://nominis.cef.fr/json/saintdujour.php?jour=${jour}&mois=${mois}&annee=${annee}`)
-        const data = await res.json()
-        const nom = data?.response?.saintdujour?.nom || ""
-        if (nom) setFeteDuJour(`Fête du jour : ${nom.replace(/^Saint\s+/i, "")}`)
-      } catch (err) {
-        console.error("Erreur récupération fête du jour :", err)
-        setFeteDuJour("")
-      }
+    const day = String(today.getDate()).padStart(2, "0")
+    const month = String(today.getMonth() + 1).padStart(2, "0")
+    const key = `${month}-${day}`
+    const prenom = fetesOfficielles[key]
+    if (prenom) {
+      setFeteDuJour(`Fête du jour : ${prenom}`)
     }
-
-    fetchFete()
   }, [])
 
   const nomAffiche = nomComplet || user?.email?.split("@")[0] || "Utilisateur"
 
   return (
     <div className="flex h-16 items-center px-4 border-b bg-white justify-between">
-      {/* Logo + marque + user */}
       <div className="flex items-center gap-4">
         <Link to="/" className="flex items-center space-x-2">
           <img
@@ -125,7 +113,6 @@ export function MainNav() {
         </div>
       </div>
 
-      {/* Date + fête du jour */}
       <div className="hidden md:flex items-center gap-3 text-sm text-gray-700 font-medium">
         <span className="capitalize">{todayText}</span>
         {feteDuJour && (
@@ -136,7 +123,6 @@ export function MainNav() {
         )}
       </div>
 
-      {/* Menu + logout */}
       <div className="flex items-center gap-4">
         <NavigationMenu>
           <NavigationMenuList>

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
-import { UsersIcon } from "lucide-react"
+import { UsersIcon, Car, Ban, Check, ArrowDownCircle } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import type { CommandeWithCandidat } from "@/types/types-front"
 import { toast } from "@/hooks/use-toast"
@@ -13,6 +13,9 @@ type CandidatMini = {
   nom: string
   prenom: string
   vehicule?: boolean
+  interditClient?: boolean
+  prioritaire?: boolean
+  dejaTravaille?: boolean
 }
 
 interface PopoverPlanificationRapideProps {
@@ -63,6 +66,27 @@ export function PopoverPlanificationRapide({
 
       const planifieSet = new Set(planifData?.map((p) => p.candidat_id) || [])
 
+      const { data: ipData } = await supabase
+        .from("interdictions_priorites")
+        .select("candidat_id, type")
+        .eq("client_id", commande.client_id)
+
+      const interditSet = new Set(
+        ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id)
+      )
+      const prioritaireSet = new Set(
+        ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id)
+      )
+
+      const { data: dejaData } = await supabase
+        .from("commandes")
+        .select("candidat_id")
+        .eq("client_id", commande.client_id)
+
+      const dejaTravailleSet = new Set(
+        (dejaData || []).map((c) => c.candidat_id).filter(Boolean)
+      )
+
       const resultats: CandidatMini[] = candidats
         .filter((c) => {
           return (
@@ -76,6 +100,9 @@ export function PopoverPlanificationRapide({
           nom: c.nom,
           prenom: c.prenom,
           vehicule: c.vehicule,
+          interditClient: interditSet.has(c.id),
+          prioritaire: prioritaireSet.has(c.id),
+          dejaTravaille: dejaTravailleSet.has(c.id),
         }))
 
       setFilteredCandidats(resultats)
@@ -116,7 +143,6 @@ export function PopoverPlanificationRapide({
       return
     }
 
-    // 🔴 Enregistrement dans l'historique
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
 
@@ -178,8 +204,31 @@ export function PopoverPlanificationRapide({
               className="w-full justify-between"
               onClick={() => planifier(c.id)}
             >
-              <span>{c.nom} {c.prenom}</span>
-              {c.vehicule && <span className="text-xs">🚗</span>}
+              <div className="flex items-center gap-2">
+                <span>{c.nom} {c.prenom}</span>
+                <div className="flex items-center gap-1">
+                  {c.vehicule && (
+                    <span className="p-1 rounded-full bg-muted" title="Véhicule">
+                      <Car className="w-3 h-3 text-blue-500" />
+                    </span>
+                  )}
+                  {c.interditClient && (
+                    <span className="p-1 rounded-full bg-muted" title="Interdit client">
+                      <Ban className="w-3 h-3 text-red-500" />
+                    </span>
+                  )}
+                  {c.prioritaire && (
+                    <span className="p-1 rounded-full bg-muted" title="Prioritaire">
+                      <Check className="w-3 h-3 text-green-600" />
+                    </span>
+                  )}
+                  {c.dejaTravaille && (
+                    <span className="p-1 rounded-full bg-muted" title="A déjà travaillé ici">
+                      <ArrowDownCircle className="w-3 h-3 text-violet-600" />
+                    </span>
+                  )}
+                </div>
+              </div>
             </Button>
           ))}
 
