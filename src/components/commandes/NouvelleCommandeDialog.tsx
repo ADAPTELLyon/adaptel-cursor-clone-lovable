@@ -82,12 +82,10 @@ export default function NouvelleCommandeDialog({
   const handleSave = async () => {
     if (!clientId || !secteur || !semaine) return;
 
-    // 🔐 Récupération de l'utilisateur connecté
     const { data: authData } = await supabase.auth.getUser();
     const userEmail = authData?.user?.email || null;
     if (!userEmail) return;
 
-    // 🔎 Recherche dans la table `utilisateurs`
     const { data: userApp, error: userError } = await supabase
       .from("utilisateurs")
       .select("id")
@@ -101,13 +99,24 @@ export default function NouvelleCommandeDialog({
 
     const userId = userApp.id;
 
-    // ➕ Préparation des lignes
     const lignes: any[] = [];
 
-    Object.entries(joursState).forEach(([key, isActive]) => {
-      if (!isActive) return;
+    for (const [key, isActive] of Object.entries(joursState)) {
+      if (!isActive) continue;
       const heure = heuresParJour[key] || {};
       const nb = heure.nbPersonnes || 1;
+
+      // 🔍 Récupérer le slot max déjà existant pour ce client/secteur/date
+      const { data: commandesExistantes, error: err } = await supabase
+        .from("commandes")
+        .select("mission_slot")
+        .eq("client_id", clientId)
+        .eq("secteur", secteur)
+        .eq("date", key);
+
+      const existingSlots = (commandesExistantes || []).map((c) => c.mission_slot ?? 0);
+      let slot = existingSlots.length > 0 ? Math.max(...existingSlots) + 1 : 1;
+
       for (let i = 0; i < nb; i++) {
         lignes.push({
           client_id: clientId,
@@ -124,9 +133,10 @@ export default function NouvelleCommandeDialog({
             motif === "Extra Usage constant" ? null : commentaire || null,
           commentaire: commentaire || null,
           created_by: userId,
+          mission_slot: slot++,
         });
       }
-    });
+    }
 
     if (lignes.length === 0) return;
 
@@ -140,7 +150,6 @@ export default function NouvelleCommandeDialog({
       return;
     }
 
-    // 🧾 Historique
     if (data && data.length > 0) {
       const historique = data.map((cmd) => ({
         table_cible: "commandes",

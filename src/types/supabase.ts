@@ -133,6 +133,7 @@ export type Database = {
           heure_fin_nuit: string | null
           heure_fin_soir: string | null
           id: string
+          mission_slot: number
           motif_contrat: string | null
           secteur: string
           service: string | null
@@ -154,6 +155,7 @@ export type Database = {
           heure_fin_nuit?: string | null
           heure_fin_soir?: string | null
           id?: string
+          mission_slot?: number
           motif_contrat?: string | null
           secteur: string
           service?: string | null
@@ -175,6 +177,7 @@ export type Database = {
           heure_fin_nuit?: string | null
           heure_fin_soir?: string | null
           id?: string
+          mission_slot?: number
           motif_contrat?: string | null
           secteur?: string
           service?: string | null

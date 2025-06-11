@@ -87,6 +87,7 @@ export type Commande = {
   heure_fin_soir?: string | null;
   commentaire?: string | null;
   created_at: string;
+  mission_slot?: number | null;
 };
 
 // === TABLE: planification ===

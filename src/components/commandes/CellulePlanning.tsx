@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { Plus, Info, Pencil, Check } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -31,6 +31,8 @@ interface CellulePlanningProps {
   clientId: string
   service?: string | null
   onSuccess?: () => void
+  lastClickedCommandeId?: string | null
+  missionSlot?: number
 }
 
 export function CellulePlanning({
@@ -49,10 +51,17 @@ export function CellulePlanning({
   clientId,
   service,
   onSuccess,
+  lastClickedCommandeId,
+  missionSlot,
 }: CellulePlanningProps) {
   const isEtages = secteur === "Étages"
   const [openDialog, setOpenDialog] = useState(false)
   const [openPlanifDialog, setOpenPlanifDialog] = useState(false)
+
+  // Vérification stricte du slot
+  if (commande && missionSlot !== undefined && commande.mission_slot !== missionSlot) {
+    return null
+  }
 
   if (!commande) {
     return (
@@ -68,6 +77,7 @@ export function CellulePlanning({
           clientId={clientId}
           secteur={secteur}
           service={service}
+          missionSlot={missionSlot}
           onSuccess={onSuccess}
         />
       </div>
@@ -115,45 +125,45 @@ export function CellulePlanning({
 
           return (
             <div key={creneau} className="flex gap-1 items-center">
-              {[{ key: keyDebut, value: heureDebut, champ: `heure_debut_${creneau}` },
-                { key: keyFin, value: heureFin, champ: `heure_fin_${creneau}` }].map(
-                ({ key, value, champ }) =>
-                  editId === key ? (
-                    <Input
-                      key={key}
-                      type="time"
-                      value={String(heureTemp[key] ?? value).slice(0, 5)}
-                      autoFocus
-                      onChange={(e) =>
-                        setHeureTemp((prev) => ({ ...prev, [key]: e.target.value }))
-                      }
-                      onBlur={async () => {
-                        const rawValue = heureTemp[key] ?? ""
-                        await updateHeure(commande, champ as keyof CommandeWithCandidat, rawValue)
-                        setHeureTemp((prev) => ({ ...prev, [key]: rawValue }))
-                        setEditId(null)
-                      }}
-                      className="w-16 text-[13px] px-1 rounded text-black bg-transparent border-none focus:border focus:bg-white"
-                    />
-                  ) : (
-                    <span
-                      key={key}
-                      onClick={() => {
-                        setEditId(key)
-                        setHeureTemp((prev) => ({ ...prev, [key]: String(value) }))
-                      }}
-                      className="cursor-pointer hover:underline"
-                    >
-                      {String(value).slice(0, 5) || "–"}
-                    </span>
-                  )
-              )}
+              {[
+                { key: keyDebut, value: heureDebut, champ: `heure_debut_${creneau}` },
+                { key: keyFin, value: heureFin, champ: `heure_fin_${creneau}` }
+              ].map(({ key, value, champ }) => (
+                editId === key ? (
+                  <Input
+                    key={key}
+                    type="time"
+                    value={String(heureTemp[key] ?? value).slice(0, 5)}
+                    autoFocus
+                    onChange={(e) =>
+                      setHeureTemp((prev) => ({ ...prev, [key]: e.target.value }))
+                    }
+                    onBlur={async () => {
+                      const rawValue = heureTemp[key] ?? ""
+                      await updateHeure(commande, champ as keyof CommandeWithCandidat, rawValue)
+                      setHeureTemp((prev) => ({ ...prev, [key]: rawValue }))
+                      setEditId(null)
+                    }}
+                    className="w-16 text-[13px] px-1 rounded text-black bg-transparent border-none focus:border focus:bg-white"
+                  />
+                ) : (
+                  <span
+                    key={key}
+                    onClick={() => {
+                      setEditId(key)
+                      setHeureTemp((prev) => ({ ...prev, [key]: String(value) }))
+                    }}
+                    className="cursor-pointer hover:underline"
+                  >
+                    {String(value).slice(0, 5) || "–"}
+                  </span>
+                )
+              ))}
             </div>
           )
         })}
       </div>
 
-      {/* Bouton + planification rapide */}
       {["En recherche", "Validé"].includes(commande.statut) && (
         <PopoverPlanificationRapide
           commande={commande}
@@ -172,7 +182,6 @@ export function CellulePlanning({
         />
       )}
 
-      {/* Commentaire */}
       <div className="absolute bottom-1 right-1 z-20">
         <Popover
           open={editingCommentId === commande.id}
@@ -210,7 +219,7 @@ export function CellulePlanning({
                 variant="ghost"
                 size="icon"
                 onClick={async () => {
-                  await updateHeure(commande, "commentaire" as any, commentaireTemp)
+                  await updateHeure(commande, "commentaire", commentaireTemp)
                   setEditingCommentId(null)
                   onSuccess?.()
                 }}
