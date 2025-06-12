@@ -25,17 +25,11 @@ export default function Commandes() {
   const [enRecherche, setEnRecherche] = useState(false)
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
   const [openDialog, setOpenDialog] = useState(false)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
   useEffect(() => {
     localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs))
   }, [selectedSecteurs])
-
-  useEffect(() => {
-    const baseDate = new Date(semaine)
-    Array.from({ length: 7 }, (_, i) =>
-      addDays(startOfWeek(baseDate, { weekStartsOn: 1 }), i)
-    )
-  }, [semaine])
 
   const fetchPlanning = async () => {
     const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
@@ -100,8 +94,9 @@ export default function Commandes() {
 
     const mapTrie = Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)))
     setPlanning(mapTrie)
-    setFilteredPlanning(mapTrie)
     setSelectedSemaine(semaineCourante)
+    setRefreshTrigger((v) => v + 1) // 🔁 TRIGGER pour forcer render
+    console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
   }
 
   useEffect(() => {
@@ -109,8 +104,6 @@ export default function Commandes() {
   }, [])
 
   useEffect(() => {
-    const currentWeek = getWeek(new Date(), { weekStartsOn: 1 })
-
     const matchSearchTerm = (val: string) =>
       search.trim().toLowerCase().split(" ").every((term) =>
         val.toLowerCase().includes(term)
@@ -157,10 +150,7 @@ export default function Commandes() {
 
     setFilteredPlanning(newFiltered)
 
-    let d = 0,
-      v = 0,
-      r = 0,
-      np = 0
+    let d = 0, v = 0, r = 0, np = 0
 
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) =>
@@ -175,12 +165,7 @@ export default function Commandes() {
       )
     )
 
-    setStats({
-      demandées: d,
-      validées: v,
-      enRecherche: r,
-      nonPourvue: np,
-    })
+    setStats({ demandées: d, validées: v, enRecherche: r, nonPourvue: np })
   }, [planning, selectedSecteurs, selectedSemaine, client, search, enRecherche, toutAfficher])
 
   const resetFiltres = () => {
@@ -191,8 +176,7 @@ export default function Commandes() {
     setToutAfficher(false)
     setSemaineEnCours(true)
     setSemaine(format(new Date(), "yyyy-MM-dd"))
-    const current = getWeek(new Date(), { weekStartsOn: 1 }).toString()
-    setSelectedSemaine(current)
+    setSelectedSemaine(getWeek(new Date(), { weekStartsOn: 1 }).toString())
   }
 
   const semainesDisponibles = Array.from(
@@ -233,17 +217,12 @@ export default function Commandes() {
           planning={planning}
           filteredPlanning={filteredPlanning}
         />
-
         <SectionFixeCommandes
           selectedSecteurs={selectedSecteurs}
           setSelectedSecteurs={setSelectedSecteurs}
           stats={stats}
           totauxSemaine={totauxSemaine}
-          taux={
-            stats.demandées > 0
-              ? Math.round((stats.validées / stats.demandées) * 100)
-              : 0
-          }
+          taux={stats.demandées > 0 ? Math.round((stats.validées / stats.demandées) * 100) : 0}
           semaine={semaine}
           setSemaine={setSemaine}
           selectedSemaine={selectedSemaine}
@@ -269,13 +248,14 @@ export default function Commandes() {
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
         onRefresh={fetchPlanning}
+        refreshTrigger={refreshTrigger}
       />
 
       <NouvelleCommandeDialog
         open={openDialog}
         onOpenChange={setOpenDialog}
         onRefresh={fetchPlanning}
-        onRefreshDone={() => {}}
+        onRefreshDone={() => setRefreshTrigger((v) => v + 1)}
       />
     </MainLayout>
   )

@@ -77,6 +77,9 @@ export function PlanningClientTable({
     }
   }
 
+  console.log("📦 PlanningClientTable – rendering triggered – refreshTrigger =", refreshTrigger)
+  console.log("📊 PlanningClientTable – groupes visibles :", Object.keys(planning))
+
   const groupesParSemaineEtSecteur = useMemo(() => {
     const groupes: Record<string, Record<string, Record<string, JourPlanning[]>>> = {}
 
@@ -113,6 +116,7 @@ export function PlanningClientTable({
         })
       })
 
+    console.log("🧮 groupesParSemaineEtSecteur – recalculé – groupes =", groupes)
     return groupes
   }, [planning])
 
@@ -180,10 +184,13 @@ export function PlanningClientTable({
               </div>
 
               {Object.entries(groupes)
-                .sort(([a], [b]) => {
-                  const slotA = parseInt(a.split("||")[4] || "0", 10)
-                  const slotB = parseInt(b.split("||")[4] || "0", 10)
-                  return slotA - slotB
+                .sort(([aKey], [bKey]) => {
+                  const [aClient, , , , aSlot] = aKey.split("||")
+                  const [bClient, , , , bSlot] = bKey.split("||")
+
+                  if (aClient < bClient) return -1
+                  if (aClient > bClient) return 1
+                  return parseInt(aSlot) - parseInt(bSlot)
                 })
                 .map(([groupKey, ligne]) => {
                   const [clientNom, secteurNom, _, service, missionSlotStr] = groupKey.split("||")
