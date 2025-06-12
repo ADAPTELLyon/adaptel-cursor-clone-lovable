@@ -87,7 +87,26 @@ export type Commande = {
   heure_fin_soir?: string | null;
   commentaire?: string | null;
   created_at: string;
-  mission_slot?: number | null;
+  mission_slot: number; // ✅ Obligatoire maintenant
+};
+
+// === Planning client
+export type CommandeWithCandidat = Commande & {
+  candidat?: Pick<Candidat, "nom" | "prenom"> | null;
+  client?: Pick<Client, "nom"> | null; // ✅ ajouté pour PlanningClientTable
+};
+
+export type CommandeFull = Commande & {
+  candidat?: Pick<Candidat, "nom" | "prenom"> | null;
+  client?: Pick<Client, "nom"> | null;
+};
+
+export type JourPlanning = {
+  date: string;
+  secteur: string;
+  service?: string | null;
+  commandes: CommandeWithCandidat[];
+  mission_slot?: number | null; // ✅ déjà présent
 };
 
 // === TABLE: planification ===
@@ -201,31 +220,13 @@ export type InterdictionPriorite = {
   };
 };
 
-// ✅ EXTENSION pour jointure client → utilisée dans fiche candidat
 export type InterdictionPrioriteWithClient = InterdictionPriorite & {
   client?: {
     nom: string;
   };
 };
 
-// === Planning client
-export type CommandeWithCandidat = Commande & {
-  candidat?: Pick<Candidat, "nom" | "prenom"> | null;
-};
-
-export type CommandeFull = Commande & {
-  candidat?: Pick<Candidat, "nom" | "prenom"> | null;
-  client?: Pick<Client, "nom"> | null;
-};
-
-export type JourPlanning = {
-  date: string;
-  secteur: string;
-  service?: string | null;
-  commandes: CommandeWithCandidat[];
-};
-
-// ✅ AJOUT pour planning historique droite
+// === Planning historique
 export type Planif = {
   id: string;
   date: string;

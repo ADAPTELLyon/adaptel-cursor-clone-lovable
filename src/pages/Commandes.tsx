@@ -9,7 +9,6 @@ import type { JourPlanning } from "@/types/types-front"
 import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateurs"
 
 export default function Commandes() {
-  // ✅ Initialisation secteur avec mémoire
   const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(() => {
     const stored = localStorage.getItem("selectedSecteurs")
     return stored ? JSON.parse(stored) : ["Étages"]
@@ -27,7 +26,6 @@ export default function Commandes() {
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
   const [openDialog, setOpenDialog] = useState(false)
 
-  // ✅ Stockage secteur sélectionné
   useEffect(() => {
     localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs))
   }, [selectedSecteurs])
@@ -46,7 +44,7 @@ export default function Commandes() {
     const { data, error } = await supabase
       .from("commandes")
       .select(`
-        id, date, statut, secteur, service, client_id,
+        id, date, statut, secteur, service, mission_slot, client_id,
         heure_debut_matin, heure_fin_matin,
         heure_debut_soir, heure_fin_soir,
         commentaire, created_at,
@@ -68,6 +66,7 @@ export default function Commandes() {
         date: item.date,
         secteur: item.secteur,
         service: item.service,
+        mission_slot: item.mission_slot ?? 0,
         commandes: [
           {
             id: item.id,
@@ -75,6 +74,7 @@ export default function Commandes() {
             statut: item.statut,
             secteur: item.secteur,
             service: item.service,
+            mission_slot: item.mission_slot ?? 0,
             client_id: item.client_id,
             candidat_id: item.candidats?.id ?? null,
             heure_debut_matin: item.heure_debut_matin,
@@ -90,6 +90,7 @@ export default function Commandes() {
                     prenom: item.candidats.prenom,
                   }
                 : null,
+            client: item.clients?.nom ? { nom: item.clients.nom } : null,
           },
         ],
       }

@@ -26,7 +26,7 @@ interface Props {
   clientId: string
   secteur: string
   service?: string | null
-  missionSlot?: number | null; // ✅ Ajout du missionSlot
+  missionSlot?: number | null
   onSuccess?: () => void
 }
 
@@ -50,6 +50,7 @@ export function CommandeJourneeDialog({
   clientId,
   secteur,
   service,
+  missionSlot,
   onSuccess,
 }: Props) {
   const [openLocal, setOpenLocal] = useState(open)
@@ -133,24 +134,6 @@ export function CommandeJourneeDialog({
   const handleSubmit = async () => {
     setLoading(true)
 
-    const semaine = getWeek(new Date(date), { weekStartsOn: 1 })
-
-    const { data: commandesExistantes, error: fetchError } = await supabase
-      .from("commandes")
-      .select("mission_slot")
-      .eq("client_id", clientId)
-      .eq("secteur", secteur)
-      .gte("date", startOfWeekISO(date))
-      .lte("date", endOfWeekISO(date))
-
-    if (fetchError) {
-      console.error("Erreur récupération slots :", fetchError)
-      setLoading(false)
-      return
-    }
-
-    const missionSlot = commandesExistantes?.[0]?.mission_slot ?? 0
-
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
 
@@ -160,7 +143,7 @@ export function CommandeJourneeDialog({
       return
     }
 
-    const { data: userApp, error: userLookupError } = await supabase
+    const { data: userApp } = await supabase
       .from("utilisateurs")
       .select("id")
       .eq("email", userEmail)
@@ -188,7 +171,7 @@ export function CommandeJourneeDialog({
         heure_fin_soir: heureFinSoir || null,
         commentaire: commentaire || null,
         created_by: userId,
-        mission_slot: missionSlot,
+        mission_slot: missionSlot ?? 0,
       })
       .select("id, date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
 
@@ -233,11 +216,6 @@ export function CommandeJourneeDialog({
     const day = d.getDay()
     const diff = d.getDate() - day + (day === 0 ? -6 : 1)
     return new Date(d.setDate(diff)).toISOString().slice(0, 10)
-  }
-
-  const endOfWeekISO = (dateStr: string) => {
-    const start = new Date(startOfWeekISO(dateStr))
-    return new Date(start.setDate(start.getDate() + 6)).toISOString().slice(0, 10)
   }
 
   const dateLabel = format(new Date(date), "EEEE d MMMM yyyy", { locale: fr })

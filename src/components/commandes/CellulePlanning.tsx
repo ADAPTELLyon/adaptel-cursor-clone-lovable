@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react"
+// src/components/commandes/CellulePlanning.tsx
+
+import { useState } from "react"
 import { cn } from "@/lib/utils"
 import { Plus, Info, Pencil, Check } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -32,7 +34,7 @@ interface CellulePlanningProps {
   service?: string | null
   onSuccess?: () => void
   lastClickedCommandeId?: string | null
-  missionSlot?: number
+  missionSlot: number // ✅ CORRIGÉ : Type `number` non-optionnel pour la fiabilité
 }
 
 export function CellulePlanning({
@@ -51,25 +53,23 @@ export function CellulePlanning({
   clientId,
   service,
   onSuccess,
-  lastClickedCommandeId,
+  lastClickedCommandeId, // Conservé
   missionSlot,
 }: CellulePlanningProps) {
   const isEtages = secteur === "Étages"
   const [openDialog, setOpenDialog] = useState(false)
   const [openPlanifDialog, setOpenPlanifDialog] = useState(false)
 
-  // Vérification stricte du slot
-  if (commande && missionSlot !== undefined && commande.mission_slot !== missionSlot) {
-    return null
-  }
-
+  // SI LA CELLULE EST VIDE
   if (!commande) {
     return (
-      <div
-        className="h-full bg-gray-100 rounded flex items-center justify-center cursor-pointer"
-        onClick={() => setOpenDialog(true)}
-      >
-        <Plus className="h-4 w-4 text-gray-400" />
+      <>
+        <div
+          className="h-full bg-gray-100 rounded flex items-center justify-center cursor-pointer hover:bg-gray-200"
+          onClick={() => setOpenDialog(true)}
+        >
+          <Plus className="h-4 w-4 text-gray-400" />
+        </div>
         <CommandeJourneeDialog
           open={openDialog}
           onClose={() => setOpenDialog(false)}
@@ -77,15 +77,17 @@ export function CellulePlanning({
           clientId={clientId}
           secteur={secteur}
           service={service}
+          // ✅ CORRIGE : On passe le `missionSlot` fiable reçu du parent
           missionSlot={missionSlot}
           onSuccess={onSuccess}
         />
-      </div>
+      </>
     )
   }
 
   const statutColor = statutColors[commande.statut] || { bg: "#e5e7eb", text: "#000000" }
 
+  // SI LA CELLULE CONTIENT UNE COMMANDE (VOTRE CODE ORIGINAL RESTAURÉ ET PRÉSERVÉ)
   return (
     <div
       className={cn(
@@ -143,6 +145,7 @@ export function CellulePlanning({
                       await updateHeure(commande, champ as keyof CommandeWithCandidat, rawValue)
                       setHeureTemp((prev) => ({ ...prev, [key]: rawValue }))
                       setEditId(null)
+                      if (onSuccess) onSuccess()
                     }}
                     className="w-16 text-[13px] px-1 rounded text-black bg-transparent border-none focus:border focus:bg-white"
                   />
@@ -221,7 +224,7 @@ export function CellulePlanning({
                 onClick={async () => {
                   await updateHeure(commande, "commentaire", commentaireTemp)
                   setEditingCommentId(null)
-                  onSuccess?.()
+                  if (onSuccess) onSuccess()
                 }}
               >
                 <Check className="w-4 h-4 text-green-600" />
