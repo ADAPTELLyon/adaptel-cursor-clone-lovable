@@ -1,8 +1,9 @@
 import { Edit } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Switch } from "@/components/ui/switch"
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
+import { SwitchCandidat } from "@/components/ui/Switch-Candidat" // ✅ casse corrigée ici
 import { secteursList } from "@/lib/secteurs"
 
 const normalize = (str: string) =>
@@ -45,7 +46,7 @@ export function CandidateList({ candidates, onEdit, onToggleActive }: CandidateL
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8 p-2">
       {secteurOrder.map((secteurKey) => {
         const candidats = candidatesBySecteur[secteurKey] || []
         if (candidats.length === 0) return null
@@ -55,64 +56,78 @@ export function CandidateList({ candidates, onEdit, onToggleActive }: CandidateL
 
         return (
           <div key={secteurKey} className="space-y-4">
-            <div className="flex items-center justify-between bg-[#840404] text-white px-4 py-2 rounded-md">
-              <div className="flex items-center gap-2 text-lg font-semibold">
+            <div className="flex items-center justify-between bg-[#840404] text-white px-6 py-3 rounded-lg shadow-sm">
+              <div className="flex items-center gap-3 text-lg font-semibold">
                 <Icon className="w-5 h-5" />
                 <span>{secteur.label}</span>
               </div>
-              <Badge variant="secondary" className="bg-white text-[#840404]">
+              <Badge variant="secondary" className="bg-white text-[#840404] font-medium">
                 {candidats.length} {candidats.length > 1 ? "candidats" : "candidat"}
               </Badge>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {candidats.map((c) => (
-                <Card key={c.id} className="flex flex-col justify-between h-full border border-gray-200">
-                  <CardHeader>
-                    <CardTitle className="text-lg font-bold">{c.nom} {c.prenom}</CardTitle>
+                <Card
+                  key={c.id}
+                  className="h-full flex flex-col border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 hover:border-[#840404]/30"
+                >
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg font-semibold text-gray-900">
+                      {c.nom} {c.prenom}
+                    </CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-3">
+
+                  <CardContent className="flex-1 space-y-3">
                     <div>
-                      <span className="text-sm font-medium text-muted-foreground">Secteurs :</span>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {c.secteurs && c.secteurs.length > 0 ? (
+                      <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                        Secteurs
+                      </h4>
+                      <div className="flex flex-wrap gap-1">
+                        {c.secteurs.length > 0 ? (
                           c.secteurs.map((secteur) => {
                             const key = normalize(secteur)
                             const s = secteursMap[key]
                             const SIcon = s?.icon
                             return (
-                              <Badge key={secteur} variant="outline" className="capitalize">
-                                {SIcon && <SIcon className="h-3 w-3 mr-1" />}
+                              <Badge
+                                key={secteur}
+                                variant="outline"
+                                className="flex items-center gap-1 text-xs bg-gray-50"
+                              >
+                                {SIcon && <SIcon className="h-3 w-3" />}
                                 {s?.label || secteur}
                               </Badge>
                             )
                           })
                         ) : (
-                          <span className="text-sm text-muted-foreground">Aucun</span>
+                          <span className="text-sm text-gray-400">Aucun secteur</span>
                         )}
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1">
-                      <div className="text-sm font-medium text-muted-foreground">Actif :</div>
-                      <Switch
+                    <Separator className="my-2" />
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-gray-600">Actif :</span>
+                      <SwitchCandidat
                         checked={c.actif}
                         onCheckedChange={(checked) => onToggleActive(c.id, checked)}
                       />
                     </div>
-
-                    <div className="pt-2 flex justify-end">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onEdit(c.id)}
-                        className="gap-1"
-                      >
-                        <Edit className="h-4 w-4" />
-                        Modifier
-                      </Button>
-                    </div>
                   </CardContent>
+
+                  <CardFooter className="pt-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onEdit(c.id)}
+                      className="w-full gap-2 border-[#840404] text-[#840404] hover:bg-[#840404]/10 hover:text-[#840404]"
+                    >
+                      <Edit className="h-4 w-4" />
+                      Modifier
+                    </Button>
+                  </CardFooter>
                 </Card>
               ))}
             </div>

@@ -22,7 +22,7 @@ export default function Candidats() {
   const [editingCandidate, setEditingCandidate] = useState<any>(null)
 
   const { data: candidates = [], refetch } = useQuery({
-    queryKey: ["candidates"],
+    queryKey: ["candidates", search],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("candidats")
@@ -53,7 +53,7 @@ export default function Candidats() {
   const handleSubmit = async (data: any) => {
     const formattedData = { ...data }
     if (formattedData.date_naissance) {
-      const [day, month, year] = formattedData.date_naissance.split('/')
+      const [day, month, year] = formattedData.date_naissance.split("/")
       if (day && month && year) {
         formattedData.date_naissance = `${year}-${month}-${day}`
       }
@@ -105,10 +105,7 @@ export default function Candidats() {
   }
 
   const handleToggleActive = async (id: string, active: boolean) => {
-    const { error } = await supabase
-      .from("candidats")
-      .update({ actif: active })
-      .eq("id", id)
+    const { error } = await supabase.from("candidats").update({ actif: active }).eq("id", id)
 
     if (error) {
       toast({
@@ -124,31 +121,44 @@ export default function Candidats() {
 
   return (
     <MainLayout>
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Candidats</h1>
+      <div className="space-y-6 p-6 min-h-screen bg-gradient-to-b from-gray-50 to-white">
+        {/* Titre + bouton */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Candidats</h1>
+            <p className="text-sm text-gray-500 mt-1">Gestion des profils candidats</p>
+          </div>
           <Button
             onClick={() => {
               setEditingCandidate(null)
               setDialogOpen(true)
             }}
+            className="bg-[#840404] hover:bg-[#6a0303] text-white shadow-sm transition-all hover:shadow-md"
           >
             <Plus className="mr-2 h-4 w-4" />
-            Ajouter
+            Nouveau candidat
           </Button>
         </div>
 
-        <div className="relative">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-500" />
-          <Input
-            className="pl-10"
-            placeholder="Rechercher un candidat..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        {/* Barre de recherche */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              className="pl-9 w-full border-0 bg-gray-50 focus-visible:ring-2 focus-visible:ring-[#840404]/20"
+              placeholder="Rechercher un candidat..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="text-sm text-gray-500 font-medium">
+            {candidates.length} {candidates.length > 1 ? "candidats trouvés" : "candidat trouvé"}
+          </div>
         </div>
 
-        <div className="rounded-lg border bg-white">
+        {/* Liste des candidats */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <CandidateList
             candidates={candidates}
             onEdit={handleEdit}
@@ -156,23 +166,22 @@ export default function Candidats() {
           />
         </div>
 
+        {/* Formulaire candidat */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="max-w-[800px] min-h-[650px] flex flex-col">
-            <DialogHeader className="border-b pb-2 mb-2">
-              <DialogTitle className="text-2xl font-semibold">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden bg-white p-6 rounded-xl shadow-lg">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-semibold text-gray-800">
                 {editingCandidate ? "Modifier le candidat" : "Ajouter un candidat"}
               </DialogTitle>
             </DialogHeader>
-            <div className="flex-1 overflow-y-auto overflow-x-hidden pr-4 scrollbar-none">
-              <CandidateFormTabs
-                initialData={editingCandidate}
-                onSubmit={handleSubmit}
-                onCancel={() => {
-                  setDialogOpen(false)
-                  setEditingCandidate(null)
-                }}
-              />
-            </div>
+            <CandidateFormTabs
+              initialData={editingCandidate}
+              onSubmit={handleSubmit}
+              onCancel={() => {
+                setDialogOpen(false)
+                setEditingCandidate(null)
+              }}
+            />
           </DialogContent>
         </Dialog>
       </div>

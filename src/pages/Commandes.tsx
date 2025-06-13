@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase"
 import { addDays, format, startOfWeek, getWeek } from "date-fns"
 import type { JourPlanning } from "@/types/types-front"
 import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateurs"
+import FullScreenLoader from "@/components/ui/FullScreenLoader"
 
 export default function Commandes() {
   const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(() => {
@@ -26,6 +27,7 @@ export default function Commandes() {
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
   const [openDialog, setOpenDialog] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs))
@@ -95,7 +97,7 @@ export default function Commandes() {
     const mapTrie = Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)))
     setPlanning(mapTrie)
     setSelectedSemaine(semaineCourante)
-    setRefreshTrigger((v) => v + 1) // 🔁 TRIGGER pour forcer render
+    setRefreshTrigger((v) => v + 1)
     console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
   }
 
@@ -179,6 +181,12 @@ export default function Commandes() {
     setSelectedSemaine(getWeek(new Date(), { weekStartsOn: 1 }).toString())
   }
 
+  const lancerChargementEtRafraichir = async () => {
+    setLoading(true)
+    await fetchPlanning()
+    setTimeout(() => setLoading(false), 800)
+  }
+
   const semainesDisponibles = Array.from(
     new Set(
       Object.values(planning).flat().map((j) =>
@@ -210,6 +218,7 @@ export default function Commandes() {
 
   return (
     <MainLayout>
+      {loading && <FullScreenLoader />}
       <div className="sticky top-[64px] z-20 bg-white shadow-md space-y-6 pb-4">
         <CommandesIndicateurs
           stats={stats}
@@ -254,8 +263,7 @@ export default function Commandes() {
       <NouvelleCommandeDialog
         open={openDialog}
         onOpenChange={setOpenDialog}
-        onRefresh={fetchPlanning}
-        onRefreshDone={() => setRefreshTrigger((v) => v + 1)}
+        onRefreshDone={lancerChargementEtRafraichir}
       />
     </MainLayout>
   )

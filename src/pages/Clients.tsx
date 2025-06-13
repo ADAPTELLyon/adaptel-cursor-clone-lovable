@@ -18,7 +18,6 @@ import { ClientFormTabs } from "@/components/clients/client-form-tabs"
 import { z } from "zod"
 import { formSchema } from "@/components/clients/client-form"
 
-// ✅ Type strict basé sur ta table clients
 type Client = {
   id: string
   nom: string
@@ -104,10 +103,7 @@ export default function Clients() {
     }
 
     const { error } = editingClient
-      ? await supabase
-          .from("clients")
-          .update(clientToSave)
-          .eq("id", editingClient.id)
+      ? await supabase.from("clients").update(clientToSave).eq("id", editingClient.id)
       : await supabase.from("clients").insert([
           {
             ...clientToSave,
@@ -126,9 +122,7 @@ export default function Clients() {
 
     toast({
       title: "Succès",
-      description: editingClient
-        ? "Client modifié avec succès"
-        : "Client ajouté avec succès",
+      description: editingClient ? "Client modifié" : "Client ajouté",
     })
 
     setDialogOpen(false)
@@ -137,16 +131,12 @@ export default function Clients() {
   }
 
   const handleEdit = async (id: string) => {
-    const { data, error } = await supabase
-      .from("clients")
-      .select("*")
-      .eq("id", id)
-      .single()
+    const { data, error } = await supabase.from("clients").select("*").eq("id", id).single()
 
     if (error || !data) {
       toast({
         title: "Erreur",
-        description: "Impossible de charger le client",
+        description: "Client introuvable",
         variant: "destructive",
       })
       return
@@ -169,54 +159,65 @@ export default function Clients() {
       secteurs: data.secteurs ?? [],
       actif: data.actif ?? true,
     })
+
     setDialogOpen(true)
   }
 
   const handleToggleActive = async (id: string, active: boolean) => {
-    const { error } = await supabase
-      .from("clients")
-      .update({ actif: active })
-      .eq("id", id)
-
+    const { error } = await supabase.from("clients").update({ actif: active }).eq("id", id)
     if (error) {
       toast({
         title: "Erreur",
-        description: "Impossible de modifier le statut du client",
+        description: "Impossible de modifier le statut",
         variant: "destructive",
       })
       return
     }
-
     refetch()
   }
 
   return (
     <MainLayout>
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Clients</h1>
+      <div className="space-y-6 p-6 min-h-screen bg-gradient-to-b from-gray-50 to-white">
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Clients</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Gestion de votre portefeuille clients
+            </p>
+          </div>
           <Button
             onClick={() => {
               setEditingClient(null)
               setDialogOpen(true)
             }}
+            className="bg-[#840404] hover:bg-[#6a0303] text-white shadow-sm transition-all hover:shadow-md"
           >
             <Plus className="mr-2 h-4 w-4" />
-            Ajouter
+            Nouveau client
           </Button>
         </div>
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-500" />
-          <Input
-            className="pl-10"
-            placeholder="Rechercher un client..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        {/* Search Bar */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              className="pl-9 w-full border-0 bg-gray-50 focus-visible:ring-2 focus-visible:ring-[#840404]/20"
+              placeholder="Rechercher un client..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+
+          <div className="text-sm text-gray-500 font-medium">
+            {clients.length} {clients.length > 1 ? "clients trouvés" : "client trouvé"}
+          </div>
         </div>
 
-        <div className="rounded-lg border bg-white">
+        {/* Client List */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <ClientList
             clients={clients}
             onEdit={handleEdit}
@@ -224,11 +225,12 @@ export default function Clients() {
           />
         </div>
 
+        {/* Fenêtre modale propre et restaurée */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden bg-white p-6 rounded-xl shadow-lg">
             <DialogHeader>
-              <DialogTitle>
-                {editingClient ? "Modifier le client" : "Ajouter un client"}
+              <DialogTitle className="text-xl font-semibold text-gray-800">
+                {editingClient ? "Modifier le client" : "Créer un nouveau client"}
               </DialogTitle>
             </DialogHeader>
             <ClientFormTabs
@@ -238,7 +240,6 @@ export default function Clients() {
                 setDialogOpen(false)
                 setEditingClient(null)
               }}
-              selectedServices={editingClient?.services || []}
             />
           </DialogContent>
         </Dialog>

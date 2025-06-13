@@ -425,6 +425,7 @@ export type Database = {
           candidat_id: string
           client_id: string
           created_at: string | null
+          created_by: string | null
           date_incident: string
           description: string | null
           heure_incident: string | null
@@ -436,6 +437,7 @@ export type Database = {
           candidat_id: string
           client_id: string
           created_at?: string | null
+          created_by?: string | null
           date_incident: string
           description?: string | null
           heure_incident?: string | null
@@ -447,6 +449,7 @@ export type Database = {
           candidat_id?: string
           client_id?: string
           created_at?: string | null
+          created_by?: string | null
           date_incident?: string
           description?: string | null
           heure_incident?: string | null
@@ -467,6 +470,13 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: false
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incidents_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "utilisateurs"
             referencedColumns: ["id"]
           },
         ]

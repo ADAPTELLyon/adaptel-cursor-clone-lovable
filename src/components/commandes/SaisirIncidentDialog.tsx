@@ -61,6 +61,7 @@ export default function SaisirIncidentDialog({
         date_incident,
         heure_incident,
         mise_en_interdiction: interdiction,
+        created_by: user.id, // ✅ AJOUT ICI
       },
     ])
 

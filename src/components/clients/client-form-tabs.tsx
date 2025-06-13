@@ -4,6 +4,7 @@ import { ClientForm, formSchema } from "./client-form"
 import { ClientContactsTab } from "./ClientContactsTab"
 import { ClientPostesTypesTab } from "./ClientPostesTypesTab"
 import { ClientSuiviTab } from "./ClientSuiviTab"
+import { ClientIncidentsTab } from "./client-incident" // ✅ AJOUT
 import type { z } from "zod"
 import type { Client } from "@/types/types-front"
 
@@ -36,12 +37,13 @@ export function ClientFormTabs({
         onValueChange={setActiveTab}
         className="flex-1 flex flex-col overflow-hidden"
       >
-        <TabsList className="grid grid-cols-4 sm:grid-cols-7 w-full mb-2 border bg-muted text-muted-foreground rounded-lg">
+        <TabsList className="grid grid-cols-4 sm:grid-cols-8 w-full mb-2 border bg-muted text-muted-foreground rounded-lg">
           <TabsTrigger value="infos">📝 Informations</TabsTrigger>
           <TabsTrigger value="contacts">📇 Contacts</TabsTrigger>
           <TabsTrigger value="postes">🧩 Postes</TabsTrigger>
           <TabsTrigger value="missions">📆 Missions</TabsTrigger>
           <TabsTrigger value="interdits">🚫 Suivi</TabsTrigger>
+          <TabsTrigger value="incidents">⚠️ Incidents</TabsTrigger> {/* ✅ NOUVEAU */}
           <TabsTrigger value="historique">📜 Historique</TabsTrigger>
           <TabsTrigger value="stats">📊 Stats</TabsTrigger>
         </TabsList>
@@ -107,6 +109,16 @@ export function ClientFormTabs({
           ) : (
             <p className="text-sm italic text-muted-foreground mt-4">
               Enregistrez les informations du client pour voir ou gérer les priorités/interdictions.
+            </p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="incidents" className="flex-1 overflow-y-auto px-4 text-sm text-muted-foreground">
+          {initialData?.id ? (
+            <ClientIncidentsTab clientId={initialData.id} />
+          ) : (
+            <p className="text-sm italic text-muted-foreground mt-4">
+              Enregistrez les informations du client pour consulter les incidents.
             </p>
           )}
         </TabsContent>

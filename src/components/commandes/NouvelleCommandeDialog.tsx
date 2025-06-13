@@ -13,6 +13,8 @@ import { supabase } from "@/lib/supabase"
 import CommandeFormGauche from "./CommandeFormGauche"
 import CommandeFormDroite from "./CommandeFormDroite"
 import type { PosteType } from "@/types/types-front"
+import { useNavigate } from "react-router-dom"
+import  FullScreenLoader  from "@/components/ui/FullScreenLoader"
 
 export default function NouvelleCommandeDialog({
   open,
@@ -25,6 +27,8 @@ export default function NouvelleCommandeDialog({
   onRefresh?: () => Promise<void>
   onRefreshDone?: () => void
 }) {
+  const navigate = useNavigate()
+
   const [secteur, setSecteur] = useState("")
   const [clientId, setClientId] = useState("")
   const [service, setService] = useState("")
@@ -37,6 +41,7 @@ export default function NouvelleCommandeDialog({
   const [semainesDisponibles, setSemainesDisponibles] = useState<
     { value: string; label: string; startDate: Date }[]
   >([])
+  const [isReloading, setIsReloading] = useState(false)
 
   const { clients } = useClientsBySecteur(secteur)
   const selectedClient = clients.find((c) => c.id === clientId)
@@ -170,56 +175,58 @@ export default function NouvelleCommandeDialog({
       }
     }
 
-    console.log("🌀 NouvelleCommandeDialog – lancement refresh() après insertion commandes")
-    if (onRefresh) await onRefresh()
-    console.log("✅ NouvelleCommandeDialog – refresh terminé, fermeture du popup")
-
-    onOpenChange(false)
-    if (onRefreshDone) await onRefreshDone()
+    console.log("🌀 NouvelleCommandeDialog – lancement animation + reload")
+    setIsReloading(true)
+    setTimeout(() => {
+      navigate(0)
+    }, 900)
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Nouvelle commande</DialogTitle>
-        </DialogHeader>
-        <div className="grid grid-cols-2 gap-6 mt-4">
-          <CommandeFormGauche
-            secteur={secteur}
-            setSecteur={setSecteur}
-            clientId={clientId}
-            setClientId={setClientId}
-            service={service}
-            setService={setService}
-            semaine={semaine}
-            setSemaine={setSemaine}
-            motif={motif}
-            setMotif={setMotif}
-            commentaire={commentaire}
-            setCommentaire={setCommentaire}
-            clients={clients}
-            services={services}
-            semainesDisponibles={semainesDisponibles}
-            posteTypeId={posteTypeId}
-            setPosteTypeId={setPosteTypeId}
-            postesTypes={postesTypes}
-            setHeuresParJour={setHeuresParJour}
-            setJoursState={setJoursState}
-          />
-          <CommandeFormDroite
-            joursSemaine={joursSemaine}
-            joursState={joursState}
-            setJoursState={setJoursState}
-            heuresParJour={heuresParJour}
-            setHeuresParJour={setHeuresParJour}
-            selectedPosteType={selectedPosteType}
-            secteur={secteur}
-            handleSave={handleSave}
-          />
-        </div>
-      </DialogContent>
-    </Dialog>
+    <>
+      {isReloading && <FullScreenLoader message="Mise à jour du planning..." />}
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Nouvelle commande</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-6 mt-4">
+            <CommandeFormGauche
+              secteur={secteur}
+              setSecteur={setSecteur}
+              clientId={clientId}
+              setClientId={setClientId}
+              service={service}
+              setService={setService}
+              semaine={semaine}
+              setSemaine={setSemaine}
+              motif={motif}
+              setMotif={setMotif}
+              commentaire={commentaire}
+              setCommentaire={setCommentaire}
+              clients={clients}
+              services={services}
+              semainesDisponibles={semainesDisponibles}
+              posteTypeId={posteTypeId}
+              setPosteTypeId={setPosteTypeId}
+              postesTypes={postesTypes}
+              setHeuresParJour={setHeuresParJour}
+              setJoursState={setJoursState}
+            />
+            <CommandeFormDroite
+              joursSemaine={joursSemaine}
+              joursState={joursState}
+              setJoursState={setJoursState}
+              heuresParJour={heuresParJour}
+              setHeuresParJour={setHeuresParJour}
+              selectedPosteType={selectedPosteType}
+              secteur={secteur}
+              handleSave={handleSave}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
