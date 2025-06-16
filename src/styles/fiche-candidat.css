@@ -1,0 +1,245 @@
+/* Structure principale */
+.fiche-container {
+    width: 90vw;
+    height: 85vh;
+    max-width: 1200px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  /* En-tête compact */
+  .fiche-header {
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e5e7eb;
+    background: white;
+    min-height: 60px;
+  }
+  
+  .fiche-identity {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .fiche-avatar {
+    width: 32px;
+    height: 32px;
+    color: #840404;
+  }
+  
+  .fiche-header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+    line-height: 1.2;
+  }
+  
+  .fiche-header h1 span {
+    text-transform: uppercase;
+  }
+  
+  .fiche-contact {
+    display: flex;
+    gap: 12px;
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 2px;
+  }
+  
+  .fiche-contact .icon {
+    width: 14px;
+    height: 14px;
+    margin-right: 4px;
+  }
+  
+  .fiche-stats {
+    display: flex;
+    gap: 8px;
+  }
+  
+  .stat-badge {
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    font-size: 12px;
+    text-align: center;
+    min-width: 50px;
+  }
+  
+  .stat-badge strong {
+    display: block;
+    font-size: 16px;
+    line-height: 1;
+  }
+  
+  /* Contenu principal */
+  .fiche-content {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1.5fr 1fr;
+    overflow: hidden;
+    background: #f9fafb;
+  }
+  
+  .fiche-col {
+    padding: 12px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .fiche-col:not(:last-child) {
+    border-right: 1px solid #e5e7eb;
+  }
+  
+  /* Sections */
+  .fiche-section {
+    background: white;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    padding: 12px;
+    flex: 1;
+  }
+  
+  .fiche-section h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #6b7280;
+    margin: 0 0 10px 0;
+  }
+  
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  
+  /* Éléments */
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    padding: 6px 0;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  
+  .info-row:last-child {
+    border-bottom: none;
+  }
+  
+  .info-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .info-label .icon {
+    width: 16px;
+    height: 16px;
+    color: #6b7280;
+  }
+  
+  .separator {
+    border-top: 1px solid #e5e7eb;
+    margin: 8px 0;
+  }
+  
+  .item {
+    display: flex;
+    gap: 8px;
+    padding: 8px 0;
+  }
+  
+  .item-icon {
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    color: #6b7280;
+  }
+  
+  .item-content h3 {
+    font-size: 13px;
+    font-weight: 500;
+    margin: 0;
+  }
+  
+  .item-content p {
+    font-size: 12px;
+    color: #6b7280;
+    margin: 2px 0 0 0;
+  }
+  
+  .history-badge {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    margin-top: 6px;
+  }
+  
+  /* Pied de page */
+  .fiche-footer {
+    padding: 10px 16px;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+  }
+  
+  .fiche-planning h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    color: #6b7280;
+    margin: 0 0 4px 0;
+  }
+  
+  .fiche-days {
+    display: flex;
+    gap: 16px;
+  }
+  
+  .fiche-days span {
+    font-size: 13px;
+    font-weight: 500;
+  }
+  
+  .fiche-days em {
+    font-style: normal;
+    display: block;
+    font-size: 12px;
+    font-weight: normal;
+    color: #6b7280;
+  }
+  
+  .fiche-button {
+    background: #840404;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+  
+  .fiche-button:hover {
+    background: #a50505;
+  }
+  
+  .fiche-button .icon {
+    width: 14px;
+    height: 14px;
+  }
