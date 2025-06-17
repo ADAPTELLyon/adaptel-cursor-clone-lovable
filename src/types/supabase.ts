@@ -813,7 +813,48 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_planning_candidat: {
+        Args: {
+          candidat_id_param: string
+          start_date_param: string
+          end_date_param: string
+        }
+        Returns: {
+          date: string
+          secteur: string
+          service: string | null
+          disponibilite: {
+            statut: string
+            dispo_matin: boolean | null
+            dispo_soir: boolean | null
+            dispo_nuit: boolean | null
+            commentaire: string | null
+            candidat: {
+              id: string
+              nom: string
+              prenom: string
+            }
+          } | null
+          commande: {
+            statut: string
+            heure_debut_matin: string | null
+            heure_fin_matin: string | null
+            heure_debut_soir: string | null
+            heure_fin_soir: string | null
+            heure_debut_nuit: string | null
+            heure_fin_nuit: string | null
+            candidat: {
+              id: string
+              nom: string
+              prenom: string
+            }
+            client: {
+              id: string
+              nom: string
+            }
+          } | null
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
