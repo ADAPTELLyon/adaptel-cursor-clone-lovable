@@ -63,9 +63,16 @@ export function PopoverChangementStatut({ commande, onSuccess, trigger }: Props)
     const userId = userApp?.id || null
     if (!userId) return
 
+    const updates: any = { statut: nouveau }
+
+    // ✅ On conserve toujours le candidat_id même si le statut change
+    if (commande.candidat_id) {
+      updates.candidat_id = commande.candidat_id
+    }
+
     const { error: updateError } = await supabase
       .from("commandes")
-      .update({ statut: nouveau })
+      .update(updates)
       .eq("id", commande.id)
 
     if (!updateError) {
@@ -76,7 +83,7 @@ export function PopoverChangementStatut({ commande, onSuccess, trigger }: Props)
         description: `Changement de statut de ${statutActuel} à ${nouveau}`,
         user_id: userId,
         date_action: new Date().toISOString(),
-        apres: { statut: nouveau },
+        apres: updates,
       })
       toast({ title: "Statut mis à jour" })
       onSuccess()

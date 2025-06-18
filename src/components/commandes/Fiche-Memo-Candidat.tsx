@@ -19,7 +19,7 @@ import { supabase } from "@/lib/supabase"
 import dayjs from "dayjs"
 import { Candidat } from "@/types/types-front"
 import { CandidatEditDialog } from "@/components/candidates/CandidatEditDialog"
-import { PlanningMiniCandidat } from "@/components/Planning/PlanningMiniCandidat"
+import PlanningMiniCandidat from "@/components/Planning/PlanningMiniCandidat"
 
 interface FicheMemoCandidatProps {
   open: boolean
@@ -33,6 +33,10 @@ export default function FicheMemoCandidat({ open, onOpenChange, candidatId }: Fi
   const [priorites, setPriorites] = useState<any[]>([])
   const [incidents, setIncidents] = useState<any[]>([])
   const [showEditDialog, setShowEditDialog] = useState(false)
+
+  const [nbValide, setNbValide] = useState(0)
+  const [nbAnnuleInt, setNbAnnuleInt] = useState(0)
+  const [nbAbsence, setNbAbsence] = useState(0)
 
   useEffect(() => {
     if (!open || !candidatId) return
@@ -61,10 +65,38 @@ export default function FicheMemoCandidat({ open, onOpenChange, candidatId }: Fi
       setInterdictions(inter || [])
       setPriorites(prior || [])
       setIncidents(incid || [])
+
+      const { count: countValide } = await supabase
+        .from("commandes")
+        .select("*", { count: "exact", head: true })
+        .eq("candidat_id", candidatId)
+        .eq("statut", "Validé")
+
+      const { count: countAnnule } = await supabase
+        .from("commandes")
+        .select("*", { count: "exact", head: true })
+        .eq("candidat_id", candidatId)
+        .eq("statut", "Annule Int")
+
+      const { count: countAbsence } = await supabase
+        .from("commandes")
+        .select("*", { count: "exact", head: true })
+        .eq("candidat_id", candidatId)
+        .eq("statut", "Absence")
+
+      setNbValide(countValide || 0)
+      setNbAnnuleInt(countAnnule || 0)
+      setNbAbsence(countAbsence || 0)
     }
 
     fetchData()
   }, [open, candidatId])
+
+  const renderSecteurChip = (secteurVal: string) => (
+    <Badge variant="outline" className="text-xs px-2 py-1">
+      {secteurVal}
+    </Badge>
+  )
 
   return (
     <>
@@ -100,17 +132,30 @@ export default function FicheMemoCandidat({ open, onOpenChange, candidatId }: Fi
                 <InfoItem icon={<CheckCircleIcon className="h-4 w-4" />} label="Statut" value={candidat?.actif ? "Actif" : "Inactif"} />
                 <InfoItem icon={<TruckIcon className="h-4 w-4" />} label="Véhicule" value={candidat?.vehicule ? "Oui" : "Non"} />
               </Card>
+
+              <Card title="Missions">
+                <div className="space-y-2 h-[312px] flex flex-col justify-between">
+                  <IndicateurCard label="Validées" value={nbValide} color="#a9d08e" />
+                  <IndicateurCard label="Annule Int" value={nbAnnuleInt} color="#606060" />
+                  <IndicateurCard label="Absence" value={nbAbsence} color="#ff6961" />
+                </div>
+              </Card>
             </div>
 
             <div className="col-span-6 space-y-4">
-              <Card title="Interdictions" badge={<Badge variant="destructive">{interdictions.length} Interdictions</Badge>}>
+              <Card title="Interdictions" badge={<Badge className="bg-white text-gray-800 border-gray-800">{interdictions.length} Interdictions</Badge>}>
                 <div className="space-y-1 h-[220px] overflow-y-auto">
                   {interdictions.length > 0 ? (
                     interdictions.map((item) => (
                       <ListItem
                         key={item.id}
                         icon={<NoSymbolIcon className="h-4 w-4 text-red-500" />}
-                        title={`${item.client?.nom} - ${item.secteur}`}
+                        title={
+                          <div className="flex items-start justify-between gap-4">
+                            <span className="text-sm font-medium">{item.client?.nom || ""}</span>
+                            <div className="shrink-0">{renderSecteurChip(item.secteur)}</div>
+                          </div>
+                        }
                         desc={item.commentaire || "-"}
                         date={dayjs(item.created_at).format("DD/MM/YYYY")}
                       />
@@ -121,16 +166,22 @@ export default function FicheMemoCandidat({ open, onOpenChange, candidatId }: Fi
                 </div>
               </Card>
 
-              <Card title="Incidents" badge={<Badge variant="outline">{incidents.length} enregistrés</Badge>}>
+              <Card title="Incidents" badge={<Badge className="bg-white text-gray-800 border-gray-800">{incidents.length} enregistrés</Badge>}>
                 <div className="space-y-1 h-[220px] overflow-y-auto">
                   {incidents.length > 0 ? (
                     incidents.map((item) => (
                       <ListItem
                         key={item.id}
                         icon={<ExclamationTriangleIcon className="h-4 w-4 text-orange-500" />}
-                        title={item.type_incident}
-                        desc={item.description || "-"}
+                        title={item.client?.nom || ""}
+                        subtitle={
+                          <span className="text-xs text-gray-700">
+                            <span className="font-medium">{item.type_incident || ""}</span>
+                            {item.description ? ` - ${item.description}` : ""}
+                          </span>
+                        }
                         date={dayjs(item.date_incident).format("DD/MM/YYYY")}
+                        desc=""
                       />
                     ))
                   ) : (
@@ -141,16 +192,16 @@ export default function FicheMemoCandidat({ open, onOpenChange, candidatId }: Fi
             </div>
 
             <div className="col-span-3 space-y-4">
-              <Card title="Priorités" badge={<Badge className="bg-green-100 text-green-800 border-green-200">{priorites.length} Priorités</Badge>}>
+              <Card title="Priorités" badge={<Badge className="bg-white text-gray-800 border-gray-800">{priorites.length} Priorités</Badge>}>
                 <div className="space-y-1 h-[300px] overflow-y-auto">
                   {priorites.length > 0 ? (
                     priorites.map((item) => (
                       <ListItem
                         key={item.id}
                         icon={<StarIcon className="h-4 w-4 text-yellow-500" />}
-                        title={`${item.client?.nom} - ${item.secteur}`}
+                        title={item.client?.nom || ""}
+                        subtitle={renderSecteurChip(item.secteur)}
                         desc={item.commentaire || "-"}
-                        date={dayjs(item.created_at).format("DD/MM/YYYY")}
                       />
                     ))
                   ) : (
@@ -161,8 +212,7 @@ export default function FicheMemoCandidat({ open, onOpenChange, candidatId }: Fi
             </div>
           </div>
 
-          <div className="bg-white px-6 pb-6 pt-2 border-t">
-            <h2 className="text-lg font-semibold text-gray-800 mb-4">Planning de la semaine</h2>
+          <div className="bg-white px-6 pt-4 pb-6 border-t">
             <PlanningMiniCandidat candidatId={candidatId} />
           </div>
 
@@ -195,7 +245,7 @@ export default function FicheMemoCandidat({ open, onOpenChange, candidatId }: Fi
 function Card({ title, children, badge }: { title: string; children: any; badge?: React.ReactNode }) {
   return (
     <div className="bg-white border rounded-lg shadow-sm">
-      <div className="px-4 py-3 border-b flex items-center justify-between">
+      <div className="px-4 py-3 border-b flex items-center justify-between bg-gray-800 text-white">
         <h3 className="text-sm font-semibold">{title}</h3>
         {badge}
       </div>
@@ -213,7 +263,19 @@ function InfoItem({ icon, label, value }: { icon: any; label: string; value: str
   )
 }
 
-function ListItem({ icon, title, desc, date }: { icon?: React.ReactNode; title: string; desc: string; date?: string }) {
+function ListItem({
+  icon,
+  title,
+  subtitle,
+  desc,
+  date,
+}: {
+  icon?: React.ReactNode
+  title: React.ReactNode
+  subtitle?: React.ReactNode
+  desc: string
+  date?: string
+}) {
   return (
     <div className="p-2 hover:bg-gray-50 rounded">
       <div className="flex items-start space-x-2">
@@ -223,9 +285,20 @@ function ListItem({ icon, title, desc, date }: { icon?: React.ReactNode; title: 
             <span>{title}</span>
             {date && <span className="text-xs text-gray-500">{date}</span>}
           </div>
-          <div className="text-xs text-gray-500 mt-1">{desc}</div>
+          {subtitle && <div className="mt-0.5">{subtitle}</div>}
+          {desc && <div className="text-xs text-gray-500 mt-1">{desc}</div>}
         </div>
       </div>
+    </div>
+  )
+}
+
+function IndicateurCard({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="relative bg-white shadow-sm border rounded-md px-4 py-3 h-[90px] flex flex-col justify-between">
+      <div className="absolute top-0 left-0 h-full w-2 rounded-l-md" style={{ backgroundColor: color }} />
+      <div className="text-sm font-semibold mb-1" style={{ color }}>{label}</div>
+      <div className="text-3xl font-bold ml-4" style={{ color }}>{value}</div>
     </div>
   )
 }

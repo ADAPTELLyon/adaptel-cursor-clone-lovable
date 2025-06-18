@@ -16,7 +16,7 @@ import NouvelleCommandeDialog from "../../components/commandes/NouvelleCommandeD
 import AjoutDispoCandidat from "../../components/Planning/AjoutDispoCandidat"
 import SaisirIncidentDialog from "../../components/commandes/SaisirIncidentDialog"
 import { Separator } from "@/components/ui/separator"
-import { FicheMemoCandidat } from "./Fiche-Memo-Candidat"
+import FicheMemoCandidat from "@/components/commandes/Fiche-Memo-Candidat"
 import PopoverSelectCandidat from "./PopoverSelectCandidat"
 
 export function SectionFixeCommandes({

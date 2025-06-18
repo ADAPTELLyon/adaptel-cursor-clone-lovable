@@ -62,10 +62,10 @@ export function PopupChangementStatutMissionPlanifiee({
         .eq("commande_id", commande.id)
         .eq("candidat_id", candidatId)
 
-      // Mise à jour commande
+      // ✅ Mise à jour commande : on conserve le candidat_id
       await supabase.from("commandes").update({
         statut,
-        candidat_id: null,
+        candidat_id: candidatId,
         ...(motif ? { complement_motif: motif } : {}),
       }).eq("id", commande.id)
 
