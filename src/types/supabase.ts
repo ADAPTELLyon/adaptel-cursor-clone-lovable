@@ -307,71 +307,86 @@ export type Database = {
           },
         ]
       }
-      donnees: {
+      donnees_jour_semaine: {
         Row: {
-          annee: string
-          candidat_id: string | null
-          client_id: string | null
+          annee: number
           created_at: string | null
-          date: string
           id: string
-          mois: string
-          nombre: number
-          poste: string | null
-          secteur: string
-          semaine: string
-          service: string | null
-          statut: string
-          updated_at: string | null
+          jour: string
+          semaine: number
+          total_valides: number
         }
         Insert: {
-          annee: string
-          candidat_id?: string | null
-          client_id?: string | null
+          annee: number
           created_at?: string | null
-          date: string
           id?: string
-          mois: string
-          nombre?: number
-          poste?: string | null
-          secteur: string
-          semaine: string
-          service?: string | null
-          statut: string
-          updated_at?: string | null
+          jour: string
+          semaine: number
+          total_valides?: number
         }
         Update: {
-          annee?: string
-          candidat_id?: string | null
-          client_id?: string | null
+          annee?: number
           created_at?: string | null
-          date?: string
           id?: string
-          mois?: string
-          nombre?: number
-          poste?: string | null
-          secteur?: string
-          semaine?: string
-          service?: string | null
-          statut?: string
-          updated_at?: string | null
+          jour?: string
+          semaine?: number
+          total_valides?: number
         }
-        Relationships: [
-          {
-            foreignKeyName: "donnees_candidat_id_fkey"
-            columns: ["candidat_id"]
-            isOneToOne: false
-            referencedRelation: "candidats"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "donnees_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
+      }
+      donnees_secteur_semaine: {
+        Row: {
+          annee: number
+          created_at: string | null
+          id: string
+          secteur: string
+          semaine: number
+          total_valides: number
+        }
+        Insert: {
+          annee: number
+          created_at?: string | null
+          id?: string
+          secteur: string
+          semaine: number
+          total_valides?: number
+        }
+        Update: {
+          annee?: number
+          created_at?: string | null
+          id?: string
+          secteur?: string
+          semaine?: number
+          total_valides?: number
+        }
+        Relationships: []
+      }
+      donnees_statut_semaine: {
+        Row: {
+          annee: number
+          created_at: string | null
+          id: string
+          semaine: number
+          statut: string
+          total: number
+        }
+        Insert: {
+          annee: number
+          created_at?: string | null
+          id?: string
+          semaine: number
+          statut: string
+          total?: number
+        }
+        Update: {
+          annee?: number
+          created_at?: string | null
+          id?: string
+          semaine?: number
+          statut?: string
+          total?: number
+        }
+        Relationships: []
       }
       historique: {
         Row: {
@@ -813,48 +828,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      get_planning_candidat: {
-        Args: {
-          candidat_id_param: string
-          start_date_param: string
-          end_date_param: string
-        }
-        Returns: {
-          date: string
-          secteur: string
-          service: string | null
-          disponibilite: {
-            statut: string
-            dispo_matin: boolean | null
-            dispo_soir: boolean | null
-            dispo_nuit: boolean | null
-            commentaire: string | null
-            candidat: {
-              id: string
-              nom: string
-              prenom: string
-            }
-          } | null
-          commande: {
-            statut: string
-            heure_debut_matin: string | null
-            heure_fin_matin: string | null
-            heure_debut_soir: string | null
-            heure_fin_soir: string | null
-            heure_debut_nuit: string | null
-            heure_fin_nuit: string | null
-            candidat: {
-              id: string
-              nom: string
-              prenom: string
-            }
-            client: {
-              id: string
-              nom: string
-            }
-          } | null
-        }[]
-      }
+      [_ in never]: never
     }
     Enums: {
       [_ in never]: never

@@ -1,11 +1,10 @@
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { Info, AlertCircle } from "lucide-react"
+import { Info, AlertCircle, Check } from "lucide-react"
 import { disponibiliteColors, statutColors } from "@/lib/colors"
 import { CandidateJourneeDialog } from "@/components/Planning/CandidateJourneeDialog"
 import type { CandidatDispoWithNom, CommandeFull } from "@/types/types-front"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { supabase } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
@@ -34,8 +33,8 @@ export function CellulePlanningCandidate({
   onSuccess,
 }: CellulePlanningCandidateProps) {
   const [open, setOpen] = useState(false)
-  const [commentaire, setCommentaire] = useState(disponibilite?.commentaire || "")
-  const [editing, setEditing] = useState(false)
+  const [commentaireTemp, setCommentaireTemp] = useState(disponibilite?.commentaire || "")
+  const [editingComment, setEditingComment] = useState(false)
 
   const isPlanifie = !!commande
   const statut = isPlanifie ? "Validé" : (disponibilite?.statut ?? "Non renseigné")
@@ -57,19 +56,19 @@ export function CellulePlanningCandidate({
     setOpen(true)
   }
 
-  const handleCommentaireChange = async (value: string) => {
-    setCommentaire(value)
+  const handleSaveCommentaire = async () => {
     if (!disponibilite?.id) return
 
     const { error } = await supabase
       .from("disponibilites")
-      .update({ commentaire: value })
+      .update({ commentaire: commentaireTemp })
       .eq("id", disponibilite.id)
 
     if (error) {
       toast({ title: "Erreur", description: "Échec enregistrement", variant: "destructive" })
     } else {
       toast({ title: "Commentaire mis à jour" })
+      setEditingComment(false)
       onSuccess()
     }
   }
@@ -83,7 +82,6 @@ export function CellulePlanningCandidate({
         style={{ backgroundColor: couleur.bg, color: couleur.text }}
         onClick={handleClick}
       >
-        {/* Ligne 1 : statut ou client */}
         <div className="font-semibold flex items-center gap-1 min-h-[18px]">
           {isPlanifie ? commande.client?.nom || "Mission validée" : statut !== "Non renseigné" ? statut : ""}
           {isPlanifie && autresCommandes.length > 0 && (
@@ -112,10 +110,8 @@ export function CellulePlanningCandidate({
           )}
         </div>
 
-        {/* Ligne 2 : vide ou complément éventuel */}
-        <div className="min-h-[16px]">{/* Réservé pour alignement */}</div>
+        <div className="min-h-[16px]"></div>
 
-        {/* Ligne 3 : créneau matin/midi (toujours présent) */}
         <div className="h-[16px]">
           {isPlanifie && commande.heure_debut_matin && commande.heure_fin_matin ? (
             <div>
@@ -126,7 +122,6 @@ export function CellulePlanningCandidate({
           ) : null}
         </div>
 
-        {/* Ligne 4 : créneau soir (sauf secteur Étages) */}
         <div className="h-[16px]">
           {secteur !== "Étages" &&
             (isPlanifie && commande.heure_debut_soir && commande.heure_fin_soir ? (
@@ -138,30 +133,33 @@ export function CellulePlanningCandidate({
             ) : null)}
         </div>
 
-        {/* Commentaire */}
-        {commentaire && (
+        {disponibilite?.commentaire && (
           <div
             className="absolute bottom-1 right-1 z-20"
             onClick={(e) => {
               e.stopPropagation()
-              setEditing(true)
+              setEditingComment(true)
+              setCommentaireTemp(disponibilite.commentaire || "")
             }}
           >
-            <Popover open={editing} onOpenChange={setEditing}>
+            <Popover open={editingComment} onOpenChange={(open) => !open && setEditingComment(false)}>
               <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="p-0 h-auto w-auto text-black hover:text-black"
-                >
+                <Button variant="ghost" className="p-0 h-auto w-auto text-black hover:text-black">
                   <Info className="h-4 w-4" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-64 text-sm">
-                <Input
-                  value={commentaire}
-                  onChange={(e) => handleCommentaireChange(e.target.value)}
-                  placeholder="Commentaire"
+              <PopoverContent className="w-64 p-2 space-y-2">
+                <textarea
+                  value={commentaireTemp}
+                  onChange={(e) => setCommentaireTemp(e.target.value)}
+                  rows={4}
+                  className="w-full border rounded px-2 py-1 text-sm"
                 />
+                <div className="flex justify-end">
+                  <Button variant="ghost" size="icon" onClick={handleSaveCommentaire}>
+                    <Check className="w-4 h-4 text-green-600" />
+                  </Button>
+                </div>
               </PopoverContent>
             </Popover>
           </div>

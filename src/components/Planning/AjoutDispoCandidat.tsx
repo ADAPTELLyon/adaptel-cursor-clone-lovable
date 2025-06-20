@@ -1,3 +1,4 @@
+// AjoutDispoCandidat.tsx
 import { useEffect, useState } from "react"
 import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 import {
@@ -15,6 +16,7 @@ import type { Candidat } from "@/types/types-front"
 import { supabase } from "@/integrations/supabase/client"
 import { toast } from "@/hooks/use-toast"
 import DispoSemainePanel from "@/components/Planning/DispoSemainePanel"
+import { PieChart, Users, CalendarDays, MessageSquareText } from "lucide-react"
 
 export default function AjoutDispoCandidat({
   open,
@@ -91,7 +93,6 @@ export default function AjoutDispoCandidat({
   useEffect(() => {
     const fetchDispoAndPlanning = async () => {
       if (!candidat || !secteur || !semaineObj) return
-
       const dates = joursSemaine.map((j) => j.key)
 
       const [disposRes, planningRes] = await Promise.all([
@@ -279,7 +280,7 @@ export default function AjoutDispoCandidat({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[95vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             Saisie disponibilités
@@ -295,17 +296,20 @@ export default function AjoutDispoCandidat({
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-6 mt-4">
-          {/* Partie gauche */}
-          <div className="space-y-6 border p-4 rounded-lg shadow-md bg-white">
-            {/* Secteurs */}
-            <div className="space-y-2">
-              <div className="font-semibold text-sm">Secteur</div>
+          {/* Partie gauche en sections claires */}
+          <div className="space-y-6">
+            {/* Section Secteur */}
+            <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <PieChart className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-medium text-sm">Secteur</h3>
+              </div>
               <div className="grid grid-cols-5 gap-2">
                 {secteursList.map(({ label, icon: Icon }) => (
                   <Button
                     key={label}
                     variant="outline"
-                    className={`flex items-center justify-center gap-1 text-xs py-2 ${
+                    className={`flex flex-col items-center justify-center gap-1 text-xs py-2 h-16 ${
                       secteur === label ? "bg-[#840404] text-white hover:bg-[#750303]" : ""
                     }`}
                     onClick={() => {
@@ -313,18 +317,22 @@ export default function AjoutDispoCandidat({
                       setCandidat(null)
                     }}
                   >
-                    <Icon className="h-4 w-4" />
+                    <Icon className="h-5 w-5" />
                     {label}
                   </Button>
                 ))}
               </div>
             </div>
 
-            {secteur && (
-              <div className="space-y-2">
-                <div className="font-semibold text-sm">Candidats</div>
-                <div className="border p-2 h-40 overflow-y-auto rounded">
-                  {candidatsSecteur.map((c) => (
+            {/* Section Candidats */}
+            <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-medium text-sm">Candidats</h3>
+              </div>
+              <div className="border p-2 h-[240px] overflow-y-auto rounded bg-white shadow-sm">
+                {secteur && candidatsSecteur.length > 0 ? (
+                  candidatsSecteur.map((c) => (
                     <Button
                       key={c.id}
                       variant={candidat?.id === c.id ? "default" : "outline"}
@@ -333,13 +341,19 @@ export default function AjoutDispoCandidat({
                     >
                       {c.nom} {c.prenom}
                     </Button>
-                  ))}
-                </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-muted-foreground italic">Aucun secteur sélectionné</div>
+                )}
               </div>
-            )}
+            </div>
 
-            <div className="space-y-2">
-              <div className="font-semibold text-sm">Semaine</div>
+            {/* Section Semaine */}
+            <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <CalendarDays className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-medium text-sm">Semaine</h3>
+              </div>
               <select
                 className="border rounded w-full px-2 py-2 text-sm"
                 value={semaine}
@@ -353,8 +367,12 @@ export default function AjoutDispoCandidat({
               </select>
             </div>
 
-            <div className="space-y-2">
-              <div className="font-semibold text-sm">Commentaire</div>
+            {/* Section Commentaire */}
+            <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <MessageSquareText className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-medium text-sm">Commentaire</h3>
+              </div>
               <Textarea
                 value={commentaire}
                 onChange={(e) => setCommentaire(e.target.value)}
@@ -364,7 +382,7 @@ export default function AjoutDispoCandidat({
             </div>
           </div>
 
-          {/* Partie droite */}
+          {/* Partie droite identique */}
           <DispoSemainePanel
             joursSemaine={joursSemaine}
             dispos={dispos}

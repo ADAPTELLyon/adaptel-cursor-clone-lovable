@@ -1,15 +1,63 @@
+import { useEffect, useState } from "react"
 import { ArrowUp, ArrowDown } from "lucide-react"
 import { indicateurColors } from "@/lib/colors"
+import { supabase } from "@/lib/supabase"
 
 export function SectionComparatif() {
-  const missionsAnneeN1 = 100
-  const missionsActuelles = 85
-  const joursRestants = 3
+  const [missionsActuelles, setMissionsActuelles] = useState(0)
+  const [missionsAnneeN1, setMissionsAnneeN1] = useState(0)
+  const [joursRestants, setJoursRestants] = useState(1)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const today = new Date()
+      const currentYear = today.getFullYear()
+      const currentWeek = getWeekNumber(today)
+      const previousYear = currentYear - 1
+
+      // 📆 Calcul des jours restants dans la semaine
+      const dayOfWeek = today.getDay() === 0 ? 7 : today.getDay()
+      const restants = 7 - dayOfWeek
+      setJoursRestants(Math.max(1, restants))
+
+      // 🔹 Charger les missions validées N-1 depuis donnees_statut_semaine
+      const { data: donneesN1, error: errorN1 } = await supabase
+        .from("donnees_statut_semaine")
+        .select("total")
+        .eq("annee", previousYear)
+        .eq("semaine", currentWeek)
+        .eq("statut", "Validées")
+
+      const totalN1 = donneesN1?.reduce((acc, cur) => acc + (cur.total ?? 0), 0) ?? 0
+      setMissionsAnneeN1(totalN1)
+
+      // 🔸 Charger les missions validées en cours dans commandes
+      const { data: commandes, error: errorCmd } = await supabase
+        .from("commandes")
+        .select("id, date")
+        .eq("statut", "Validé")
+
+      const totalActuelles = (commandes || []).filter((cmd) => {
+        const d = new Date(cmd.date)
+        return (
+          d.getFullYear() === currentYear &&
+          getWeekNumber(d) === currentWeek
+        )
+      }).length
+
+      setMissionsActuelles(totalActuelles)
+    }
+
+    fetchData()
+  }, [])
 
   const difference = missionsActuelles - missionsAnneeN1
-  const objectifRestant = Math.max(0, Math.ceil((missionsAnneeN1 - missionsActuelles) / joursRestants))
-  const isSup = difference >= 0
+  const objectifRestant = Math.max(
+    0,
+    Math.round((missionsAnneeN1 - missionsActuelles) / joursRestants)
+  )
 
+  const isSup = difference >= 0
   const borderColor = isSup
     ? indicateurColors["Validées"]
     : indicateurColors["Non pourvue"]
@@ -47,4 +95,11 @@ export function SectionComparatif() {
       </div>
     </div>
   )
+}
+
+// 🔧 Fonction utilitaire pour obtenir le numéro de semaine ISO
+function getWeekNumber(date: Date) {
+  const start = new Date(date.getFullYear(), 0, 1)
+  const diff = (+date - +start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60000) / 86400000
+  return Math.floor((diff + start.getDay() + 6) / 7)
 }

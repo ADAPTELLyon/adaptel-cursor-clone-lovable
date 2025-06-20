@@ -18,6 +18,7 @@ import {
 import { format, getWeek, parseISO } from "date-fns"
 import { fr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
+import { ClipboardList, Clock, MessageCircle } from "lucide-react"
 
 interface Props {
   open: boolean
@@ -119,10 +120,10 @@ export function CommandeJourneeDialog({
     setSelectedPosteId(posteId)
     const poste = postes.find((p) => p.id === posteId)
     if (!poste) return
-    setHeureDebutMatin(poste.heure_debut_matin || "")
-    setHeureFinMatin(poste.heure_fin_matin || "")
-    setHeureDebutSoir(poste.heure_debut_soir || "")
-    setHeureFinSoir(poste.heure_fin_soir || "")
+    setHeureDebutMatin(poste.heure_debut_matin?.slice(0, 5) || "")
+    setHeureFinMatin(poste.heure_fin_matin?.slice(0, 5) || "")
+    setHeureDebutSoir(poste.heure_debut_soir?.slice(0, 5) || "")
+    setHeureFinSoir(poste.heure_fin_soir?.slice(0, 5) || "")
   }
 
   const formatHeureInput = (val: string) => {
@@ -222,15 +223,18 @@ export function CommandeJourneeDialog({
 
   return (
     <Dialog open={openLocal} onOpenChange={(val) => { if (!val) handleClose() }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Création commande – {dateLabel}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 mt-2">
+        <div className="space-y-6 pt-2">
           {postes.length > 0 && (
-            <div>
-              <Label className="text-sm mb-1 block">Poste type</Label>
+            <div className="mt-4">
+              <Label className="text-sm mb-1 block flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-muted-foreground" />
+                Poste type
+              </Label>
               <Select value={selectedPosteId} onValueChange={handleSelectPoste}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Choisir un poste type" />
@@ -238,7 +242,11 @@ export function CommandeJourneeDialog({
                 <SelectContent>
                   {postes.map((poste) => (
                     <SelectItem key={poste.id} value={poste.id}>
-                      {poste.nom} ({poste.poste_base?.nom})
+                      {poste.nom} ({poste.poste_base?.nom}) &nbsp;–&nbsp;
+                      {poste.heure_debut_matin?.slice(0, 5) || "--:--"} / {poste.heure_fin_matin?.slice(0, 5) || "--:--"}
+                      {secteur !== "Étages" && poste.heure_debut_soir ? (
+                        <> &nbsp;–&nbsp; {poste.heure_debut_soir?.slice(0, 5)} / {poste.heure_fin_soir?.slice(0, 5)}</>
+                      ) : null}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -246,8 +254,11 @@ export function CommandeJourneeDialog({
             </div>
           )}
 
-          <div>
-            <Label className="block text-sm mb-1">Créneau matin / midi</Label>
+          <div className="mt-4">
+            <Label className="block text-sm mb-1 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-muted-foreground" />
+              Créneau matin / midi
+            </Label>
             <div className="flex gap-2">
               <Input
                 type="text"
@@ -267,8 +278,11 @@ export function CommandeJourneeDialog({
           </div>
 
           {!isEtages && (
-            <div>
-              <Label className="block text-sm mb-1">Créneau soir</Label>
+            <div className="mt-4">
+              <Label className="block text-sm mb-1 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-muted-foreground" />
+                Créneau soir
+              </Label>
               <div className="flex gap-2">
                 <Input
                   type="text"
@@ -288,13 +302,20 @@ export function CommandeJourneeDialog({
             </div>
           )}
 
-          <div>
-            <Label className="block text-sm mb-1">Commentaire (facultatif)</Label>
+          <div className="mt-4">
+            <Label className="block text-sm mb-1 flex items-center gap-2">
+              <MessageCircle className="w-4 h-4 text-muted-foreground" />
+              Commentaire (facultatif)
+            </Label>
             <Input value={commentaire} onChange={(e) => setCommentaire(e.target.value)} />
           </div>
 
-          <div className="pt-2 flex justify-end">
-            <Button onClick={handleSubmit} disabled={loading}>
+          <div className="pt-4 flex justify-end">
+            <Button
+              onClick={handleSubmit}
+              disabled={loading}
+              className="w-full bg-[#840404] hover:bg-[#750303] text-white"
+            >
               Créer la commande
             </Button>
           </div>

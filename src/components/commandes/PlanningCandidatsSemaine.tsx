@@ -14,6 +14,7 @@ type PlanifData = {
   heure_debut_soir: string | null
   heure_fin_soir: string | null
   client: { nom: string }
+  statut: string
 }
 
 type DispoData = {
@@ -57,7 +58,7 @@ export function PlanningCandidatsSemaine({
 
       const { data: planifData } = await supabase
         .from("commandes")
-        .select("candidat_id, date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, client:client_id (nom)")
+        .select("candidat_id, date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, statut, client:client_id (nom)")
         .in("date", dates)
         .in("candidat_id", ids)
 
@@ -71,7 +72,7 @@ export function PlanningCandidatsSemaine({
     const planif = planifs.find(
       (p) => p.candidat_id === candidatId && p.date === dateStr
     )
-    if (planif) return { statut: "planifie", info: planif }
+    if (planif) return { statut: planif.statut.toLowerCase(), info: planif }
 
     const dispo = dispos.find(
       (d) => d.candidat_id === candidatId && d.date === dateStr
@@ -89,6 +90,7 @@ export function PlanningCandidatsSemaine({
 
   const renderStatut = (statut: string, info: any) => {
     switch (statut) {
+      case "validé":
       case "planifie":
         const lignes = []
         if (info?.client?.nom) lignes.push(info.client.nom)
@@ -134,6 +136,34 @@ export function PlanningCandidatsSemaine({
             style={{ backgroundColor: disponibiliteColors["Non Dispo"].bg }}
           />
         )
+
+      case "annule int":
+      case "annule client":
+        return (
+          <div
+            className="w-3.5 h-3.5 rounded-full mx-auto"
+            style={{ backgroundColor: statutColors["Annule Int"].bg }}
+            title="Annule Int / Client"
+          />
+        )
+
+      case "annule ada":
+        return (
+          <div
+            className="w-3.5 h-3.5 rounded-full mx-auto"
+            style={{ backgroundColor: statutColors["Annule ADA"].bg }}
+            title="Annule ADA"
+          />
+        )
+
+case "absence":
+  return (
+    <div
+      className="w-3.5 h-3.5 rounded-full mx-auto"
+      style={{ backgroundColor: statutColors["Absence"].text }}
+      title="Absence"
+    />
+  )
 
       default:
         return <div className="text-xs text-gray-400">–</div>

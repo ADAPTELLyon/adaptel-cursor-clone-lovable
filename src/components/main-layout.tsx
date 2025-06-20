@@ -2,9 +2,13 @@ import { useEffect, useState } from "react"
 import { MainNav } from "./main-nav"
 import { withAuthGuard } from "./auth-guard"
 import { ArrowUp } from "lucide-react"
+import { useAuth } from "@/contexts/auth-context"
+import { supabase } from "@/lib/supabase"
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   const [showScrollTop, setShowScrollTop] = useState(false)
+  const [messageAccueil, setMessageAccueil] = useState<string | null>(null)
+  const { user } = useAuth()
 
   useEffect(() => {
     const handleScroll = () => {
@@ -13,6 +17,38 @@ function MainLayout({ children }: { children: React.ReactNode }) {
     window.addEventListener("scroll", handleScroll)
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
+
+  useEffect(() => {
+    const checkMissionsToday = async () => {
+      const prenom = user?.user_metadata?.prenom
+      if (!prenom) return
+
+      const today = new Date().toISOString().slice(0, 10)
+
+      const { count, error } = await supabase
+        .from("commandes")
+        .select("*", { count: "exact", head: true })
+        .eq("statut", "En recherche")
+        .eq("date", today)
+
+      if (error) {
+        console.error("Erreur Supabase:", error)
+        return
+      }
+
+      const total = count ?? 0
+      const msg =
+        total > 0
+          ? `Bonjour ${prenom}, vous avez ${total} mission${total > 1 ? "s" : ""} à valider aujourd’hui.`
+          : `Bonjour ${prenom}, vous n’avez pas de mission en recherche aujourd’hui.`
+
+      setMessageAccueil(msg)
+
+      setTimeout(() => setMessageAccueil(null), 6000)
+    }
+
+    checkMissionsToday()
+  }, [user])
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: "smooth" })
@@ -25,9 +61,15 @@ function MainLayout({ children }: { children: React.ReactNode }) {
         <MainNav />
       </div>
 
+      {/* Message d'accueil central */}
+      {messageAccueil && (
+        <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-50 bg-white shadow-md border border-gray-300 rounded-xl px-6 py-4 text-center text-sm font-medium max-w-lg text-gray-800">
+          {messageAccueil}
+        </div>
+      )}
+
       {/* Contenu principal élargi */}
       <main className="max-w-[1600px] mx-auto px-4 pt-8">
-        {/* ATTENTION : on ne met plus de pt-[72px] ici */}
         {children}
       </main>
 
