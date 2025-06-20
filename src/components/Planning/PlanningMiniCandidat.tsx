@@ -184,47 +184,6 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
                 onSuccess={() => fetchPlanning()}
                 nomPrenom={candidatNomPrenom}
               />
-
-              {commentaire && (
-                <div className="absolute bottom-2 right-3 z-20">
-                  <Popover
-                    open={editingCommentDate === dateStr}
-                    onOpenChange={(open) => !open && setEditingCommentDate(null)}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="p-0 h-auto w-auto text-gray-800"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setEditingCommentDate(dateStr)
-                          setCommentaireTemp(commentaire)
-                        }}
-                      >
-                        <Info className="h-4 w-4" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-64 p-2 space-y-2">
-                      <textarea
-                        value={commentaireTemp}
-                        onChange={(e) => setCommentaireTemp(e.target.value)}
-                        rows={4}
-                        className="w-full border rounded px-2 py-1 text-sm"
-                      />
-                      <div className="flex justify-end">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => saveComment(jourCell)}
-                        >
-                          <Check className="w-4 h-4 text-green-600" />
-                        </Button>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              )}
             </div>
           )
         })}
