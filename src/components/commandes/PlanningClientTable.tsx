@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { Check } from "lucide-react"
 import { format, startOfWeek, addDays, getWeek } from "date-fns"
@@ -29,6 +29,17 @@ export function PlanningClientTable({
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [commentaireTemp, setCommentaireTemp] = useState<string>("")
   const [lastClickedCommandeId, setLastClickedCommandeId] = useState<string | null>(null)
+  const [offset, setOffset] = useState(0)
+
+  useEffect(() => {
+    const elt = document.getElementById("commandes-filters")
+    if (elt) {
+      const update = () => setOffset(elt.getBoundingClientRect().bottom)
+      update()
+      window.addEventListener("resize", update)
+      return () => window.removeEventListener("resize", update)
+    }
+  }, [])
 
   const champsHoraire: (keyof CommandeWithCandidat)[] = [
     "heure_debut_matin",
@@ -77,9 +88,6 @@ export function PlanningClientTable({
     }
   }
 
-  console.log("📦 PlanningClientTable – rendering triggered – refreshTrigger =", refreshTrigger)
-  console.log("📊 PlanningClientTable – groupes visibles :", Object.keys(planning))
-
   const groupesParSemaineEtSecteur = useMemo(() => {
     const groupes: Record<string, Record<string, Record<string, JourPlanning[]>>> = {}
 
@@ -116,7 +124,6 @@ export function PlanningClientTable({
         })
       })
 
-    console.log("🧮 groupesParSemaineEtSecteur – recalculé – groupes =", groupes)
     return groupes
   }, [planning])
 
@@ -141,7 +148,10 @@ export function PlanningClientTable({
 
           return (
             <div key={`${semaine}-${secteur}`} className="border rounded-lg overflow-hidden shadow-sm">
-              <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
+              <div
+                className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white sticky z-[10]"
+                style={{ top: offset }}
+              >
                 <div className="p-3 border-r flex items-center justify-center">{semaineTexte}</div>
                 {jours.map((jour, index) => {
                   let totalMissions = 0
@@ -187,7 +197,6 @@ export function PlanningClientTable({
                 .sort(([aKey], [bKey]) => {
                   const [aClient, , , , aSlot] = aKey.split("||")
                   const [bClient, , , , bSlot] = bKey.split("||")
-
                   if (aClient < bClient) return -1
                   if (aClient > bClient) return 1
                   return parseInt(aSlot) - parseInt(bSlot)

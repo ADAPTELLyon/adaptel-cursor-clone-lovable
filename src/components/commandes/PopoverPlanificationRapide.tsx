@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase"
 import type { CommandeWithCandidat } from "@/types/types-front"
 import { toast } from "@/hooks/use-toast"
 import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
+import { PlanificationCoupureDialog } from "@/components/commandes/PlanificationCoupureDialog"
 
 type CandidatMini = {
   id: string
@@ -39,6 +40,8 @@ export function PopoverPlanificationRapide({
   const [search, setSearch] = useState("")
   const { data: candidats = [] } = useCandidatsBySecteur(secteur)
   const [filteredCandidats, setFilteredCandidats] = useState<CandidatMini[]>([])
+  const [popupCoupure, setPopupCoupure] = useState(false)
+  const [candidatChoisi, setCandidatChoisi] = useState<CandidatMini | null>(null)
 
   useEffect(() => {
     if (!open || candidats.length === 0) return
@@ -116,6 +119,19 @@ export function PopoverPlanificationRapide({
   )
 
   const planifier = async (candidatId: string) => {
+    const matin = commande.heure_debut_matin && commande.heure_fin_matin
+    const soir = commande.heure_debut_soir && commande.heure_fin_soir
+
+    // S'il y a les deux créneaux => coupure
+    if (matin && soir) {
+      const candidat = filteredCandidats.find((c) => c.id === candidatId)
+      if (!candidat) return
+      setCandidatChoisi(candidat)
+      setPopupCoupure(true)
+      return
+    }
+
+    // Sinon planification classique
     const { error } = await supabase.from("planification").insert({
       commande_id: commande.id,
       candidat_id: candidatId,
@@ -185,73 +201,94 @@ export function PopoverPlanificationRapide({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent className="w-72 p-2 space-y-2 shadow-md">
-        <div className="text-sm font-semibold">Planifier un candidat</div>
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+        <PopoverContent className="w-72 p-2 space-y-2 shadow-md">
+          <div className="text-sm font-semibold">Planifier un candidat</div>
 
-        <Input
-          placeholder="Nom du candidat"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+          <Input
+            placeholder="Nom du candidat"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
 
-        <div className="space-y-1 max-h-40 overflow-auto">
-          {candidatsVisibles.map((c) => (
-            <Button
-              key={c.id}
-              variant="ghost"
-              className="w-full justify-between"
-              onClick={() => planifier(c.id)}
-            >
-              <div className="flex items-center gap-2">
-                <span>{c.nom} {c.prenom}</span>
-                <div className="flex items-center gap-1">
-                  {c.vehicule && (
-                    <span className="p-1 rounded-full bg-muted" title="Véhicule">
-                      <Car className="w-3 h-3 text-blue-500" />
-                    </span>
-                  )}
-                  {c.interditClient && (
-                    <span className="p-1 rounded-full bg-muted" title="Interdit client">
-                      <Ban className="w-3 h-3 text-red-500" />
-                    </span>
-                  )}
-                  {c.prioritaire && (
-                    <span className="p-1 rounded-full bg-muted" title="Prioritaire">
-                      <Check className="w-3 h-3 text-green-600" />
-                    </span>
-                  )}
-                  {c.dejaTravaille && (
-                    <span className="p-1 rounded-full bg-muted" title="A déjà travaillé ici">
-                      <ArrowDownCircle className="w-3 h-3 text-violet-600" />
-                    </span>
-                  )}
+          <div className="space-y-1 max-h-40 overflow-auto">
+            {candidatsVisibles.map((c) => (
+              <Button
+                key={c.id}
+                variant="ghost"
+                className="w-full justify-between"
+                onClick={() => planifier(c.id)}
+              >
+                <div className="flex items-center gap-2">
+                  <span>{c.nom} {c.prenom}</span>
+                  <div className="flex items-center gap-1">
+                    {c.vehicule && (
+                      <span className="p-1 rounded-full bg-muted" title="Véhicule">
+                        <Car className="w-3 h-3 text-blue-500" />
+                      </span>
+                    )}
+                    {c.interditClient && (
+                      <span className="p-1 rounded-full bg-muted" title="Interdit client">
+                        <Ban className="w-3 h-3 text-red-500" />
+                      </span>
+                    )}
+                    {c.prioritaire && (
+                      <span className="p-1 rounded-full bg-muted" title="Prioritaire">
+                        <Check className="w-3 h-3 text-green-600" />
+                      </span>
+                    )}
+                    {c.dejaTravaille && (
+                      <span className="p-1 rounded-full bg-muted" title="A déjà travaillé ici">
+                        <ArrowDownCircle className="w-3 h-3 text-violet-600" />
+                      </span>
+                    )}
+                  </div>
                 </div>
+              </Button>
+            ))}
+
+            {candidatsVisibles.length === 0 && (
+              <div className="text-xs text-gray-500 text-center">
+                {filteredCandidats.length === 0 ? "Chargement..." : "Aucun candidat trouvé"}
               </div>
-            </Button>
-          ))}
+            )}
+          </div>
 
-          {candidatsVisibles.length === 0 && (
-            <div className="text-xs text-gray-500 text-center">
-              {filteredCandidats.length === 0 ? "Chargement..." : "Aucun candidat trouvé"}
-            </div>
-          )}
-        </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full flex items-center gap-2"
+            onClick={() => {
+              setOpen(false)
+              onOpenListes()
+            }}
+          >
+            <UsersIcon className="w-4 h-4" />
+            Voir les listes complètes
+          </Button>
+        </PopoverContent>
+      </Popover>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full flex items-center gap-2"
-          onClick={() => {
-            setOpen(false)
-            onOpenListes()
+      {popupCoupure && candidatChoisi && (
+        <PlanificationCoupureDialog
+          open={popupCoupure}
+          onClose={() => {
+            setPopupCoupure(false)
+            setCandidatChoisi(null)
           }}
-        >
-          <UsersIcon className="w-4 h-4" />
-          Voir les listes complètes
-        </Button>
-      </PopoverContent>
-    </Popover>
+          commande={commande}
+          candidatId={candidatChoisi.id}
+          candidatNomPrenom={`${candidatChoisi.nom} ${candidatChoisi.prenom}`}
+          onSuccess={() => {
+            setPopupCoupure(false)
+            setCandidatChoisi(null)
+            setOpen(false)
+            onRefresh()
+          }}
+        />
+      )}
+    </>
   )
 }

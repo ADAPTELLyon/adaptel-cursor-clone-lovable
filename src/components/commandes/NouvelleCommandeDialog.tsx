@@ -13,19 +13,16 @@ import { supabase } from "@/lib/supabase"
 import CommandeFormGauche from "./CommandeFormGauche"
 import CommandeFormDroite from "./CommandeFormDroite"
 import type { PosteType } from "@/types/types-front"
+import FullScreenLoader from "@/components/ui/FullScreenLoader"
+import { createPortal } from "react-dom"
 import { useNavigate } from "react-router-dom"
-import  FullScreenLoader  from "@/components/ui/FullScreenLoader"
 
 export default function NouvelleCommandeDialog({
   open,
   onOpenChange,
-  onRefresh,
-  onRefreshDone,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onRefresh?: () => Promise<void>
-  onRefreshDone?: () => void
 }) {
   const navigate = useNavigate()
 
@@ -87,6 +84,8 @@ export default function NouvelleCommandeDialog({
   const handleSave = async () => {
     if (!clientId || !secteur || !semaine) return
 
+    setIsReloading(true)
+
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
     if (!userEmail) return
@@ -99,6 +98,7 @@ export default function NouvelleCommandeDialog({
 
     if (userError || !userApp?.id) {
       console.error("❌ Utilisateur non trouvé dans table `utilisateurs` :", userError)
+      setIsReloading(false)
       return
     }
 
@@ -140,7 +140,10 @@ export default function NouvelleCommandeDialog({
       }
     }
 
-    if (lignes.length === 0) return
+    if (lignes.length === 0) {
+      setIsReloading(false)
+      return
+    }
 
     const { data, error } = await supabase
       .from("commandes")
@@ -149,6 +152,7 @@ export default function NouvelleCommandeDialog({
 
     if (error) {
       console.error("❌ Erreur insertion commandes :", error)
+      setIsReloading(false)
       return
     }
 
@@ -175,8 +179,6 @@ export default function NouvelleCommandeDialog({
       }
     }
 
-    console.log("🌀 NouvelleCommandeDialog – lancement animation + reload")
-    setIsReloading(true)
     setTimeout(() => {
       navigate(0)
     }, 900)
@@ -184,7 +186,12 @@ export default function NouvelleCommandeDialog({
 
   return (
     <>
-      {isReloading && <FullScreenLoader message="Mise à jour du planning..." />}
+      {isReloading &&
+        createPortal(
+          <FullScreenLoader message="Enregistrement des missions..." />,
+          document.body
+        )}
+
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>

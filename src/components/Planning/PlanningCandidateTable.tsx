@@ -1,5 +1,4 @@
 import { useState } from "react"
-import { cn } from "@/lib/utils"
 import { Check, Info } from "lucide-react"
 import { format, startOfWeek, addDays, getWeek } from "date-fns"
 import { fr } from "date-fns/locale"
@@ -131,17 +130,32 @@ export function PlanningCandidateTable({
 
                   {jours.map((jour, index) => {
                     const jourCells = jourMap[jour.dateStr] || []
-                    const jourCell = jourCells[0]
-                    const extra = jourCells.length > 1 ? jourCells[1] : null
-                    const dispo = jourCell?.disponibilite
-                    const commande = jourCell?.commande
-                    const commandeExtra = extra?.commande
+
+                    const missionMatin = jourCells.find(
+                      (j) => j.commande?.heure_debut_matin && j.commande?.heure_fin_matin
+                    )
+                    const missionSoir = jourCells.find(
+                      (j) => j.commande?.heure_debut_soir && j.commande?.heure_fin_soir
+                    )
+
+                    const commandePrincipale = missionMatin || missionSoir
+                    const commandeSecondaire =
+                      missionMatin && missionSoir &&
+                      (
+                        !missionMatin.commande?.client?.nom ||
+                        !missionSoir.commande?.client?.nom ||
+                        missionMatin.commande.client.nom !== missionSoir.commande.client.nom
+                      )
+                        ? missionSoir
+                        : null
+
+                    const dispo = commandePrincipale?.disponibilite || jourCells[0]?.disponibilite
 
                     return (
                       <div key={index} className="border-r p-2 h-28 relative">
                         <CellulePlanningCandidate
                           disponibilite={dispo}
-                          commande={commande}
+                          commande={commandePrincipale?.commande}
                           secteur={secteur}
                           date={jour.dateStr}
                           candidatId={candidatId}
@@ -150,7 +164,7 @@ export function PlanningCandidateTable({
                           nomPrenom={nomPrenom}
                         />
 
-                        {commande && commandeExtra && (
+                        {commandeSecondaire?.commande && (
                           <Popover>
                             <PopoverTrigger asChild>
                               <div className="absolute bottom-1 right-1 cursor-pointer bg-white rounded-full p-1 shadow">
@@ -161,14 +175,14 @@ export function PlanningCandidateTable({
                               <div className="font-medium mb-1">Mission secondaire :</div>
                               <div>
                                 Client :{" "}
-                                {commandeExtra.client?.nom || "Autre"}
+                                {commandeSecondaire.commande.client?.nom || "Autre"}
                               </div>
                               <div>
                                 Créneau :{" "}
-                                {commandeExtra.heure_debut_matin
-                                  ? `Matin ${commandeExtra.heure_debut_matin} - ${commandeExtra.heure_fin_matin}`
-                                  : commandeExtra.heure_debut_soir
-                                  ? `Soir ${commandeExtra.heure_debut_soir} - ${commandeExtra.heure_fin_soir}`
+                                {commandeSecondaire.commande.heure_debut_matin
+                                  ? `Matin ${commandeSecondaire.commande.heure_debut_matin} - ${commandeSecondaire.commande.heure_fin_matin}`
+                                  : commandeSecondaire.commande.heure_debut_soir
+                                  ? `Soir ${commandeSecondaire.commande.heure_debut_soir} - ${commandeSecondaire.commande.heure_fin_soir}`
                                   : "Heures non renseignées"}
                               </div>
                             </PopoverContent>

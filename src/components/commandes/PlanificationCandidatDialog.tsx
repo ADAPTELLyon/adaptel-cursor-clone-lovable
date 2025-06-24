@@ -9,6 +9,7 @@ import { toast } from "@/hooks/use-toast"
 import type { CommandeWithCandidat } from "@/types/types-front"
 import { CheckCircle2, Clock, AlertCircle, Car, Ban, Check, History, ChevronRight,ArrowDownCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { PlanificationCoupureDialog } from "./PlanificationCoupureDialog"
 
 const statusConfig = {
   dispo: {
@@ -72,6 +73,9 @@ export function PlanificationCandidatDialog({
   const [nonRenseignes, setNonRenseignes] = useState<CandidatMini[]>([])
   const [planifies, setPlanifies] = useState<CandidatMini[]>([])
   const [planificationDetails, setPlanificationDetails] = useState<Record<string, any>>({})
+  const [selectedCandidatId, setSelectedCandidatId] = useState<string | null>(null)
+  const [openCoupureDialog, setOpenCoupureDialog] = useState(false)
+  
 
   useEffect(() => {
     if (!open || candidats.length === 0) return
@@ -172,21 +176,27 @@ const dejaTravailleSet = new Set(
   const handleSelect = async (candidatId: string) => {
     const jour = date.slice(0, 10)
     const candidat = candidats.find((c) => c.id === candidatId)
-
+  
+    const aMatin = commande.heure_debut_matin && commande.heure_fin_matin
+    const aSoir = commande.heure_debut_soir && commande.heure_fin_soir
+  
+    if (aMatin && aSoir) {
+      setSelectedCandidatId(candidatId)
+      setOpenCoupureDialog(true)
+      return
+    }
+  
     const { data: existingPlanifs } = await supabase
       .from("planification")
       .select("heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
       .eq("candidat_id", candidatId)
       .eq("date", jour)
-
+  
     const conflitMatin =
-      hasHeures(commande.heure_debut_matin, commande.heure_fin_matin) &&
-      existingPlanifs?.some((p) => hasHeures(p.heure_debut_matin, p.heure_fin_matin))
-
+      aMatin && existingPlanifs?.some((p) => p.heure_debut_matin && p.heure_fin_matin)
     const conflitSoir =
-      hasHeures(commande.heure_debut_soir, commande.heure_fin_soir) &&
-      existingPlanifs?.some((p) => hasHeures(p.heure_debut_soir, p.heure_fin_soir))
-
+      aSoir && existingPlanifs?.some((p) => p.heure_debut_soir && p.heure_fin_soir)
+  
     if (conflitMatin || conflitSoir) {
       toast({
         title: "Conflit de créneau",
@@ -195,7 +205,7 @@ const dejaTravailleSet = new Set(
       })
       return
     }
-
+  
     await supabase.from("planification").insert({
       commande_id: commande.id,
       candidat_id: candidatId,
@@ -209,7 +219,7 @@ const dejaTravailleSet = new Set(
       heure_debut_nuit: null,
       heure_fin_nuit: null,
     })
-
+  
     await supabase
       .from("commandes")
       .update({
@@ -217,19 +227,19 @@ const dejaTravailleSet = new Set(
         statut: "Validé",
       })
       .eq("id", commande.id)
-
+  
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
-
+  
     if (userEmail && candidat) {
       const { data: userApp } = await supabase
         .from("utilisateurs")
         .select("id")
         .eq("email", userEmail)
         .single()
-
+  
       const userId = userApp?.id || null
-
+  
       if (userId) {
         await supabase.from("historique").insert({
           table_cible: "commandes",
@@ -252,11 +262,12 @@ const dejaTravailleSet = new Set(
         })
       }
     }
-
+  
     toast({ title: "Candidat planifié avec succès" })
     onClose()
     onSuccess()
   }
+  
 
   const dateFormatee = format(new Date(date), "eeee d MMMM", { locale: fr })
 
@@ -381,27 +392,51 @@ const dejaTravailleSet = new Set(
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-lg flex items-center gap-2">
-            <span className="p-2 rounded-lg bg-primary/10 text-primary">
-              <CheckCircle2 className="w-5 h-5" />
-            </span>
-            Planifier un candidat • {secteur}
-          </DialogTitle>
-          <p className="text-sm text-muted-foreground">
-            {dateFormatee}
-            {service && ` • ${service}`}
-          </p>
-        </DialogHeader>
-
-        <div className="flex gap-4 h-[500px]">
-          <StatusColumn statusKey="dispo" candidats={dispos} />
-          <StatusColumn statusKey="nonRenseigne" candidats={nonRenseignes} />
-          <StatusColumn statusKey="planifie" candidats={planifies} />
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
+    <>
+      <Dialog open={open} onOpenChange={onClose}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg flex items-center gap-2">
+              <span className="p-2 rounded-lg bg-primary/10 text-primary">
+                <CheckCircle2 className="w-5 h-5" />
+              </span>
+              Planifier un candidat • {secteur}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {dateFormatee}
+              {service && ` • ${service}`}
+            </p>
+          </DialogHeader>
+  
+          <div className="flex gap-4 h-[500px]">
+            <StatusColumn statusKey="dispo" candidats={dispos} />
+            <StatusColumn statusKey="nonRenseigne" candidats={nonRenseignes} />
+            <StatusColumn statusKey="planifie" candidats={planifies} />
+          </div>
+        </DialogContent>
+      </Dialog>
+  
+      {selectedCandidatId && (
+        <PlanificationCoupureDialog
+          open={openCoupureDialog}
+          onClose={() => {
+            setOpenCoupureDialog(false)
+            setSelectedCandidatId(null)
+          }}
+          commande={commande}
+          candidatId={selectedCandidatId}
+          candidatNomPrenom={
+            candidats.find((c) => c.id === selectedCandidatId)?.nom +
+            " " +
+            candidats.find((c) => c.id === selectedCandidatId)?.prenom
+          }
+          onSuccess={() => {
+            onSuccess()
+            setOpenCoupureDialog(false)
+            onClose()
+          }}
+        />
+      )}
+    </>
+  )  
 }
