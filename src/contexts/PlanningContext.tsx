@@ -23,7 +23,7 @@ export function PlanningProvider({ children }: { children: React.ReactNode }) {
   const fetchPlanning = async () => {
     const { data, error } = await supabase
       .from("commandes")
-      .select("*, candidats(*), clients(*)")
+      .select("*, candidat:candidats(*), client:clients(*)")
 
     if (!error) {
       setPlanning(data as CommandeWithCandidat[])

@@ -62,12 +62,18 @@ export function PopoverPlanificationRapide({
 
       const { data: planifData } = await supabase
         .from("planification")
-        .select("candidat_id")
+        .select("candidat_id, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
         .eq("secteur", secteur)
         .eq("date", jour)
         .in("candidat_id", candidatIds)
 
-      const planifieSet = new Set(planifData?.map((p) => p.candidat_id) || [])
+      const planifMap = new Map<string, { matin: boolean; soir: boolean }>()
+      planifData?.forEach((p) => {
+        planifMap.set(p.candidat_id, {
+          matin: !!p.heure_debut_matin && !!p.heure_fin_matin,
+          soir: !!p.heure_debut_soir && !!p.heure_fin_soir,
+        })
+      })
 
       const { data: ipData } = await supabase
         .from("interdictions_priorites")
@@ -90,13 +96,28 @@ export function PopoverPlanificationRapide({
         (dejaData || []).map((c) => c.candidat_id).filter(Boolean)
       )
 
+      const isCoupure = commande.heure_debut_matin && commande.heure_fin_matin && commande.heure_debut_soir && commande.heure_fin_soir
+      const chercheMatin = !!commande.heure_debut_matin && !!commande.heure_fin_matin && !commande.heure_debut_soir
+      const chercheSoir = !!commande.heure_debut_soir && !!commande.heure_fin_soir && !commande.heure_debut_matin
+
       const resultats: CandidatMini[] = candidats
         .filter((c) => {
-          return (
-            planifieSet.has(c.id) ||
-            dispoMap.get(c.id) === "Dispo" ||
-            !dispoMap.has(c.id)
-          )
+          const planif = planifMap.get(c.id)
+          const dispo = dispoMap.get(c.id)
+
+          if (!planif && dispo !== "Dispo" && dispo !== undefined) return false
+
+          if (planif) {
+            if (isCoupure) {
+              if (planif.matin || planif.soir) return false
+            } else if (chercheMatin && planif.matin) {
+              return false
+            } else if (chercheSoir && planif.soir) {
+              return false
+            }
+          }
+
+          return true
         })
         .map((c) => ({
           id: c.id,
@@ -122,7 +143,6 @@ export function PopoverPlanificationRapide({
     const matin = commande.heure_debut_matin && commande.heure_fin_matin
     const soir = commande.heure_debut_soir && commande.heure_fin_soir
 
-    // S'il y a les deux créneaux => coupure
     if (matin && soir) {
       const candidat = filteredCandidats.find((c) => c.id === candidatId)
       if (!candidat) return
@@ -131,7 +151,6 @@ export function PopoverPlanificationRapide({
       return
     }
 
-    // Sinon planification classique
     const { error } = await supabase.from("planification").insert({
       commande_id: commande.id,
       candidat_id: candidatId,
@@ -149,15 +168,10 @@ export function PopoverPlanificationRapide({
       return
     }
 
-    const { error: errUpdate } = await supabase
+    await supabase
       .from("commandes")
       .update({ candidat_id: candidatId, statut: "Validé" })
       .eq("id", commande.id)
-
-    if (errUpdate) {
-      toast({ title: "Erreur", description: "Échec mise à jour", variant: "destructive" })
-      return
-    }
 
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null

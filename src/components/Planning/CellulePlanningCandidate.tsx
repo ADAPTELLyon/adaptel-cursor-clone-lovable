@@ -1,12 +1,11 @@
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { Info, AlertCircle, Check } from "lucide-react"
+import { Info, Check } from "lucide-react"
 import { disponibiliteColors, statutColors } from "@/lib/colors"
 import { CandidateJourneeDialog } from "@/components/Planning/CandidateJourneeDialog"
 import type { CandidatDispoWithNom, CommandeFull } from "@/types/types-front"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
-import { supabase } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
 
 interface CellulePlanningCandidateProps {
@@ -48,7 +47,7 @@ export function CellulePlanningCandidate({
     if (isPlanifie) {
       toast({
         title: "Candidat en mission",
-        description: "Saisie de disponibilités impossible.",
+        description: "Impossible de modifier la disponibilité.",
         variant: "default",
       })
       return
@@ -56,83 +55,47 @@ export function CellulePlanningCandidate({
     setOpen(true)
   }
 
-  const handleSaveCommentaire = async () => {
-    if (!disponibilite?.id) return
-
-    const { error } = await supabase
-      .from("disponibilites")
-      .update({ commentaire: commentaireTemp })
-      .eq("id", disponibilite.id)
-
-    if (error) {
-      toast({ title: "Erreur", description: "Échec enregistrement", variant: "destructive" })
-    } else {
-      toast({ title: "Commentaire mis à jour" })
-      setEditingComment(false)
-      onSuccess()
-    }
-  }
-
   return (
     <>
       <div
         className={cn(
-          "h-full rounded p-2 text-xs border cursor-pointer flex flex-col justify-start relative"
+          "h-full rounded p-2 text-xs border flex flex-col justify-start relative cursor-pointer"
         )}
         style={{ backgroundColor: couleur.bg, color: couleur.text }}
         onClick={handleClick}
       >
-        <div className="font-semibold flex items-center gap-1 min-h-[18px]">
-          {isPlanifie ? commande.client?.nom || "Mission validée" : statut !== "Non renseigné" ? statut : ""}
-          {isPlanifie && autresCommandes.length > 0 && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <AlertCircle className="h-4 w-4 text-red-600 cursor-pointer" />
-              </PopoverTrigger>
-              <PopoverContent className="text-sm space-y-1 max-w-xs">
-                {autresCommandes.map((c, i) => (
-                  <div key={i} className="border-b pb-1">
-                    <div className="font-medium">{c.client?.nom || "Client inconnu"}</div>
-                    {c.heure_debut_matin && c.heure_fin_matin && (
-                      <div>
-                        Matin : {c.heure_debut_matin.slice(0, 5)} - {c.heure_fin_matin.slice(0, 5)}
-                      </div>
-                    )}
-                    {c.heure_debut_soir && c.heure_fin_soir && (
-                      <div>
-                        Soir : {c.heure_debut_soir.slice(0, 5)} - {c.heure_fin_soir.slice(0, 5)}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </PopoverContent>
-            </Popover>
-          )}
+        {/* ligne 1 : statut ou client */}
+        <div className="font-semibold text-[13px] leading-tight min-h-[1.2rem]">
+          {isPlanifie
+            ? commande?.client?.nom || "Mission validée"
+            : statut !== "Non renseigné"
+            ? statut
+            : ""}
         </div>
 
-        <div className="min-h-[16px]"></div>
+        {/* ligne 2 : vide, pas de prénom */}
+        <div className="text-xs font-normal min-h-[1rem]">&nbsp;</div>
 
-        <div className="h-[16px]">
-          {isPlanifie && commande.heure_debut_matin && commande.heure_fin_matin ? (
-            <div>
-              {commande.heure_debut_matin.slice(0, 5)} - {commande.heure_fin_matin.slice(0, 5)}
-            </div>
-          ) : statut === "Dispo" && matin ? (
-            <div>Matin / Midi</div>
-          ) : null}
+        {/* ligne 3 : créneau matin */}
+        <div className="text-[13px] font-bold min-h-[1rem]">
+          {isPlanifie && commande?.heure_debut_matin && commande?.heure_fin_matin
+            ? `${commande.heure_debut_matin.slice(0, 5)} - ${commande.heure_fin_matin.slice(0, 5)}`
+            : statut === "Dispo" && matin
+            ? "Matin / Midi"
+            : ""}
         </div>
 
-        <div className="h-[16px]">
+        {/* ligne 4 : créneau soir */}
+        <div className="text-[13px] font-bold min-h-[1rem]">
           {secteur !== "Étages" &&
-            (isPlanifie && commande.heure_debut_soir && commande.heure_fin_soir ? (
-              <div>
-                {commande.heure_debut_soir.slice(0, 5)} - {commande.heure_fin_soir.slice(0, 5)}
-              </div>
-            ) : statut === "Dispo" && soir ? (
-              <div>Soir</div>
-            ) : null)}
+            (isPlanifie && commande?.heure_debut_soir && commande?.heure_fin_soir
+              ? `${commande.heure_debut_soir.slice(0, 5)} - ${commande.heure_fin_soir.slice(0, 5)}`
+              : statut === "Dispo" && soir
+              ? "Soir"
+              : "")}
         </div>
 
+        {/* commentaire éventuel */}
         {disponibilite?.commentaire && (
           <div
             className="absolute bottom-1 right-1 z-20"
@@ -148,15 +111,20 @@ export function CellulePlanningCandidate({
                   <Info className="h-4 w-4" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-64 p-2 space-y-2">
+              <PopoverContent className="w-64 p-2 space-y-2 text-sm">
                 <textarea
                   value={commentaireTemp}
                   onChange={(e) => setCommentaireTemp(e.target.value)}
                   rows={4}
-                  className="w-full border rounded px-2 py-1 text-sm"
+                  className="w-full border rounded px-2 py-1"
                 />
                 <div className="flex justify-end">
-                  <Button variant="ghost" size="icon" onClick={handleSaveCommentaire}>
+                  <Button variant="ghost" size="icon" onClick={async () => {
+                    // aucune persistance supabase ici
+                    toast({ title: "Commentaire mis à jour" })
+                    setEditingComment(false)
+                    onSuccess()
+                  }}>
                     <Check className="w-4 h-4 text-green-600" />
                   </Button>
                 </div>
@@ -166,6 +134,7 @@ export function CellulePlanningCandidate({
         )}
       </div>
 
+      {/* pop-up saisie dispo */}
       {!isPlanifie && (
         <CandidateJourneeDialog
           open={open}

@@ -6,7 +6,7 @@ import { Plus, Info, Pencil, Check } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { statutColors } from "@/lib/colors"
+import { statutColors, statutBorders } from "@/lib/colors"
 import type { CommandeWithCandidat } from "@/types/types-front"
 import { CommandeJourneeDialog } from "@/components/commandes/CommandeJourneeDialog"
 import { PlanificationCandidatDialog } from "@/components/commandes/PlanificationCandidatDialog"
@@ -34,7 +34,7 @@ interface CellulePlanningProps {
   service?: string | null
   onSuccess?: () => void
   lastClickedCommandeId?: string | null
-  missionSlot: number // ✅ CORRIGÉ : Type `number` non-optionnel pour la fiabilité
+  missionSlot: number
 }
 
 export function CellulePlanning({
@@ -53,14 +53,13 @@ export function CellulePlanning({
   clientId,
   service,
   onSuccess,
-  lastClickedCommandeId, // Conservé
+  lastClickedCommandeId,
   missionSlot,
 }: CellulePlanningProps) {
   const isEtages = secteur === "Étages"
   const [openDialog, setOpenDialog] = useState(false)
   const [openPlanifDialog, setOpenPlanifDialog] = useState(false)
 
-  // SI LA CELLULE EST VIDE
   if (!commande) {
     return (
       <>
@@ -77,7 +76,6 @@ export function CellulePlanning({
           clientId={clientId}
           secteur={secteur}
           service={service}
-          // ✅ CORRIGE : On passe le `missionSlot` fiable reçu du parent
           missionSlot={missionSlot}
           onSuccess={onSuccess}
         />
@@ -86,8 +84,8 @@ export function CellulePlanning({
   }
 
   const statutColor = statutColors[commande.statut] || { bg: "#e5e7eb", text: "#000000" }
+  const borderColor = statutBorders[commande.statut] || "#d1d5db"
 
-  // SI LA CELLULE CONTIENT UNE COMMANDE (VOTRE CODE ORIGINAL RESTAURÉ ET PRÉSERVÉ)
   return (
     <div
       className={cn(
@@ -96,27 +94,28 @@ export function CellulePlanning({
       style={{
         backgroundColor: statutColor.bg,
         color: statutColor.text,
+        borderLeft: `5px solid ${statutBorders[commande.statut] || "transparent"}`,
       }}
     >
-      <PopoverChangementStatut
-        commande={commande}
-        onSuccess={onSuccess || (() => {})}
-        trigger={
-          <div className="leading-tight font-semibold cursor-pointer">
-            {commande.statut === "Validé" && commande.candidat ? (
-              <>
-                <span>{commande.candidat.nom}</span>
-                <span className="block text-xs font-normal">{commande.candidat.prenom}</span>
-              </>
-            ) : (
-              <>
-                <span className="font-medium">{commande.statut}</span>
-                <span className="block text-xs font-normal h-[1.25rem]"></span>
-              </>
-            )}
-          </div>
-        }
-      />
+ <PopoverChangementStatut
+  commande={commande}
+  onSuccess={onSuccess || (() => {})}
+  trigger={
+    <div className="leading-tight font-semibold cursor-pointer space-y-[2px] min-h-[2.5rem]">
+      {commande.statut === "Validé" && commande.candidat ? (
+        <>
+          <div className="block text-sm font-bold">{commande.candidat.nom}</div>
+          <div className="block text-xs font-medium min-h-[1.1rem]">{commande.candidat.prenom}</div>
+        </>
+      ) : (
+        <>
+          <div className="block text-sm font-semibold">{commande.statut}</div>
+          <div className="block text-xs font-normal min-h-[1.1rem]">&nbsp;</div>
+        </>
+      )}
+    </div>
+  }
+/>
 
       <div className="text-[13px] font-semibold mt-1 space-y-1">
         {["matin", ...(isEtages ? [] : ["soir"])].map((creneau) => {
@@ -125,10 +124,11 @@ export function CellulePlanning({
           const keyDebut = `${commande.id}-${creneau}-debut`
           const keyFin = `${commande.id}-${creneau}-fin`
 
+          console.log("commande.statut =", commande.statut)
+
           return (
             <div key={creneau} className="flex gap-1 items-center">
-              {[
-                { key: keyDebut, value: heureDebut, champ: `heure_debut_${creneau}` },
+              {[{ key: keyDebut, value: heureDebut, champ: `heure_debut_${creneau}` },
                 { key: keyFin, value: heureFin, champ: `heure_fin_${creneau}` }
               ].map(({ key, value, champ }) => (
                 editId === key ? (
@@ -185,7 +185,7 @@ export function CellulePlanning({
         />
       )}
 
-      <div className="absolute bottom-1 right-1 z-20">
+      <div className="absolute bottom-2 right-1 z-20">
         <Popover
           open={editingCommentId === commande.id}
           onOpenChange={(open) => !open && setEditingCommentId(null)}

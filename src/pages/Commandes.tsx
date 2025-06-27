@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { usePlanning } from "@/contexts/PlanningContext"
 import MainLayout from "@/components/main-layout"
 import { SectionFixeCommandes } from "@/components/commandes/section-fixe-commandes"
 import { PlanningClientTable } from "@/components/commandes/PlanningClientTable"
@@ -8,6 +9,7 @@ import { addDays, format, startOfWeek, getWeek } from "date-fns"
 import type { JourPlanning } from "@/types/types-front"
 import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateurs"
 import FullScreenLoader from "@/components/ui/FullScreenLoader"
+import { EntetePlanningFixe } from "@/components/commandes/EntetePlanningFixe"
 
 export default function Commandes() {
   const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(() => {
@@ -28,6 +30,7 @@ export default function Commandes() {
   const [openDialog, setOpenDialog] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [loading, setLoading] = useState(false)
+  const { planning: planningContext, refreshPlanning } = usePlanning()
 
   useEffect(() => {
     localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs))
@@ -106,14 +109,64 @@ export default function Commandes() {
   }, [])
 
   useEffect(() => {
+    if (Object.keys(planningContext).length === 0) return
+    const map: Record<string, JourPlanning[]> = {}
+
+    for (const item of planningContext) {
+      const nomClient = item.client?.nom || item.client_id || "Client inconnu"
+      if (!map[nomClient]) map[nomClient] = []
+
+      const jourIndex = map[nomClient].findIndex(
+        (j) =>
+          j.date === item.date &&
+          j.secteur === item.secteur &&
+          j.service === item.service &&
+          j.mission_slot === item.mission_slot
+      )
+
+      const commande = {
+        id: item.id,
+        date: item.date,
+        statut: item.statut,
+        secteur: item.secteur,
+        service: item.service,
+        mission_slot: item.mission_slot ?? 0,
+        client_id: item.client_id,
+        candidat_id: item.candidat_id ?? null,
+        heure_debut_matin: item.heure_debut_matin,
+        heure_fin_matin: item.heure_fin_matin,
+        heure_debut_soir: item.heure_debut_soir,
+        heure_fin_soir: item.heure_fin_soir,
+        commentaire: item.commentaire,
+        created_at: item.created_at,
+        candidat:
+          item.candidat?.nom && item.candidat?.prenom
+            ? { nom: item.candidat.nom, prenom: item.candidat.prenom }
+            : null,
+        client: item.client?.nom ? { nom: item.client.nom } : null,
+      }
+
+      if (jourIndex !== -1) {
+        map[nomClient][jourIndex].commandes.push(commande)
+      } else {
+        map[nomClient].push({
+          date: item.date,
+          secteur: item.secteur,
+          service: item.service,
+          mission_slot: item.mission_slot || 0,
+          commandes: [commande],
+        })
+      }
+    }
+
     const matchSearchTerm = (val: string) =>
       search.trim().toLowerCase().split(" ").every((term) =>
         val.toLowerCase().includes(term)
       )
 
-    const newFiltered: typeof planning = {}
+    const newFiltered: Record<string, JourPlanning[]> = {}
 
-    Object.entries(planning).forEach(([clientNom, jours]) => {
+    Object.entries(map).forEach(([clientNom, jours]) => {
       const joursFiltres = jours.filter((j) => {
         const semaineDuJour = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
         const matchSecteur = selectedSecteurs.includes(j.secteur)
@@ -129,8 +182,7 @@ export default function Commandes() {
           j.secteur,
           semaineDuJour,
           ...j.commandes.map(
-            (cmd) =>
-              `${cmd.candidat?.prenom || ""} ${cmd.candidat?.nom || ""}`
+            (cmd) => `${cmd.candidat?.prenom || ""} ${cmd.candidat?.nom || ""}`
           ),
         ].join(" ")
 
@@ -152,7 +204,10 @@ export default function Commandes() {
 
     setFilteredPlanning(newFiltered)
 
-    let d = 0, v = 0, r = 0, np = 0
+    let d = 0,
+      v = 0,
+      r = 0,
+      np = 0
 
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) =>
@@ -168,7 +223,15 @@ export default function Commandes() {
     )
 
     setStats({ demandées: d, validées: v, enRecherche: r, nonPourvue: np })
-  }, [planning, selectedSecteurs, selectedSemaine, client, search, enRecherche, toutAfficher])
+  }, [
+    planningContext,
+    selectedSecteurs,
+    selectedSemaine,
+    client,
+    search,
+    enRecherche,
+    toutAfficher,
+  ])
 
   const resetFiltres = () => {
     setSelectedSecteurs(["Étages"])
@@ -183,7 +246,7 @@ export default function Commandes() {
 
   const lancerChargementEtRafraichir = async () => {
     setLoading(true)
-    await fetchPlanning()
+    await refreshPlanning()
     setTimeout(() => setLoading(false), 800)
   }
 
@@ -216,6 +279,30 @@ export default function Commandes() {
     })
   })
 
+  const lignes = Object.keys(filteredPlanning).length === 1 ? Object.values(filteredPlanning)[0] : []
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime:commandes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'commandes',
+        },
+        (payload) => {
+          console.log("🔄 Changement en live sur 'commandes' :", payload)
+          refreshPlanning()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
   return (
     <MainLayout>
       {loading && <FullScreenLoader />}
@@ -231,7 +318,11 @@ export default function Commandes() {
           setSelectedSecteurs={setSelectedSecteurs}
           stats={stats}
           totauxSemaine={totauxSemaine}
-          taux={stats.demandées > 0 ? Math.round((stats.validées / stats.demandées) * 100) : 0}
+          taux={
+            stats.demandées > 0
+              ? Math.round((stats.validées / stats.demandées) * 100)
+              : 0
+          }
           semaine={semaine}
           setSemaine={setSemaine}
           selectedSemaine={selectedSemaine}
@@ -256,7 +347,7 @@ export default function Commandes() {
         planning={filteredPlanning}
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
-        onRefresh={fetchPlanning}
+        onRefresh={refreshPlanning}
         refreshTrigger={refreshTrigger}
       />
 

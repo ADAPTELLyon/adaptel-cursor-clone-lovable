@@ -49,12 +49,10 @@ export function AjoutSuiviCandidatDialog({
 
   const { data: candidats = [], isLoading, refetch } = useCandidatsBySecteur(secteur)
 
-  // Auto-assign secteur si un seul
   useEffect(() => {
     if (secteurs.length === 1) setSecteur(secteurs[0])
   }, [secteurs])
 
-  // Récupération ID utilisateur
   useEffect(() => {
     const fetchCreatedBy = async () => {
       if (!user?.email) return
@@ -63,7 +61,6 @@ export function AjoutSuiviCandidatDialog({
         .select("id")
         .eq("email", user.email)
         .single()
-
       if (!error && data?.id) setCreatedBy(data.id)
     }
 
@@ -72,11 +69,15 @@ export function AjoutSuiviCandidatDialog({
 
   const handleSave = async () => {
     if (!secteur || !candidatId || !createdBy) {
-      toast({ title: "Erreur", description: "Champs obligatoires manquants", variant: "destructive" })
+      toast({
+        title: "Erreur",
+        description: "Champs obligatoires manquants",
+        variant: "destructive",
+      })
       return
     }
 
-    // Vérifier si ce candidat a déjà un statut sur ce client
+    // Vérification si ce candidat a déjà une priorité ou interdiction sur ce client
     const { data: existants, error: checkError } = await supabase
       .from("interdictions_priorites")
       .select("id, type")
@@ -105,7 +106,7 @@ export function AjoutSuiviCandidatDialog({
     if ((type === "priorite" && dejaInterdit) || (type === "interdiction" && dejaPrioritaire)) {
       toast({
         title: "Incohérence",
-        description: `Ce candidat est déjà ${type === "priorite" ? "interdit" : "prioritaire"} pour ce client. Supprimez ce statut avant de le modifier.`,
+        description: `Ce candidat est déjà ${type === "priorite" ? "interdit" : "prioritaire"} pour ce client. Supprimez ce statut avant de modifier.`,
         variant: "destructive",
       })
       return
@@ -127,7 +128,11 @@ export function AjoutSuiviCandidatDialog({
       .insert(payload)
 
     if (insertError) {
-      toast({ title: "Erreur", description: `Échec de l’enregistrement : ${insertError.message}`, variant: "destructive" })
+      toast({
+        title: "Erreur",
+        description: `Échec de l’enregistrement : ${insertError.message}`,
+        variant: "destructive",
+      })
       return
     }
 
@@ -153,15 +158,22 @@ export function AjoutSuiviCandidatDialog({
           {secteurs.length > 1 && (
             <div>
               <Label>Secteur *</Label>
-              <Select value={secteur} onValueChange={(val) => {
-                setSecteur(val)
-                setCandidatId("")
-                refetch()
-              }}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner un secteur" /></SelectTrigger>
+              <Select
+                value={secteur}
+                onValueChange={(val) => {
+                  setSecteur(val)
+                  setCandidatId("")
+                  refetch()
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner un secteur" />
+                </SelectTrigger>
                 <SelectContent>
                   {secteurs.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -172,10 +184,14 @@ export function AjoutSuiviCandidatDialog({
             <div>
               <Label>Service (facultatif)</Label>
               <Select value={service} onValueChange={setService}>
-                <SelectTrigger><SelectValue placeholder="Sélectionner un service" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Sélectionner un service" />
+                </SelectTrigger>
                 <SelectContent>
                   {services.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -190,7 +206,9 @@ export function AjoutSuiviCandidatDialog({
               </SelectTrigger>
               <SelectContent>
                 {candidats.length === 0 ? (
-                  <div className="text-sm px-3 py-2 italic text-muted-foreground">Aucun candidat pour ce secteur</div>
+                  <div className="text-sm px-3 py-2 italic text-muted-foreground">
+                    Aucun candidat pour ce secteur
+                  </div>
                 ) : (
                   candidats.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
@@ -204,7 +222,10 @@ export function AjoutSuiviCandidatDialog({
 
           <div>
             <Label>Commentaire (facultatif)</Label>
-            <Textarea value={commentaire} onChange={(e) => setCommentaire(e.target.value)} />
+            <Textarea
+              value={commentaire}
+              onChange={(e) => setCommentaire(e.target.value)}
+            />
           </div>
 
           <div className="flex justify-end pt-4">

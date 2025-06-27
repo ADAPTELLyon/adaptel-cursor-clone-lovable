@@ -7,7 +7,7 @@ import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { toast } from "@/hooks/use-toast"
 import type { CommandeWithCandidat } from "@/types/types-front"
-import { CheckCircle2, Clock, AlertCircle, Car, Ban, Check, History, ChevronRight,ArrowDownCircle } from "lucide-react"
+import { CheckCircle2, Clock, AlertCircle, Car, Ban, Check, History, ChevronRight, ArrowDownCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PlanificationCoupureDialog } from "./PlanificationCoupureDialog"
 
@@ -75,34 +75,34 @@ export function PlanificationCandidatDialog({
   const [planificationDetails, setPlanificationDetails] = useState<Record<string, any>>({})
   const [selectedCandidatId, setSelectedCandidatId] = useState<string | null>(null)
   const [openCoupureDialog, setOpenCoupureDialog] = useState(false)
-  
 
   useEffect(() => {
     if (!open || candidats.length === 0) return
 
     const fetchDispoEtPlanif = async () => {
       const jour = date.slice(0, 10)
-// Chargement des priorités et interdictions
-const { data: ipData } = await supabase
-  .from("interdictions_priorites")
-  .select("candidat_id, type")
-  .eq("client_id", commande.client_id)
 
-const interditSet = new Set(
-  ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id)
-)
+      const { data: ipData } = await supabase
+        .from("interdictions_priorites")
+        .select("candidat_id, type")
+        .eq("client_id", commande.client_id)
 
-const prioritaireSet = new Set(
-  ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id)
-)
-const { data: dejaData } = await supabase
-  .from("commandes")
-  .select("candidat_id")
-  .eq("client_id", commande.client_id)
+      const interditSet = new Set(
+        ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id)
+      )
+      const prioritaireSet = new Set(
+        ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id)
+      )
 
-const dejaTravailleSet = new Set(
-  (dejaData || []).map((c) => c.candidat_id).filter(Boolean)
-)
+      const { data: dejaData } = await supabase
+        .from("commandes")
+        .select("candidat_id")
+        .eq("client_id", commande.client_id)
+
+      const dejaTravailleSet = new Set(
+        (dejaData || []).map((c) => c.candidat_id).filter(Boolean)
+      )
+
       const candidatIds = candidats.map((c) => c.id)
 
       const { data: dispoData } = await supabase
@@ -126,23 +126,29 @@ const dejaTravailleSet = new Set(
 
       const detailsMap: Record<string, any> = {}
       planifData?.forEach((p) => {
-        detailsMap[p.candidat_id] = {
-          heure_debut_matin: p.heure_debut_matin,
-          heure_fin_matin: p.heure_fin_matin,
-          heure_debut_soir: p.heure_debut_soir,
-          heure_fin_soir: p.heure_fin_soir,
-          commande_id: p.commande_id,
-        }
+        detailsMap[p.candidat_id] = p
       })
       setPlanificationDetails(detailsMap)
 
-      const planifieSet = new Map(planifData?.map((p) => [p.candidat_id, p]) || [])
+      const planifieSet = new Set(planifData?.map((p) => p.candidat_id))
+      const isCoupure = commande.heure_debut_matin && commande.heure_fin_matin && commande.heure_debut_soir && commande.heure_fin_soir
+      const chercheMatin = !!commande.heure_debut_matin && !!commande.heure_fin_matin && !commande.heure_debut_soir
+      const chercheSoir = !!commande.heure_debut_soir && !!commande.heure_fin_soir && !commande.heure_debut_matin
 
       const dispoList: CandidatMini[] = []
       const planifieList: CandidatMini[] = []
       const nonList: CandidatMini[] = []
-      
+
       for (const c of candidats) {
+        const planif = detailsMap[c.id]
+        const statut = dispoMap.get(c.id)
+
+        const excluMatin = chercheMatin && planif?.heure_debut_matin && planif?.heure_fin_matin
+        const excluSoir = chercheSoir && planif?.heure_debut_soir && planif?.heure_fin_soir
+        const excluCoupure = isCoupure && (planif?.heure_debut_matin || planif?.heure_debut_soir)
+
+        if (excluMatin || excluSoir || excluCoupure) continue
+
         const mini: CandidatMini = {
           id: c.id,
           nom: c.nom,
@@ -150,17 +156,13 @@ const dejaTravailleSet = new Set(
           vehicule: c.vehicule,
           interditClient: interditSet.has(c.id),
           prioritaire: prioritaireSet.has(c.id),
-          dejaPlanifie: false,
+          dejaPlanifie: planifieSet.has(c.id),
           dejaTravaille: dejaTravailleSet.has(c.id),
         }
 
-        if (planifieSet.has(c.id)) {
-          planifieList.push(mini)
-        } else if (dispoMap.get(c.id) === "Dispo") {
-          dispoList.push(mini)
-        } else if (!dispoMap.has(c.id)) {
-          nonList.push(mini)
-        }
+        if (planifieSet.has(c.id)) planifieList.push(mini)
+        else if (statut === "Dispo") dispoList.push(mini)
+        else if (!dispoMap.has(c.id)) nonList.push(mini)
       }
 
       setDispos(dispoList)

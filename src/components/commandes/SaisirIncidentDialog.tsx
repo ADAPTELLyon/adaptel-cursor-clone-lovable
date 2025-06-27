@@ -61,7 +61,7 @@ export default function SaisirIncidentDialog({
         date_incident,
         heure_incident,
         mise_en_interdiction: interdiction,
-        created_by: user.id, // ✅ AJOUT ICI
+        created_by: user.id,
       },
     ])
 
@@ -71,6 +71,28 @@ export default function SaisirIncidentDialog({
     }
 
     if (interdiction) {
+      const { data: existing, error: fetchError } = await supabase
+        .from("interdictions_priorites")
+        .select("id")
+        .eq("candidat_id", candidatId)
+        .eq("client_id", clientId)
+        .eq("type", "interdiction")
+        .eq("actif", true)
+
+      if (fetchError) {
+        toast({ title: "Erreur", description: fetchError.message, variant: "destructive" })
+        return
+      }
+
+      if (existing.length > 0) {
+        toast({
+          title: "Déjà interdit",
+          description: "Ce candidat a déjà une interdiction active pour ce client.",
+          variant: "destructive",
+        })
+        return
+      }
+
       const { error: interdictionError } = await supabase.from("interdictions_priorites").insert([
         {
           client_id: clientId,

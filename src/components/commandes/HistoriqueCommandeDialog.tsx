@@ -14,20 +14,28 @@ interface Props {
   commandeIds: string[]
   secteur: string
   semaineDate: string
+  children?: React.ReactNode
 }
 
 export function HistoriqueCommandeDialog({
   commandeIds,
   secteur,
   semaineDate,
+  children,
 }: Props) {
   const [open, setOpen] = useState(false)
 
   return (
-    <div>
-      <Button variant="ghost" size="icon" onClick={() => setOpen(true)}>
-        <Pencil className="h-4 w-4 text-gray-600" />
-      </Button>
+    <>
+      {children ? (
+        <span onClick={() => setOpen(true)} className="cursor-pointer">
+          {children}
+        </span>
+      ) : (
+        <Button variant="ghost" size="icon" onClick={() => setOpen(true)}>
+          <Pencil className="h-4 w-4 text-gray-600" />
+        </Button>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-7xl p-6">
@@ -46,6 +54,6 @@ export function HistoriqueCommandeDialog({
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }

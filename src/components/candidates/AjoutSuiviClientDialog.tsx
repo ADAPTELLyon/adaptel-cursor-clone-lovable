@@ -78,6 +78,40 @@ export function AjoutSuiviClientDialog({
       return
     }
 
+    const { data: existants, error: checkError } = await supabase
+      .from("interdictions_priorites")
+      .select("id, type")
+      .eq("candidat_id", candidatId)
+      .eq("client_id", selectedClient)
+      .eq("actif", true)
+
+    if (checkError) {
+      toast({ title: "Erreur", description: "Vérification échouée", variant: "destructive" })
+      return
+    }
+
+    const dejaInterdit = existants?.some((e) => e.type === "interdiction")
+    const dejaPrioritaire = existants?.some((e) => e.type === "priorite")
+
+    if (type === "interdiction" && dejaInterdit) {
+      toast({ title: "Erreur", description: "Ce candidat est déjà interdit pour ce client." })
+      return
+    }
+
+    if (type === "priorite" && dejaPrioritaire) {
+      toast({ title: "Erreur", description: "Ce candidat est déjà prioritaire pour ce client." })
+      return
+    }
+
+    if ((type === "interdiction" && dejaPrioritaire) || (type === "priorite" && dejaInterdit)) {
+      toast({
+        title: "Incohérence",
+        description: `Ce candidat est déjà ${type === "interdiction" ? "prioritaire" : "interdit"} pour ce client. Supprimez ce statut avant de le modifier.`,
+        variant: "destructive",
+      })
+      return
+    }
+
     const { error } = await supabase.from("interdictions_priorites").insert([
       {
         type,
@@ -106,7 +140,9 @@ export function AjoutSuiviClientDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Ajouter un client {type === "interdiction" ? "interdit" : "prioritaire"}</DialogTitle>
+          <DialogTitle>
+            Ajouter un client {type === "interdiction" ? "interdit" : "prioritaire"}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -130,7 +166,11 @@ export function AjoutSuiviClientDialog({
 
           <div>
             <label className="text-sm font-medium">Client</label>
-            <Select value={selectedClient} onValueChange={setSelectedClient} disabled={!secteur}>
+            <Select
+              value={selectedClient}
+              onValueChange={setSelectedClient}
+              disabled={!secteur}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Sélectionnez un client" />
               </SelectTrigger>
