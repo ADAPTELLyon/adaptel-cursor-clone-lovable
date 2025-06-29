@@ -160,7 +160,7 @@ case "absence":
   return (
     <div
       className="w-3.5 h-3.5 rounded-full mx-auto"
-      style={{ backgroundColor: statutColors["Absence"].text }}
+      style={{ backgroundColor: statutColors["Absence"].bg }}
       title="Absence"
     />
   )

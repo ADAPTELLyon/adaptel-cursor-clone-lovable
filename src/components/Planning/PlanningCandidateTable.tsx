@@ -93,22 +93,30 @@ export function PlanningCandidateTable({
   Object.entries(planning).forEach(([candidat, jours]) => {
     jours.forEach((jour) => {
       const semaine = getWeek(new Date(jour.date), { weekStartsOn: 1 }).toString()
-      if (!groupesParSemaine[semaine]) groupesParSemaine[semaine] = {}
+      const secteur = jour.secteur || "Inconnu"
+
+      // MODIF : si tous les secteurs sélectionnés, on fait un bloc par semaine ET secteur
+      const keySemaineSecteur = selectedSecteurs.length === 5
+        ? `${semaine}_${secteur}`
+        : semaine
+
+      if (!groupesParSemaine[keySemaineSecteur]) groupesParSemaine[keySemaineSecteur] = {}
       const cle = candidat
       const dateKey = format(new Date(jour.date), "yyyy-MM-dd")
 
-      if (!groupesParSemaine[semaine][cle]) groupesParSemaine[semaine][cle] = {}
-      if (!groupesParSemaine[semaine][cle][dateKey]) groupesParSemaine[semaine][cle][dateKey] = []
-      groupesParSemaine[semaine][cle][dateKey].push(jour)
+      if (!groupesParSemaine[keySemaineSecteur][cle]) groupesParSemaine[keySemaineSecteur][cle] = {}
+      if (!groupesParSemaine[keySemaineSecteur][cle][dateKey]) groupesParSemaine[keySemaineSecteur][cle][dateKey] = []
+      groupesParSemaine[keySemaineSecteur][cle][dateKey].push(jour)
     })
   })
 
   return (
     <TooltipProvider delayDuration={150}>
       <div className="space-y-8 mt-8">
-        {Object.entries(groupesParSemaine).map(([semaine, groupes]) => {
+        {Object.entries(groupesParSemaine).map(([keySemaineSecteur, groupes]) => {
+          const [semaineStr, secteurStr] = keySemaineSecteur.split("_")
           const baseDate = startOfWeek(new Date(), { weekStartsOn: 1 })
-          const semaineDifference = parseInt(semaine) - getWeek(baseDate, { weekStartsOn: 1 })
+          const semaineDifference = parseInt(semaineStr) - getWeek(baseDate, { weekStartsOn: 1 })
           const lundiSemaine = addDays(baseDate, semaineDifference * 7)
 
           const jours = Array.from({ length: 7 }, (_, i) => {
@@ -121,11 +129,13 @@ export function PlanningCandidateTable({
           })
 
           return (
-            <div key={semaine} className="border rounded-lg overflow-hidden shadow-sm">
-              {/* entête cohérente */}
-              <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white sticky z-10">
-                <div className="p-4 border-r flex items-center justify-center min-h-[64px]">
-                  {`Semaine ${semaine}`}
+            <div key={keySemaineSecteur} className="border rounded-lg overflow-hidden shadow-sm">
+<div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
+<div className="p-4 border-r flex flex-col items-center justify-center min-h-[64px]">
+                  <div>{`Semaine ${semaineStr}`}</div>
+                  {secteurStr && selectedSecteurs.length === 5 && (
+                    <div className="text-xs mt-1 italic">{secteurStr}</div>
+                  )}
                 </div>
                 {jours.map((jour, index) => {
                   let nbValide = 0
@@ -184,7 +194,7 @@ export function PlanningCandidateTable({
                     <ColonneCandidate
                       nomComplet={nomPrenom}
                       secteur={secteur}
-                      semaine={semaine}
+                      semaine={semaineStr}
                       statutGlobal={hasDispo ? "Dispo" : "Non Dispo"}
                       candidatId={candidatId}
                       totalHeures={totalHeures}
@@ -231,30 +241,30 @@ export function PlanningCandidateTable({
                             )}
 
                           {commandeSecondaire?.commande && (
-            <Popover>
-            <PopoverTrigger asChild>
-              <div className="absolute top-2 right-2 bg-white rounded-full p-1 shadow z-20 translate-x-1/4 -translate-y-1/4">
-                <AlertCircle className="w-5 h-5 text-[#840404]" />
-              </div>
-            </PopoverTrigger>
-            <PopoverContent side="top" className="text-sm max-w-xs space-y-1">
-              <div className="font-semibold">{commandeSecondaire.commande.client?.nom || "?"}</div>
-              {commandeSecondaire.commande.service && (
-                <div>{commandeSecondaire.commande.service}</div>
-              )}
-              <div className="flex items-center gap-1">
-                <Clock className="w-4 h-4" />
-                <span>
-                  {commandeSecondaire.commande.heure_debut_matin
-                    ? `${commandeSecondaire.commande.heure_debut_matin.slice(0,5)} - ${commandeSecondaire.commande.heure_fin_matin?.slice(0,5)}`
-                    : commandeSecondaire.commande.heure_debut_soir
-                    ? `${commandeSecondaire.commande.heure_debut_soir.slice(0,5)} - ${commandeSecondaire.commande.heure_fin_soir?.slice(0,5)}`
-                    : "Non renseigné"}
-                </span>
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <div className="absolute top-2 right-2 bg-white rounded-full p-1 shadow z-20 translate-x-1/4 -translate-y-1/4">
+                                  <AlertCircle className="w-5 h-5 text-[#840404]" />
+                                </div>
+                              </PopoverTrigger>
+                              <PopoverContent side="top" className="text-sm max-w-xs space-y-1">
+                                <div className="font-semibold">{commandeSecondaire.commande.client?.nom || "?"}</div>
+                                {commandeSecondaire.commande.service && (
+                                  <div>{commandeSecondaire.commande.service}</div>
+                                )}
+                                <div className="flex items-center gap-1">
+                                  <Clock className="w-4 h-4" />
+                                  <span>
+                                    {commandeSecondaire.commande.heure_debut_matin
+                                      ? `${commandeSecondaire.commande.heure_debut_matin.slice(0,5)} - ${commandeSecondaire.commande.heure_fin_matin?.slice(0,5)}`
+                                      : commandeSecondaire.commande.heure_debut_soir
+                                      ? `${commandeSecondaire.commande.heure_debut_soir.slice(0,5)} - ${commandeSecondaire.commande.heure_fin_soir?.slice(0,5)}`
+                                      : "Non renseigné"}
+                                  </span>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          )}
                         </div>
                       )
                     })}
