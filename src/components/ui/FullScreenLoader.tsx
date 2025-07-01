@@ -1,19 +1,24 @@
-import { motion } from "framer-motion"
+import Lottie from "lottie-react"
+import successAnimation from "@/assets/lotties/AnimationSuccess.json"
 
-export default function FullScreenLoader({ message }: { message?: string }) {
+export default function FullScreenLoader({
+  message,
+}: {
+  message?: string
+}) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-white">
-      <div className="flex flex-col items-center gap-4">
-        <motion.div
-          className="w-12 h-12 border-4 border-gray-300 border-t-brand-red rounded-full animate-spin"
-          initial={{ rotate: 0 }}
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white/90 space-y-4">
+      <div className="w-32 h-32">
+        <Lottie
+          animationData={successAnimation}
+          loop={false}
         />
-        {message && (
-          <div className="text-gray-700 text-sm">{message}</div>
-        )}
       </div>
+      {message && (
+        <p className="text-gray-700 text-center font-semibold text-lg">
+          {message}
+        </p>
+      )}
     </div>
   )
 }

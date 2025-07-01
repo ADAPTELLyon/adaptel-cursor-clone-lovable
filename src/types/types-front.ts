@@ -45,6 +45,7 @@ export type JourPlanningCandidat = {
   service?: string | null;
   disponibilite?: CandidatDispoWithNom;
   commande?: CommandeFull;
+  autresCommandes?: CommandeFull[]; // ✅ ajouté pour gérer les missions secondaires
 };
 
 // === TABLE: clients ===
@@ -85,15 +86,17 @@ export type Commande = {
   heure_fin_matin?: string | null;
   heure_debut_soir?: string | null;
   heure_fin_soir?: string | null;
+  heure_debut_nuit?: string | null;
+  heure_fin_nuit?: string | null;
   commentaire?: string | null;
   created_at: string;
-  mission_slot: number; // ✅ Obligatoire maintenant
+  mission_slot: number;
 };
 
 // === Planning client
 export type CommandeWithCandidat = Commande & {
   candidat?: Pick<Candidat, "nom" | "prenom"> | null;
-  client?: Pick<Client, "nom"> | null; // ✅ ajouté pour PlanningClientTable
+  client?: Pick<Client, "nom"> | null;
 };
 
 export type CommandeFull = Commande & {
@@ -106,7 +109,7 @@ export type JourPlanning = {
   secteur: string;
   service?: string | null;
   commandes: CommandeWithCandidat[];
-  mission_slot?: number | null; // ✅ déjà présent
+  mission_slot?: number | null;
 };
 
 // === TABLE: planification ===

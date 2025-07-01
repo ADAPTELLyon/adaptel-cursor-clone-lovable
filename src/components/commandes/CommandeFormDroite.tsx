@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Clock, PlusCircle } from "lucide-react"
 import { statutColors } from "@/lib/colors"
+import InputMask from "react-input-mask"
 
 interface CommandeFormDroiteProps {
   joursSemaine: { jour: string; key: string }[]
@@ -137,26 +138,26 @@ export default function CommandeFormDroite({
                 toggleJour(j.key)
               }}
             >
-              {/* Indication à cliquer */}
               {!isActive && (
                 <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 opacity-10">
                   <PlusCircle className="w-8 h-8" />
                 </div>
               )}
 
-              {/* Date + Nb personnes */}
               <div className="flex justify-between items-start mb-1">
                 <div className="text-sm font-medium">{j.jour}</div>
                 {isActive && (
                   <select
                     value={heures.nbPersonnes || 1}
-                    onChange={(e) => setHeuresParJour((prev) => ({
-                      ...prev,
-                      [j.key]: {
-                        ...prev[j.key],
-                        nbPersonnes: Number(e.target.value),
-                      },
-                    }))}
+                    onChange={(e) =>
+                      setHeuresParJour((prev) => ({
+                        ...prev,
+                        [j.key]: {
+                          ...prev[j.key],
+                          nbPersonnes: Number(e.target.value),
+                        },
+                      }))
+                    }
                     className="text-sm px-1 py-0.5 border rounded w-14"
                   >
                     {Array.from({ length: 21 }, (_, i) => i + 1).map((n) => (
@@ -166,68 +167,91 @@ export default function CommandeFormDroite({
                 )}
               </div>
 
-              {/* Contenu des horaires */}
               {isActive && (
                 <div className="text-sm space-y-2 pt-1">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-gray-500" />
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="--:--"
+                    <InputMask
+                      mask="99:99"
+                      maskPlaceholder="__:__"
                       value={heures.debutMatin || ""}
-                      className="w-20 h-8 text-center"
                       onChange={(e) =>
                         setHeuresParJour((prev) => ({
                           ...prev,
                           [j.key]: { ...prev[j.key], debutMatin: e.target.value },
                         }))
                       }
-                    />
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="--:--"
+                    >
+                      {(inputProps) => (
+                        <Input
+                          {...inputProps}
+                          className="w-20 h-8 text-center"
+                          inputMode="numeric"
+                        />
+                      )}
+                    </InputMask>
+                    <InputMask
+                      mask="99:99"
+                      maskPlaceholder="__:__"
                       value={heures.finMatin || ""}
-                      className="w-20 h-8 text-center"
                       onChange={(e) =>
                         setHeuresParJour((prev) => ({
                           ...prev,
                           [j.key]: { ...prev[j.key], finMatin: e.target.value },
                         }))
                       }
-                    />
+                    >
+                      {(inputProps) => (
+                        <Input
+                          {...inputProps}
+                          className="w-20 h-8 text-center"
+                          inputMode="numeric"
+                        />
+                      )}
+                    </InputMask>
                   </div>
 
                   {!isEtages && (
                     <div className="flex items-center gap-2">
                       <Clock className="w-4 h-4 text-gray-500" />
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="--:--"
+                      <InputMask
+                        mask="99:99"
+                        maskPlaceholder="__:__"
                         value={heures.debutSoir || ""}
-                        className="w-20 h-8 text-center"
                         onChange={(e) =>
                           setHeuresParJour((prev) => ({
                             ...prev,
                             [j.key]: { ...prev[j.key], debutSoir: e.target.value },
                           }))
                         }
-                      />
-                      <Input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="--:--"
+                      >
+                        {(inputProps) => (
+                          <Input
+                            {...inputProps}
+                            className="w-20 h-8 text-center"
+                            inputMode="numeric"
+                          />
+                        )}
+                      </InputMask>
+                      <InputMask
+                        mask="99:99"
+                        maskPlaceholder="__:__"
                         value={heures.finSoir || ""}
-                        className="w-20 h-8 text-center"
                         onChange={(e) =>
                           setHeuresParJour((prev) => ({
                             ...prev,
                             [j.key]: { ...prev[j.key], finSoir: e.target.value },
                           }))
                         }
-                      />
+                      >
+                        {(inputProps) => (
+                          <Input
+                            {...inputProps}
+                            className="w-20 h-8 text-center"
+                            inputMode="numeric"
+                          />
+                        )}
+                      </InputMask>
                     </div>
                   )}
                 </div>

@@ -181,7 +181,7 @@ export default function NouvelleCommandeDialog({
 
     setTimeout(() => {
       navigate(0)
-    }, 900)
+    }, 800)
   }
 
   return (

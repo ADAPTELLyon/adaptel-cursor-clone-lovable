@@ -210,11 +210,7 @@ export function PlanningCandidateTable({
                       )
 
                       const commandePrincipale = missionMatin || missionSoir
-                      const commandeSecondaire =
-                        missionMatin && missionSoir &&
-                        missionMatin.commande?.client?.nom !== missionSoir.commande?.client?.nom
-                          ? missionSoir
-                          : null
+                      const commandeSecondaire = jourCells[0]?.autresCommandes?.[0] || null
 
                       return (
                         <div
@@ -224,7 +220,7 @@ export function PlanningCandidateTable({
                           <CellulePlanningCandidate
                             disponibilite={jourCells[0]?.disponibilite}
                             commande={commandePrincipale?.commande}
-                            autresCommandes={commandeSecondaire ? [commandeSecondaire.commande] : []}
+                            autresCommandes={commandeSecondaire ? [commandeSecondaire] : []}
                             secteur={secteur}
                             date={jour.dateStr}
                             candidatId={candidatId}
@@ -240,31 +236,31 @@ export function PlanningCandidateTable({
                               </div>
                             )}
 
-                          {commandeSecondaire?.commande && (
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <div className="absolute top-2 right-2 bg-white rounded-full p-1 shadow z-20 translate-x-1/4 -translate-y-1/4">
-                                  <AlertCircle className="w-5 h-5 text-[#840404]" />
-                                </div>
-                              </PopoverTrigger>
-                              <PopoverContent side="top" className="text-sm max-w-xs space-y-1">
-                                <div className="font-semibold">{commandeSecondaire.commande.client?.nom || "?"}</div>
-                                {commandeSecondaire.commande.service && (
-                                  <div>{commandeSecondaire.commande.service}</div>
-                                )}
-                                <div className="flex items-center gap-1">
-                                  <Clock className="w-4 h-4" />
-                                  <span>
-                                    {commandeSecondaire.commande.heure_debut_matin
-                                      ? `${commandeSecondaire.commande.heure_debut_matin.slice(0,5)} - ${commandeSecondaire.commande.heure_fin_matin?.slice(0,5)}`
-                                      : commandeSecondaire.commande.heure_debut_soir
-                                      ? `${commandeSecondaire.commande.heure_debut_soir.slice(0,5)} - ${commandeSecondaire.commande.heure_fin_soir?.slice(0,5)}`
-                                      : "Non renseigné"}
-                                  </span>
-                                </div>
-                              </PopoverContent>
-                            </Popover>
-                          )}
+{commandeSecondaire && (
+  <Popover>
+    <PopoverTrigger asChild>
+      <div className="absolute top-2 right-2 bg-white rounded-full p-1 shadow z-20 translate-x-1/4 -translate-y-1/4">
+        <AlertCircle className="w-5 h-5 text-[#840404]" />
+      </div>
+    </PopoverTrigger>
+    <PopoverContent side="top" className="text-sm max-w-xs space-y-1">
+      <div className="font-semibold">{commandeSecondaire.client?.nom || "?"}</div>
+      {commandeSecondaire.service && (
+        <div>{commandeSecondaire.service}</div>
+      )}
+      <div className="flex items-center gap-1">
+        <Clock className="w-4 h-4" />
+        <span>
+          {commandeSecondaire.heure_debut_matin
+            ? `${commandeSecondaire.heure_debut_matin.slice(0,5)} - ${commandeSecondaire.heure_fin_matin?.slice(0,5)}`
+            : commandeSecondaire.heure_debut_soir
+            ? `${commandeSecondaire.heure_debut_soir.slice(0,5)} - ${commandeSecondaire.heure_fin_soir?.slice(0,5)}`
+            : "Non renseigné"}
+        </span>
+      </div>
+    </PopoverContent>
+  </Popover>
+)}
                         </div>
                       )
                     })}

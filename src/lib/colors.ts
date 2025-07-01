@@ -62,6 +62,14 @@ export const indicateurColors = {
   "Planifié": "#a9d08e",      // vert
 }
 
+export const secteursColors = {
+  "Étages": { bg: "#d8b4fe" },     // violet doux pastel
+  "Cuisine": { bg: "#bfdbfe" },    // bleu clair pastel
+  "Salle":   { bg: "#fcd5b5" },    // orange beige pastel
+  "Plonge":  { bg: "#e5e7eb" },    // gris clair
+  "Réception": { bg: "#fef9c3" },  // jaune pâle pastel
+}
+
 export const disponibiliteColors = {
   "Dispo": {
     bg: "#8ea9db",
