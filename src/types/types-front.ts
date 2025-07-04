@@ -45,7 +45,7 @@ export type JourPlanningCandidat = {
   service?: string | null;
   disponibilite?: CandidatDispoWithNom;
   commande?: CommandeFull;
-  autresCommandes?: CommandeFull[]; // ✅ ajouté pour gérer les missions secondaires
+  autresCommandes?: CommandeFull[]; // missions secondaires
 };
 
 // === TABLE: clients ===
@@ -93,7 +93,6 @@ export type Commande = {
   mission_slot: number;
 };
 
-// === Planning client
 export type CommandeWithCandidat = Commande & {
   candidat?: Pick<Candidat, "nom" | "prenom"> | null;
   client?: Pick<Client, "nom"> | null;
@@ -104,6 +103,7 @@ export type CommandeFull = Commande & {
   client?: Pick<Client, "nom"> | null;
 };
 
+// === Planning client ===
 export type JourPlanning = {
   date: string;
   secteur: string;
@@ -239,3 +239,31 @@ export type Planif = {
     prenom: string;
   };
 };
+
+// === DASHBOARD STATS ===
+export type DashboardStats = {
+  statsByStatus: Record<string, number>;
+  repartitionSecteurs: {
+    secteur: string;
+    missions: number;
+    missionsN1: number;
+  }[];
+  missionsByDay: {
+    day: string;
+    missions: number;
+    missionsN1: number;
+  }[];
+  topClients: {
+    name: string;
+    missions: number;
+  }[];
+  tempsTraitementMoyen: string;
+  missionsSemaine: number;
+  missionsSemaineN1: number;
+  positionSemaine: number;
+  missionsMois: number;
+  missionsMoisN1: number;
+  positionMois: number;
+  isLoading: boolean;
+};
+

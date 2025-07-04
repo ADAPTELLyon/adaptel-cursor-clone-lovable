@@ -15,6 +15,7 @@ import Clients from "./pages/Clients"
 import Candidats from "./pages/Candidats"
 import Parametrages from "./pages/Parametrages"
 import NotFound from "./pages/NotFound"
+import Reporting from "./pages/Reporting"  // ← ajouté
 
 const queryClient = new QueryClient()
 
@@ -35,6 +36,7 @@ const App = () => (
               <Route path="/clients" element={<Clients />} />
               <Route path="/candidats" element={<Candidats />} />
               <Route path="/parametrages" element={<Parametrages />} />
+              <Route path="/reporting" element={<Reporting />} /> {/* ← ajouté */}
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

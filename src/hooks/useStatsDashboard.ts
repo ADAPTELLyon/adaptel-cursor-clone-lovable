@@ -1,21 +1,9 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
-import { getWeek, getYear, startOfWeek, endOfWeek, parseISO, differenceInHours } from "date-fns"
+import { getWeek, getYear, startOfWeek, endOfWeek, parseISO, differenceInMinutes } from "date-fns"
 
-type DashboardStats = {
-  statsByStatus: Record<string, number>
-  missionsSemaine: number
-  missionsSemaineN1: number
-  missionsByDay: { day: string; missions: number; missionsN1: number }[]
-  repartitionSecteurs: { secteur: string; missions: number; missionsN1: number }[]
-  positionSemaine: number
-  topClients: { name: string; missions: number }[]
-  tempsTraitementMoyen: string
-  isLoading: boolean
-}
-
-export function useStatsDashboard(): DashboardStats {
-  const [stats, setStats] = useState<DashboardStats>({
+export function useStatsDashboard() {
+  const [stats, setStats] = useState({
     statsByStatus: {},
     missionsSemaine: 0,
     missionsSemaineN1: 0,
@@ -24,6 +12,9 @@ export function useStatsDashboard(): DashboardStats {
     positionSemaine: 0,
     topClients: [],
     tempsTraitementMoyen: "-",
+    missionsMois: 0,
+    missionsMoisN1: 0,
+    positionMois: 0,
     isLoading: true,
   })
 
@@ -128,40 +119,44 @@ export function useStatsDashboard(): DashboardStats {
         const topClients = Object.entries(topClientsCount)
           .sort(([, a], [, b]) => b - a)
           .slice(0, 5)
-          .map(([name, missions]) => ({
-            name,
-            missions,
-          }))
-// 7️⃣ temps de traitement basé sur historique (action)
-let totalHeures = 0
-let nbValid = 0
+          .map(([name, missions]) => ({ name, missions }))
 
-if (commandeIdsValid.length) {
-  const { data: historique } = await supabase
-    .from("historique")
-    .select("ligne_id, action, date_action")
-    .in("ligne_id", commandeIdsValid)
+        let totalMinutes = 0
+        let nbValid = 0
 
-  commandeIdsValid.forEach((id) => {
-    const creation = historique?.find(
-      (h) => h.ligne_id === id && h.action === "creation"
-    )
-    const planification = historique?.find(
-      (h) => h.ligne_id === id && h.action === "planification"
-    )
-    if (creation && planification) {
-      const d1 = parseISO(creation.date_action)
-      const d2 = parseISO(planification.date_action)
-      const diffH = differenceInHours(d2, d1)
-      if (diffH >= 0) {
-        totalHeures += diffH
-        nbValid++
-      }
-    }
-  })
-}
+        if (commandeIdsValid.length) {
+          const { data: historique } = await supabase
+            .from("historique")
+            .select("ligne_id, action, date_action")
+            .in("ligne_id", commandeIdsValid)
 
-const tempsMoyen = nbValid > 0 ? Math.round(totalHeures / nbValid) : null
+          commandeIdsValid.forEach((id) => {
+            const creation = historique?.find(h => h.ligne_id === id && h.action === "creation")
+            const planif = historique?.find(h => h.ligne_id === id && h.action === "planification")
+            if (creation && planif) {
+              const d1 = parseISO(creation.date_action)
+              const d2 = parseISO(planif.date_action)
+              const diffMin = differenceInMinutes(d2, d1)
+              if (diffMin >= 0) {
+                totalMinutes += diffMin
+                nbValid++
+              }
+            }
+          })
+        }
+
+        let tempsMoyen = "-"
+        if (nbValid > 0) {
+          const avgMin = Math.round(totalMinutes / nbValid)
+          const jours = Math.floor(avgMin / 1440)
+          const heures = Math.floor((avgMin % 1440) / 60)
+          const minutes = avgMin % 60
+          if (jours > 0) {
+            tempsMoyen = `${jours}j ${heures}h${minutes > 0 ? ` ${minutes}min` : ""}`
+          } else {
+            tempsMoyen = `${heures}h${minutes > 0 ? ` ${minutes}min` : ""}`
+          }
+        }
 
         setStats({
           statsByStatus: {
@@ -180,7 +175,10 @@ const tempsMoyen = nbValid > 0 ? Math.round(totalHeures / nbValid) : null
           repartitionSecteurs: repartitionSecteursArray,
           positionSemaine,
           topClients,
-          tempsTraitementMoyen: tempsMoyen !== null ? `${tempsMoyen}h` : "-",
+          tempsTraitementMoyen: tempsMoyen,
+          missionsMois: 0,
+          missionsMoisN1: 0,
+          positionMois: 0,
           isLoading: false,
         })
       } catch (e) {

@@ -20,9 +20,11 @@ import { useNavigate } from "react-router-dom"
 export default function NouvelleCommandeDialog({
   open,
   onOpenChange,
+  onRefreshDone,
 }: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRefreshDone: () => void;
 }) {
   const navigate = useNavigate()
 

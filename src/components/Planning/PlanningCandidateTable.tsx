@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Check, AlertCircle, Clock, Plus } from "lucide-react"
-import { format, startOfWeek, addDays, getWeek } from "date-fns"
+import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns"
 import { fr } from "date-fns/locale"
 import { indicateurColors, statutColors } from "@/lib/colors"
 import { supabase } from "@/lib/supabase"
@@ -25,14 +25,18 @@ export function PlanningCandidateTable({
 
   useEffect(() => {
     const fetchHeures = async () => {
-      const semaineNum =
-        selectedSemaine !== "Toutes"
-          ? parseInt(selectedSemaine)
-          : getWeek(new Date(), { weekStartsOn: 1 })
+      const currentDate = new Date()
+      const lundiSemaine = startOfWeek(currentDate, { weekStartsOn: 1 })
+      let lundiTarget = lundiSemaine
 
-      const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
-      const lundiSemaine = addDays(lundi, (semaineNum - getWeek(lundi, { weekStartsOn: 1 })) * 7)
-      const dimancheSemaine = addDays(lundiSemaine, 6)
+      if (selectedSemaine !== "Toutes") {
+        const numSemaineCible = parseInt(selectedSemaine)
+        const numSemaineActuelle = parseInt(format(currentDate, "I"))
+        const diff = numSemaineCible - numSemaineActuelle
+        lundiTarget = addWeeks(lundiSemaine, diff)
+      }
+
+      const dimancheTarget = endOfWeek(lundiTarget, { weekStartsOn: 1 })
 
       const heures: Record<string, string> = {}
 
@@ -51,11 +55,10 @@ export function PlanningCandidateTable({
           .select("*")
           .eq("statut", "Validé")
           .eq("candidat_id", candidatId)
-          .gte("date", lundiSemaine.toISOString().slice(0, 10))
-          .lte("date", dimancheSemaine.toISOString().slice(0, 10))
+          .gte("date", lundiTarget.toISOString().slice(0, 10))
+          .lte("date", dimancheTarget.toISOString().slice(0, 10))
 
         if (error || !data) {
-          console.error("Erreur chargement heures", error)
           heures[candidatNom] = "00:00"
           continue
         }
@@ -87,26 +90,30 @@ export function PlanningCandidateTable({
     fetchHeures()
   }, [planning, selectedSemaine])
 
-  const groupesParSemaine: Record<string, Record<string, Record<string, JourPlanningCandidat[]>>> =
-    {}
+  const groupesParSemaine: Record<string, Record<string, Record<string, JourPlanningCandidat[]>>> = {}
 
   Object.entries(planning).forEach(([candidat, jours]) => {
     jours.forEach((jour) => {
-      const semaine = getWeek(new Date(jour.date), { weekStartsOn: 1 }).toString()
+      const dateObj = new Date(jour.date)
+      const lundiSemaine = startOfWeek(dateObj, { weekStartsOn: 1 })
+      const numeroSemaine = format(lundiSemaine, "I")
+
       const secteur = jour.secteur || "Inconnu"
 
-      // MODIF : si tous les secteurs sélectionnés, on fait un bloc par semaine ET secteur
       const keySemaineSecteur = selectedSecteurs.length === 5
-        ? `${semaine}_${secteur}`
-        : semaine
+        ? `${numeroSemaine}_${secteur}`
+        : numeroSemaine
 
       if (!groupesParSemaine[keySemaineSecteur]) groupesParSemaine[keySemaineSecteur] = {}
-      const cle = candidat
-      const dateKey = format(new Date(jour.date), "yyyy-MM-dd")
+      if (!groupesParSemaine[keySemaineSecteur][candidat]) groupesParSemaine[keySemaineSecteur][candidat] = {}
 
-      if (!groupesParSemaine[keySemaineSecteur][cle]) groupesParSemaine[keySemaineSecteur][cle] = {}
-      if (!groupesParSemaine[keySemaineSecteur][cle][dateKey]) groupesParSemaine[keySemaineSecteur][cle][dateKey] = []
-      groupesParSemaine[keySemaineSecteur][cle][dateKey].push(jour)
+      // forcer la clé de date cohérente en YYYY-MM-DD
+      const dateKey = dateObj.toISOString().slice(0, 10)
+
+      if (!groupesParSemaine[keySemaineSecteur][candidat][dateKey]) {
+        groupesParSemaine[keySemaineSecteur][candidat][dateKey] = []
+      }
+      groupesParSemaine[keySemaineSecteur][candidat][dateKey].push(jour)
     })
   })
 
@@ -116,22 +123,25 @@ export function PlanningCandidateTable({
         {Object.entries(groupesParSemaine).map(([keySemaineSecteur, groupes]) => {
           const [semaineStr, secteurStr] = keySemaineSecteur.split("_")
           const baseDate = startOfWeek(new Date(), { weekStartsOn: 1 })
-          const semaineDifference = parseInt(semaineStr) - getWeek(baseDate, { weekStartsOn: 1 })
-          const lundiSemaine = addDays(baseDate, semaineDifference * 7)
+          const diff = parseInt(semaineStr) - parseInt(format(baseDate, "I"))
+          const lundiCible = addWeeks(baseDate, diff)
+          const dimancheCible = endOfWeek(lundiCible, { weekStartsOn: 1 })
 
           const jours = Array.from({ length: 7 }, (_, i) => {
-            const jour = addDays(lundiSemaine, i)
+            const jour = new Date(lundiCible)
+            jour.setDate(jour.getDate() + i)
+            const dateStr = jour.toISOString().slice(0, 10)
             return {
               date: jour,
-              dateStr: format(jour, "yyyy-MM-dd"),
+              dateStr,
               label: format(jour, "eeee dd MMMM", { locale: fr }),
             }
           })
 
           return (
             <div key={keySemaineSecteur} className="border rounded-lg overflow-hidden shadow-sm">
-<div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
-<div className="p-4 border-r flex flex-col items-center justify-center min-h-[64px]">
+              <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
+                <div className="p-4 border-r flex flex-col items-center justify-center min-h-[64px]">
                   <div>{`Semaine ${semaineStr}`}</div>
                   {secteurStr && selectedSecteurs.length === 5 && (
                     <div className="text-xs mt-1 italic">{secteurStr}</div>
@@ -146,10 +156,7 @@ export function PlanningCandidateTable({
                     })
                   })
                   return (
-                    <div
-                      key={index}
-                      className="p-4 border-r text-center relative min-h-[64px]"
-                    >
+                    <div key={index} className="p-4 border-r text-center relative min-h-[64px]">
                       <div>{jour.label.split(" ")[0]}</div>
                       <div>{jour.label.split(" ").slice(1).join(" ")}</div>
                       {nbValide > 0 && (
@@ -187,10 +194,7 @@ export function PlanningCandidateTable({
                 const totalHeures = heuresParCandidat[key] || "00:00"
 
                 return (
-                  <div
-                    key={key}
-                    className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm"
-                  >
+                  <div key={key} className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] border-t text-sm">
                     <ColonneCandidate
                       nomComplet={nomPrenom}
                       secteur={secteur}
@@ -236,31 +240,31 @@ export function PlanningCandidateTable({
                               </div>
                             )}
 
-{commandeSecondaire && (
-  <Popover>
-    <PopoverTrigger asChild>
-      <div className="absolute top-2 right-2 bg-white rounded-full p-1 shadow z-20 translate-x-1/4 -translate-y-1/4">
-        <AlertCircle className="w-5 h-5 text-[#840404]" />
-      </div>
-    </PopoverTrigger>
-    <PopoverContent side="top" className="text-sm max-w-xs space-y-1">
-      <div className="font-semibold">{commandeSecondaire.client?.nom || "?"}</div>
-      {commandeSecondaire.service && (
-        <div>{commandeSecondaire.service}</div>
-      )}
-      <div className="flex items-center gap-1">
-        <Clock className="w-4 h-4" />
-        <span>
-          {commandeSecondaire.heure_debut_matin
-            ? `${commandeSecondaire.heure_debut_matin.slice(0,5)} - ${commandeSecondaire.heure_fin_matin?.slice(0,5)}`
-            : commandeSecondaire.heure_debut_soir
-            ? `${commandeSecondaire.heure_debut_soir.slice(0,5)} - ${commandeSecondaire.heure_fin_soir?.slice(0,5)}`
-            : "Non renseigné"}
-        </span>
-      </div>
-    </PopoverContent>
-  </Popover>
-)}
+                          {commandeSecondaire && (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <div className="absolute top-2 right-2 bg-white rounded-full p-1 shadow z-20 translate-x-1/4 -translate-y-1/4">
+                                  <AlertCircle className="w-5 h-5 text-[#840404]" />
+                                </div>
+                              </PopoverTrigger>
+                              <PopoverContent side="top" className="text-sm max-w-xs space-y-1">
+                                <div className="font-semibold">{commandeSecondaire.client?.nom || "?"}</div>
+                                {commandeSecondaire.service && (
+                                  <div>{commandeSecondaire.service}</div>
+                                )}
+                                <div className="flex items-center gap-1">
+                                  <Clock className="w-4 h-4" />
+                                  <span>
+                                    {commandeSecondaire.heure_debut_matin
+                                      ? `${commandeSecondaire.heure_debut_matin.slice(0,5)} - ${commandeSecondaire.heure_fin_matin?.slice(0,5)}`
+                                      : commandeSecondaire.heure_debut_soir
+                                      ? `${commandeSecondaire.heure_debut_soir.slice(0,5)} - ${commandeSecondaire.heure_fin_soir?.slice(0,5)}`
+                                      : "Non renseigné"}
+                                  </span>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          )}
                         </div>
                       )
                     })}
