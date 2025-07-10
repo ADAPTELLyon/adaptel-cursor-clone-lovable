@@ -3,7 +3,7 @@ import MainLayout from "@/components/main-layout"
 import { SectionFixeCandidates } from "@/components/Planning/section-fixe-candidates"
 import { PlanningCandidateTable } from "@/components/Planning/PlanningCandidateTable"
 import { supabase } from "@/lib/supabase"
-import { format, getWeek, startOfWeek, addDays } from "date-fns"
+import { format, getWeek, startOfWeek, addDays, parseISO } from "date-fns"
 import type { JourPlanningCandidat, CommandeFull, StatutCommande } from "@/types/types-front"
 
 export default function Planning() {
@@ -37,6 +37,7 @@ export default function Planning() {
     toutAfficherBool: boolean
   ) => {
     const newFiltered: typeof rawPlanning = {}
+    const currentWeek = getWeek(new Date(), { weekStartsOn: 1 }).toString()
 
     const matchSearchTerm = (val: string) =>
       searchText
@@ -47,12 +48,15 @@ export default function Planning() {
 
     Object.entries(rawPlanning).forEach(([candidatNom, jours]) => {
       const joursFiltres = jours.filter((j) => {
-        const semaineDuJour = getWeek(new Date(j.date), { weekStartsOn: 1 })
+        const semaineDuJour = getWeek(parseISO(j.date), { weekStartsOn: 1 }).toString()
         const matchSecteur = secteurs.includes(j.secteur)
         const matchCandidat = candidatSelect ? candidatNom === candidatSelect : true
         const matchDispo = dispoFilter ? j.disponibilite?.statut === "Dispo" : true
         const matchSemaine =
-          semaineSelect === "Toutes" || semaineSelect === semaineDuJour.toString()
+          semaineSelect === "Toutes" 
+            ? parseInt(semaineDuJour) >= parseInt(currentWeek)
+            : semaineSelect === semaineDuJour
+
         return (
           matchSecteur &&
           matchCandidat &&
@@ -65,6 +69,7 @@ export default function Planning() {
             (j.disponibilite?.statut && matchSearchTerm(j.disponibilite.statut)))
         )
       })
+
       if (joursFiltres.length > 0) {
         newFiltered[candidatNom] = joursFiltres
       }
@@ -72,17 +77,14 @@ export default function Planning() {
 
     setFilteredPlanning(newFiltered)
 
-    let nr = 0,
-      d = 0,
-      nd = 0,
-      p = 0
+    let nr = 0, d = 0, nd = 0, p = 0
 
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) => {
         if (j.commande) {
           p++
         } else {
-          const s = j.disponibilite?.statut || "Non Renseigné"
+          const s = j.disponibilite?.statut || "Non renseigné"
           if (s === "Dispo") d++
           else if (s === "Non Dispo") nd++
           else nr++
@@ -100,12 +102,7 @@ export default function Planning() {
 
   const fetchPlanning = async () => {
     try {
-      const lundi = startOfWeek(
-        semaineEnCours ? new Date() : new Date(semaine),
-        { weekStartsOn: 1 }
-      )
-      const dimanche = addDays(lundi, 6)
-
+      // Récupérer toutes les données sans restriction de date
       const { data: commandesData, error: commandesError } = await supabase
         .from("commandes")
         .select(`
@@ -113,13 +110,6 @@ export default function Planning() {
           client:client_id ( nom ),
           candidat:candidat_id ( nom, prenom )
         `)
-        .gte("date", lundi.toISOString().slice(0, 10))
-        .lte("date", dimanche.toISOString().slice(0, 10))
-
-      if (commandesError) {
-        console.error("Erreur commandes:", commandesError)
-        return
-      }
 
       const { data: dispoData, error: dispoError } = await supabase
         .from("disponibilites")
@@ -127,15 +117,15 @@ export default function Planning() {
           *,
           candidats:candidat_id ( nom, prenom )
         `)
-        .gte("date", lundi.toISOString().slice(0, 10))
-        .lte("date", dimanche.toISOString().slice(0, 10))
 
-      if (dispoError) {
-        console.error("Erreur disponibilites:", dispoError)
+      if (commandesError || dispoError) {
+        console.error("Erreurs:", commandesError || dispoError)
         return
       }
 
       const map: Record<string, JourPlanningCandidat[]> = {}
+      const semainesAvecDonnees = new Set<string>()
+      const currentWeek = getWeek(new Date(), { weekStartsOn: 1 }).toString()
 
       const candidatsSet = new Set([
         ...((commandesData ?? []).map((c) => c.candidat_id).filter(Boolean) as string[]),
@@ -150,16 +140,19 @@ export default function Planning() {
 
         const jours: JourPlanningCandidat[] = []
 
-        for (let i = 0; i < 7; i++) {
-          const jourDate = addDays(lundi, i).toISOString().slice(0, 10)
+        // On traite toutes les commandes et disponibilités pour ce candidat
+        const commandesCandidat = commandesData?.filter(c => c.candidat_id === candidatId) || []
+        const dispoCandidat = dispoData?.filter(d => d.candidat_id === candidatId) || []
 
-          const commandesJour = commandesData?.filter(
-            (c) => c.candidat_id === candidatId && c.date === jourDate
-          ) || []
+        // Fusionner les dates uniques
+        const datesUniques = Array.from(new Set([
+          ...commandesCandidat.map(c => c.date),
+          ...dispoCandidat.map(d => d.date)
+        ]))
 
-          const dispo = dispoData?.find(
-            (d) => d.candidat_id === candidatId && d.date === jourDate
-          )
+        for (const dateStr of datesUniques) {
+          const commandesJour = commandesCandidat.filter(c => c.date === dateStr)
+          const dispoJour = dispoCandidat.find(d => d.date === dateStr)
 
           let principale: CommandeFull | undefined
           const secondaires: CommandeFull[] = []
@@ -186,7 +179,7 @@ export default function Planning() {
 
           if (principale && principale.statut === "Validé") {
             jours.push({
-              date: jourDate,
+              date: dateStr,
               secteur: principale.secteur,
               service: principale.service,
               commande: principale,
@@ -198,96 +191,98 @@ export default function Planning() {
               principale.statut
             )
           ) {
-            if (dispo) {
+            if (dispoJour) {
               jours.push({
-                date: jourDate,
-                secteur: dispo.secteur,
-                service: dispo.service,
+                date: dateStr,
+                secteur: dispoJour.secteur,
+                service: dispoJour.service,
                 disponibilite: {
-                  id: dispo.id,
-                  date: dispo.date,
-                  secteur: dispo.secteur,
-                  statut: dispo.statut as "Dispo" | "Non Dispo" | "Non Renseigné",
-                  commentaire: dispo.commentaire,
-                  candidat_id: dispo.candidat_id,
-                  matin: dispo.dispo_matin ?? false,
-                  soir: dispo.dispo_soir ?? false,
-                  nuit: dispo.dispo_nuit ?? false,
-                  created_at: dispo.created_at,
-                  updated_at: dispo.updated_at,
-                  candidat: dispo.candidats
-                    ? { nom: dispo.candidats.nom, prenom: dispo.candidats.prenom }
+                  id: dispoJour.id,
+                  date: dispoJour.date,
+                  secteur: dispoJour.secteur,
+                  statut: dispoJour.statut as "Dispo" | "Non Dispo" | "Non Renseigné",
+                  commentaire: dispoJour.commentaire,
+                  candidat_id: dispoJour.candidat_id,
+                  matin: dispoJour.dispo_matin ?? false,
+                  soir: dispoJour.dispo_soir ?? false,
+                  nuit: dispoJour.dispo_nuit ?? false,
+                  created_at: dispoJour.created_at,
+                  updated_at: dispoJour.updated_at,
+                  candidat: dispoJour.candidats
+                    ? { nom: dispoJour.candidats.nom, prenom: dispoJour.candidats.prenom }
                     : undefined,
                 },
                 autresCommandes: secondaires,
               })
             } else {
               jours.push({
-                date: jourDate,
+                date: dateStr,
                 secteur: principale.secteur,
                 service: principale.service,
                 commande: principale,
                 autresCommandes: secondaires,
               })
             }
-          } else if (dispo) {
+          } else if (dispoJour) {
             jours.push({
-              date: jourDate,
-              secteur: dispo.secteur,
-              service: dispo.service,
+              date: dateStr,
+              secteur: dispoJour.secteur,
+              service: dispoJour.service,
               disponibilite: {
-                id: dispo.id,
-                date: dispo.date,
-                secteur: dispo.secteur,
-                statut: dispo.statut as "Dispo" | "Non Dispo" | "Non Renseigné",
-                commentaire: dispo.commentaire,
-                candidat_id: dispo.candidat_id,
-                matin: dispo.dispo_matin ?? false,
-                soir: dispo.dispo_soir ?? false,
-                nuit: dispo.dispo_nuit ?? false,
-                created_at: dispo.created_at,
-                updated_at: dispo.updated_at,
-                candidat: dispo.candidats
-                  ? { nom: dispo.candidats.nom, prenom: dispo.candidats.prenom }
+                id: dispoJour.id,
+                date: dispoJour.date,
+                secteur: dispoJour.secteur,
+                statut: dispoJour.statut as "Dispo" | "Non Dispo" | "Non Renseigné",
+                commentaire: dispoJour.commentaire,
+                candidat_id: dispoJour.candidat_id,
+                matin: dispoJour.dispo_matin ?? false,
+                soir: dispoJour.dispo_soir ?? false,
+                nuit: dispoJour.dispo_nuit ?? false,
+                created_at: dispoJour.created_at,
+                updated_at: dispoJour.updated_at,
+                candidat: dispoJour.candidats
+                  ? { nom: dispoJour.candidats.nom, prenom: dispoJour.candidats.prenom }
                   : undefined,
               },
               autresCommandes: secondaires,
             })
           } else {
             jours.push({
-              date: jourDate,
+              date: dateStr,
               secteur: "Inconnu",
               autresCommandes: secondaires,
             })
           }
+
+          // Ajouter la semaine aux semaines disponibles
+          const semaine = getWeek(parseISO(dateStr), { weekStartsOn: 1 }).toString()
+          semainesAvecDonnees.add(semaine)
         }
 
-        map[candidatNom] = jours
+        if (jours.length > 0) {
+          map[candidatNom] = jours
+        }
       }
 
       setPlanning(map)
 
-      const semaines = Array.from(
-        new Set(
-          Object.values(map)
-            .flat()
-            .map((j) => getWeek(new Date(j.date), { weekStartsOn: 1 }).toString())
-        )
-      ).sort((a, b) => parseInt(a) - parseInt(b))
+      // Trier les semaines par ordre décroissant
+      const semainesTriees = Array.from(semainesAvecDonnees)
+        .sort((a, b) => parseInt(b) - parseInt(a))
 
-      setSemainesDisponibles(semaines)
+      setSemainesDisponibles(semainesTriees)
 
+      // Si semaine en cours est cochée, forcer la semaine actuelle
       if (semaineEnCours) {
-        const current = getWeek(new Date(), { weekStartsOn: 1 }).toString()
-        setSelectedSemaine(current)
-      } else if (!semaines.includes(selectedSemaine)) {
+        setSelectedSemaine(currentWeek)
+      } else if (!semainesTriees.includes(selectedSemaine) && selectedSemaine !== "Toutes") {
         setSelectedSemaine("Toutes")
       }
 
       applyFilters(
         map,
         selectedSecteurs,
-        semaineEnCours ? getWeek(new Date(), { weekStartsOn: 1 }).toString() : selectedSemaine,
+        semaineEnCours ? currentWeek : selectedSemaine,
         candidat,
         dispo,
         search,
@@ -300,7 +295,7 @@ export default function Planning() {
 
   useEffect(() => {
     fetchPlanning()
-  }, [refreshTrigger, semaine, semaineEnCours])
+  }, [refreshTrigger])
 
   useEffect(() => {
     applyFilters(planning, selectedSecteurs, selectedSemaine, candidat, dispo, search, toutAfficher)

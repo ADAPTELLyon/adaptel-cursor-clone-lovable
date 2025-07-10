@@ -30,6 +30,7 @@ export default function AjoutDispoCandidat({
   const [secteur, setSecteur] = useState("")
   const [candidat, setCandidat] = useState<Candidat | null>(null)
   const [commentaire, setCommentaire] = useState("")
+  const [search, setSearch] = useState("")
   const [semaine, setSemaine] = useState(getWeek(new Date()).toString())
   const [semainesDisponibles, setSemainesDisponibles] = useState<
     { value: string; label: string; startDate: Date }[]
@@ -324,29 +325,44 @@ export default function AjoutDispoCandidat({
               </div>
             </div>
 
-            {/* Section Candidats */}
-            <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
-              <div className="flex items-center gap-2 mb-2">
-                <Users className="w-4 h-4 text-muted-foreground" />
-                <h3 className="font-medium text-sm">Candidats</h3>
-              </div>
-              <div className="border p-2 h-[240px] overflow-y-auto rounded bg-white shadow-sm">
-                {secteur && candidatsSecteur.length > 0 ? (
-                  candidatsSecteur.map((c) => (
-                    <Button
-                      key={c.id}
-                      variant={candidat?.id === c.id ? "default" : "outline"}
-                      className="w-full justify-start text-left mb-1"
-                      onClick={() => setCandidat(c)}
-                    >
-                      {c.nom} {c.prenom}
-                    </Button>
-                  ))
-                ) : (
-                  <div className="text-sm text-muted-foreground italic">Aucun secteur sélectionné</div>
-                )}
-              </div>
-            </div>
+          {/* Section Candidats */}
+<div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
+  <div className="flex items-center gap-2 mb-2">
+    <Users className="w-4 h-4 text-muted-foreground" />
+    <h3 className="font-medium text-sm">Candidats</h3>
+  </div>
+
+  <input
+    type="text"
+    placeholder="Rechercher un candidat"
+    value={search}
+    onChange={(e) => setSearch(e.target.value)}
+    className="w-full px-2 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-[#840404]"
+  />
+
+  <div className="border p-2 h-[240px] overflow-y-auto rounded bg-white shadow-sm">
+    {secteur && candidatsSecteur.length > 0 ? (
+      candidatsSecteur
+        .filter((c) =>
+          `${c.nom} ${c.prenom}`.toLowerCase().includes(search.toLowerCase())
+        )
+        .map((c) => (
+          <Button
+            key={c.id}
+            variant={candidat?.id === c.id ? "default" : "outline"}
+            className="w-full justify-start text-left mb-1"
+            onClick={() => setCandidat(c)}
+          >
+            {c.nom} {c.prenom}
+          </Button>
+        ))
+    ) : (
+      <div className="text-sm text-muted-foreground italic">
+        Aucun secteur sélectionné
+      </div>
+    )}
+  </div>
+</div>
 
             {/* Section Semaine */}
             <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">

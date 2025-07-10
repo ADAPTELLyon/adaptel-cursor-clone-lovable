@@ -7,7 +7,14 @@ import { supabase } from "@/integrations/supabase/client"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form"
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+  FormMessage
+} from "@/components/ui/form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { MultiSelect } from "@/components/ui/multi-select"
 
@@ -20,6 +27,7 @@ export const formSchema = z.object({
   code_postal: z.string().optional(),
   ville: z.string().optional(),
   telephone: z.string().optional(),
+  commentaire: z.string().optional(),
   actif: z.boolean().default(true),
 })
 
@@ -57,13 +65,27 @@ export function ClientForm({
       code_postal: "",
       ville: "",
       telephone: "",
+      commentaire: "",
       actif: true,
     },
   })
 
   useEffect(() => {
-    form.reset(
-      initialData || {
+    if (initialData) {
+      form.reset({
+        nom: initialData.nom || "",
+        secteurs: initialData.secteurs || [],
+        services: initialData.services || [],
+        groupe: initialData.groupe || "",
+        adresse: initialData.adresse || "",
+        code_postal: initialData.code_postal || "",
+        ville: initialData.ville || "",
+        telephone: initialData.telephone || "",
+        commentaire: initialData.commentaire || "", // 🔧 ici on évite le null
+        actif: initialData.actif ?? true,
+      })
+    } else {
+      form.reset({
         nom: "",
         secteurs: [],
         services: [],
@@ -72,9 +94,10 @@ export function ClientForm({
         code_postal: "",
         ville: "",
         telephone: "",
+        commentaire: "",
         actif: true,
-      }
-    )
+      })
+    }
   }, [JSON.stringify(initialData)])
 
   const { data: services = [] } = useQuery({
@@ -217,6 +240,20 @@ export function ClientForm({
                   const formatted = cleaned.replace(/(\d{2})(?=\d)/g, "$1 ").trim()
                   field.onChange(formatted)
                 }}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )} />
+
+        <h3 className="text-lg font-semibold mb-2">📝 Commentaire</h3>
+        <FormField control={form.control} name="commentaire" render={({ field }) => (
+          <FormItem>
+            <FormControl>
+              <textarea
+                {...field}
+                placeholder="Ajouter un commentaire sur le client"
+                className="w-full rounded border p-2 text-sm resize-none h-24"
               />
             </FormControl>
             <FormMessage />

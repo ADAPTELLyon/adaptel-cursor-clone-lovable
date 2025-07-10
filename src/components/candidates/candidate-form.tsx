@@ -55,27 +55,38 @@ export function CandidateForm({
   onCancel,
 }: CandidateFormProps) {
   const formattedInitialData = initialData
-    ? {
-        ...initialData,
-        date_naissance: initialData.date_naissance 
-          ? formatDateString(initialData.date_naissance)
-          : "",
-      }
-    : {
-        nom: "",
-        prenom: "",
-        email: "",
-        telephone: "",
-        vehicule: false,
-        actif: true,
-        prioritaire: false,
-        commentaire: "",
-        secteurs: [],
-        adresse: "",
-        code_postal: "",
-        ville: "",
-        date_naissance: "",
-      }
+  ? {
+      nom: initialData.nom || "",
+      prenom: initialData.prenom || "",
+      email: initialData.email || "",
+      telephone: initialData.telephone || "",
+      vehicule: initialData.vehicule ?? false,
+      actif: initialData.actif ?? true,
+      prioritaire: initialData.prioritaire ?? false,
+      commentaire: initialData.commentaire || "",
+      secteurs: initialData.secteurs || [],
+      adresse: initialData.adresse || "",
+      code_postal: initialData.code_postal || "",
+      ville: initialData.ville || "",
+      date_naissance: initialData.date_naissance
+        ? formatDateString(initialData.date_naissance)
+        : "",
+    }
+  : {
+      nom: "",
+      prenom: "",
+      email: "",
+      telephone: "",
+      vehicule: false,
+      actif: true,
+      prioritaire: false,
+      commentaire: "",
+      secteurs: [],
+      adresse: "",
+      code_postal: "",
+      ville: "",
+      date_naissance: "",
+    }
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),

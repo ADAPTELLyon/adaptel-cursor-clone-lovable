@@ -37,6 +37,9 @@ export default function FicheMemoCandidat({
   const [priorites, setPriorites] = useState<any[]>([])
   const [incidents, setIncidents] = useState<any[]>([])
   const [showEditDialog, setShowEditDialog] = useState(false)
+  const [editingComment, setEditingComment] = useState(false)
+  const [commentValue, setCommentValue] = useState("")
+
 
   const [nbValide, setNbValide] = useState(0)
   const [nbAnnuleInt, setNbAnnuleInt] = useState(0)
@@ -52,6 +55,7 @@ export default function FicheMemoCandidat({
         .eq("id", candidatId)
         .single()
       setCandidat(cand)
+      setCommentValue(cand?.commentaire || "")
 
       const { data: inter } = await supabase
         .from("interdictions_priorites")
@@ -99,6 +103,19 @@ export default function FicheMemoCandidat({
 
     fetchData()
   }, [open, candidatId])
+
+  const handleSaveCommentaire = async () => {
+    if (!candidatId) return
+    const { error } = await supabase
+      .from("candidats")
+      .update({ commentaire: commentValue })
+      .eq("id", candidatId)
+
+    if (!error) {
+      setEditingComment(false)
+      setCandidat(prev => prev ? { ...prev, commentaire: commentValue } : null)
+    }
+  }
 
   const renderSecteurChip = (secteurVal: string) => (
     <Badge variant="outline" className="text-xs px-2 py-1">
@@ -284,10 +301,42 @@ export default function FicheMemoCandidat({
               </Card>
 
               <Card title="Commentaire">
-                <div className="h-[142px] overflow-y-auto text-sm text-gray-700 whitespace-pre-wrap">
-                  {candidat?.commentaire || "Aucun commentaire renseigné."}
-                </div>
-              </Card>
+  <div className="h-[142px] flex flex-col">
+    {editingComment ? (
+      <>
+        <textarea
+          className="flex-1 text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 p-3 rounded border border-gray-300"
+          value={commentValue}
+          onChange={(e) => setCommentValue(e.target.value)}
+          autoFocus
+        />
+        <div className="flex justify-end space-x-2 mt-2">
+          <button
+            onClick={() => setEditingComment(false)}
+            className="px-3 py-1 text-sm text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleSaveCommentaire}
+            className="px-3 py-1 text-sm text-white bg-[#840404] rounded hover:bg-[#a50505]"
+          >
+            Enregistrer
+          </button>
+        </div>
+      </>
+    ) : (
+      <div
+        className="flex-1 overflow-y-auto text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 p-3 rounded hover:bg-gray-100 cursor-pointer"
+        onClick={() => setEditingComment(true)}
+      >
+        {commentValue || (
+          <p className="text-gray-400 italic">Cliquez pour ajouter un commentaire...</p>
+        )}
+      </div>
+    )}
+  </div>
+</Card>
             </div>
           </div>
 

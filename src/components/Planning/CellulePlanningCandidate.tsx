@@ -139,12 +139,14 @@ export function CellulePlanningCandidate({
           </div>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-sm capitalize">
-          {date &&
-            new Date(date).toLocaleDateString("fr-FR", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-            })}
+  {date &&
+    new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      timeZone: "Europe/Paris",
+    })}
+
         </TooltipContent>
       </Tooltip>
 

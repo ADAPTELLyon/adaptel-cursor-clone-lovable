@@ -19,6 +19,9 @@ import SectionStatutPlanning from "@/components/Planning/SectionStatutPlanning"
 import { Separator } from "@/components/ui/separator"
 import FicheMemoCandidat from "@/components/commandes/Fiche-Memo-Candidat"
 import PopoverSelectCandidat from "@/components/commandes/PopoverSelectCandidat"
+import { Building2 } from "lucide-react"
+import PopoverSelectClient from "@/components/commandes/PopoverSelectClient"
+import FicheMemoClient from "@/components/clients/FicheMemoClient"
 
 export function SectionFixeCandidates({
   selectedSecteurs,
@@ -71,6 +74,10 @@ export function SectionFixeCandidates({
   const [showSelectCandidat, setShowSelectCandidat] = useState(false)
   const [openFicheCandidat, setOpenFicheCandidat] = useState(false)
   const [selectedCandidatId, setSelectedCandidatId] = useState<string | null>(null)
+  const [showSelectClient, setShowSelectClient] = useState(false)
+  const [openFicheClient, setOpenFicheClient] = useState(false)
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+
 
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 pb-4 border-b border-gray-100 space-y-6">
@@ -149,22 +156,24 @@ export function SectionFixeCandidates({
       </div>
 
       <div className="flex flex-wrap gap-4 items-center">
-        <select
-          className="border rounded px-2 py-2 text-sm w-[160px]"
-          value={selectedSemaine}
-          onChange={(e) => {
-            const val = e.target.value
-            setSelectedSemaine(val)
-            if (val !== "Toutes") setSemaineEnCours(false)
-          }}
-        >
-          <option value="Toutes">Toutes les semaines</option>
-          {semainesDisponibles.map((s) => (
-            <option key={s} value={s}>
-              Semaine {s}
-            </option>
-          ))}
-        </select>
+      <select
+  className="border rounded px-2 py-2 text-sm w-[160px]"
+  value={selectedSemaine}
+  onChange={(e) => {
+    const val = e.target.value
+    setSelectedSemaine(val)
+    if (val !== "Toutes") {
+      setSemaineEnCours(false)
+    }
+  }}
+>
+  <option value="Toutes">Toutes les semaines</option>
+  {semainesDisponibles.map((s) => (
+    <option key={s} value={s}>
+      Semaine {s}
+    </option>
+  ))}
+</select>
 
         <select
           className="border rounded px-2 py-2 text-sm w-[200px]"
@@ -236,15 +245,37 @@ export function SectionFixeCandidates({
         <Separator orientation="vertical" className="h-8" />
 
         <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setShowSelectCandidat(true)}
-          className="border border-gray-300 rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-          title="Infos candidat"
-        >
-          <User2 size={18} />
-        </Button>
-      </div>
+    variant="ghost"
+    size="icon"
+    onClick={resetFiltres}
+    className="border border-gray-300 rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+    title="Réinitialiser les filtres"
+  >
+    <RotateCcw size={18} />
+  </Button>
+
+  <Separator orientation="vertical" className="h-8" />
+
+  <Button
+    variant="ghost"
+    size="icon"
+    onClick={() => setShowSelectCandidat(true)}
+    className="border border-gray-300 rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+    title="Infos candidat"
+  >
+    <User2 size={18} />
+  </Button>
+
+  <Button
+    variant="ghost"
+    size="icon"
+    onClick={() => setShowSelectClient(true)}
+    className="border border-gray-300 rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+    title="Infos client"
+  >
+    <Building2 size={18} />
+  </Button>
+</div>
 
       <AjoutDispoCandidat
         open={openDispo}
@@ -275,6 +306,24 @@ export function SectionFixeCandidates({
           open={openFicheCandidat}
           onOpenChange={setOpenFicheCandidat}
           candidatId={selectedCandidatId}
+        />
+      )}
+
+      <PopoverSelectClient
+        open={showSelectClient}
+        onOpenChange={setShowSelectClient}
+        onClientSelected={(id) => {
+          setSelectedClientId(id)
+          setShowSelectClient(false)
+          setOpenFicheClient(true)
+        }}
+      />
+
+      {selectedClientId && (
+        <FicheMemoClient
+          open={openFicheClient}
+          onOpenChange={setOpenFicheClient}
+          clientId={selectedClientId}
         />
       )}
     </div>

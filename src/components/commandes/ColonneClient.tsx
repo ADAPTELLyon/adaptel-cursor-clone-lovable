@@ -2,6 +2,8 @@ import { Clock, Check } from "lucide-react"
 import { secteursList } from "@/lib/secteurs"
 import { Icon } from "@iconify/react"
 import { HistoriqueCommandeDialog } from "@/components/commandes/HistoriqueCommandeDialog"
+import FicheMemoClient from "@/components/clients/FicheMemoClient"
+import { useState } from "react"
 import type { CommandeWithCandidat } from "@/types/types-front"
 
 interface ColonneClientProps {
@@ -13,6 +15,7 @@ interface ColonneClientProps {
   commandeIdsLigne: string[]
   semaineDate: string
   commandes: CommandeWithCandidat[]
+  clientId: string
 }
 
 function calculerHeuresTotales(commandes: CommandeWithCandidat[]) {
@@ -45,15 +48,22 @@ export function ColonneClient({
   commandeIdsLigne,
   semaineDate,
   commandes,
+  clientId,
 }: ColonneClientProps) {
   const secteurInfo = secteursList.find((s) => s.value === secteur)
+  const [openMemo, setOpenMemo] = useState(false)
   const totalHeures = calculerHeuresTotales(commandes)
 
   return (
     <div className="p-3 border-r bg-white h-full flex flex-col justify-between text-sm leading-tight relative">
       {/* Ligne 1 : Nom client + pastille */}
       <div className="flex justify-between items-center mb-1">
-        <span className="font-bold text-[14px] leading-snug break-words">{clientNom}</span>
+        <span
+          className="font-bold text-[14px] leading-snug break-words cursor-pointer hover:underline"
+          onClick={() => setOpenMemo(true)}
+        >
+          {clientNom}
+        </span>
         <div
           className="h-5 w-5 rounded-full flex items-center justify-center text-white text-xs font-bold shadow"
           style={{ backgroundColor: nbEnRecherche > 0 ? '#fdba74' : '#a9d08e' }}
@@ -101,6 +111,15 @@ export function ColonneClient({
           <span>{totalHeures}</span>
         </div>
       </div>
+
+      {/* Fiche mémo client */}
+      {openMemo && (
+        <FicheMemoClient
+          open={openMemo}
+          onOpenChange={() => setOpenMemo(false)}
+          clientId={clientId}
+        />
+      )}
     </div>
   )
 }

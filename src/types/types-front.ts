@@ -56,12 +56,14 @@ export type Client = {
   adresse: string;
   code_postal: string;
   ville: string;
-  email: string;
+  email?: string | null;
   telephone?: string | null;
+  commentaire?: string | null;
   created_at: string;
   secteurs?: string[] | null;
   services?: string[] | null;
   postes_bases_actifs?: string[];
+  groupe?: string | null;
 };
 
 // === TABLE: commandes ===

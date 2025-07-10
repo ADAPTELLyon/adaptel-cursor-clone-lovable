@@ -109,7 +109,7 @@ export default function DispoSemainePanel({
           return (
             <div
               key={j.key}
-              className="border rounded p-3 shadow-sm flex justify-between items-center cursor-pointer"
+              className="border rounded px-4 py-4 shadow-sm flex justify-between items-center cursor-pointer min-h-[70px]"
               style={{ backgroundColor: bgColor }}
               onClick={handleClick}
             >

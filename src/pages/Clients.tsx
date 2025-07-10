@@ -97,6 +97,7 @@ export default function Clients() {
       ville: data.ville || "",
       groupe: data.groupe || "",
       telephone: data.telephone || "",
+      commentaire: data.commentaire || "",
       services: data.services ?? [],
       secteurs: data.secteurs ?? [],
       actif: data.actif ?? true,

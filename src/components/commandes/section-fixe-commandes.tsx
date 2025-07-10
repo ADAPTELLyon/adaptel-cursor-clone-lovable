@@ -9,6 +9,7 @@ import {
   AlertCircle,
   RotateCcw,
   User2,
+  Building2,
 } from "lucide-react"
 import { secteursList } from "@/lib/secteurs"
 import { startOfWeek } from "date-fns"
@@ -17,7 +18,9 @@ import AjoutDispoCandidat from "../../components/Planning/AjoutDispoCandidat"
 import SaisirIncidentDialog from "../../components/commandes/SaisirIncidentDialog"
 import { Separator } from "@/components/ui/separator"
 import FicheMemoCandidat from "@/components/commandes/Fiche-Memo-Candidat"
+import FicheMemoClient from "@/components/clients/FicheMemoClient"
 import PopoverSelectCandidat from "./PopoverSelectCandidat"
+import PopoverSelectClient from "@/components/commandes/PopoverSelectClient"
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -50,6 +53,10 @@ export function SectionFixeCommandes({
   const [showSelectCandidat, setShowSelectCandidat] = useState(false)
   const [openFicheCandidat, setOpenFicheCandidat] = useState(false)
   const [selectedCandidatId, setSelectedCandidatId] = useState<string | null>(null)
+
+  const [showSelectClient, setShowSelectClient] = useState(false)
+  const [openFicheClient, setOpenFicheClient] = useState(false)
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
 
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm px-6 pb-4 pt-2 border-b border-gray-100">
@@ -228,10 +235,24 @@ export function SectionFixeCommandes({
           >
             <User2 size={18} />
           </Button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowSelectClient(true)}
+            className="border border-gray-300 rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+            title="Infos client"
+          >
+            <Building2 size={18} />
+          </Button>
         </div>
       </div>
 
-      <NouvelleCommandeDialog open={openNouvelleCommande} onOpenChange={setOpenNouvelleCommande} />
+      <NouvelleCommandeDialog
+        open={openNouvelleCommande}
+        onOpenChange={setOpenNouvelleCommande}
+        onRefreshDone={() => {}}
+      />
       <AjoutDispoCandidat open={openDispo} onOpenChange={setOpenDispo} onSuccess={() => {}} />
       <SaisirIncidentDialog open={openIncident} onOpenChange={setOpenIncident} />
       <PopoverSelectCandidat
@@ -248,6 +269,22 @@ export function SectionFixeCommandes({
           open={openFicheCandidat}
           onOpenChange={setOpenFicheCandidat}
           candidatId={selectedCandidatId}
+        />
+      )}
+      <PopoverSelectClient
+        open={showSelectClient}
+        onOpenChange={setShowSelectClient}
+        onClientSelected={(id) => {
+          setSelectedClientId(id)
+          setShowSelectClient(false)
+          setOpenFicheClient(true)
+        }}
+      />
+      {selectedClientId && (
+        <FicheMemoClient
+          open={openFicheClient}
+          onOpenChange={setOpenFicheClient}
+          clientId={selectedClientId}
         />
       )}
     </div>
