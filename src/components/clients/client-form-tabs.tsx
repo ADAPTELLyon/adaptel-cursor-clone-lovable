@@ -30,7 +30,7 @@ export function ClientFormTabs({
     if (initialData) {
       setSecteurs(initialData.secteurs || [])
       setServices(initialData.services || [])
-      setIsSaved(!!initialData.id) // si on a un id, on considère que le client est déjà enregistré
+      setIsSaved(!!initialData.id) // si on a un id, le client est déjà enregistré
     } else {
       setIsSaved(false)
     }
@@ -79,14 +79,21 @@ export function ClientFormTabs({
             onSecteursChange={setSecteurs}
             onServicesChange={setServices}
           />
-          {/* Bouton Fermer ajouté ici */}
+          {/* BOUTONS ANNULER & ENREGISTRER UNIQUEMENT */}
           <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={onCancel}
               className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
               type="button"
             >
-              Fermer
+              Annuler
+            </button>
+            <button
+              type="submit"
+              form="client-form"
+              className="px-4 py-2 rounded bg-[#840404] text-white hover:bg-[#750303]"
+            >
+              Enregistrer
             </button>
           </div>
         </TabsContent>

@@ -102,43 +102,46 @@ export default function NouvelleCommandeDialog({
 
   const handleSave = async () => {
     if (!clientId || !secteur || !semaine) return
-
+  
     setIsReloading(true)
-
+  
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
-    if (!userEmail) return
-
+    if (!userEmail) {
+      setIsReloading(false)
+      return
+    }
+  
     const { data: userApp, error: userError } = await supabase
       .from("utilisateurs")
       .select("id")
       .eq("email", userEmail)
       .single()
-
+  
     if (userError || !userApp?.id) {
       console.error("❌ Utilisateur non trouvé dans table `utilisateurs` :", userError)
       setIsReloading(false)
       return
     }
-
+  
     const userId = userApp.id
     const lignes: any[] = []
-
+  
     for (const [key, isActive] of Object.entries(joursState)) {
       if (!isActive) continue
       const heure = heuresParJour[key] || {}
       const nb = heure.nbPersonnes || 1
-
+  
       const { data: commandesExistantes } = await supabase
         .from("commandes")
         .select("mission_slot")
         .eq("client_id", clientId)
         .eq("secteur", secteur)
         .eq("date", key)
-
+  
       const existingSlots = (commandesExistantes || []).map((c) => c.mission_slot ?? 0)
       let slot = existingSlots.length > 0 ? Math.max(...existingSlots) + 1 : 1
-
+  
       for (let i = 0; i < nb; i++) {
         lignes.push({
           client_id: clientId,
@@ -158,23 +161,23 @@ export default function NouvelleCommandeDialog({
         })
       }
     }
-
+  
     if (lignes.length === 0) {
       setIsReloading(false)
       return
     }
-
+  
     const { data, error } = await supabase
       .from("commandes")
       .insert(lignes)
       .select("id, date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
-
+  
     if (error) {
       console.error("❌ Erreur insertion commandes :", error)
       setIsReloading(false)
       return
     }
-
+  
     if (data && data.length > 0) {
       const historique = data.map((cmd) => ({
         table_cible: "commandes",
@@ -191,17 +194,19 @@ export default function NouvelleCommandeDialog({
           heure_fin_soir: cmd.heure_fin_soir,
         },
       }))
-
+  
       const { error: histError } = await supabase.from("historique").insert(historique)
       if (histError) {
         console.error("❌ Erreur insertion historique :", histError)
       }
     }
-
-    setTimeout(() => {
-      navigate(0)
-    }, 800)
+  
+    if (onRefreshDone) {
+      await onRefreshDone()
+    }
+    setIsReloading(false)
   }
+  
 
   return (
     <>

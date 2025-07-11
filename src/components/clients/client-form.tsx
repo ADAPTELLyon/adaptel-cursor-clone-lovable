@@ -127,6 +127,7 @@ export function ClientForm({
   return (
     <Form {...form}>
       <form
+        id="client-form"
         onSubmit={form.handleSubmit(onSubmit)}
         className="space-y-6 px-2 overflow-x-hidden scrollbar-none"
       >

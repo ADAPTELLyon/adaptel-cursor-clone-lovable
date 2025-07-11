@@ -47,7 +47,7 @@ export default function Commandes() {
         heure_debut_matin, heure_fin_matin,
         heure_debut_soir, heure_fin_soir,
         commentaire, created_at,
-        candidats (id, nom, prenom),
+        candidat (id, nom, prenom),
         clients (nom)
       `)
 
@@ -75,7 +75,7 @@ export default function Commandes() {
             service: item.service,
             mission_slot: item.mission_slot ?? 0,
             client_id: item.client_id,
-            candidat_id: item.candidats?.id ?? null,
+            candidat_id: item.candidat?.id ?? null,
             heure_debut_matin: item.heure_debut_matin,
             heure_fin_matin: item.heure_fin_matin,
             heure_debut_soir: item.heure_debut_soir,
@@ -83,10 +83,10 @@ export default function Commandes() {
             commentaire: item.commentaire,
             created_at: item.created_at,
             candidat:
-              item.candidats?.nom && item.candidats?.prenom
+              item.candidats?.nom && item.candidat?.prenom
                 ? {
-                    nom: item.candidats.nom,
-                    prenom: item.candidats.prenom,
+                    nom: item.candidat.nom,
+                    prenom: item.candidat.prenom,
                   }
                 : null,
             client: item.clients?.nom ? { nom: item.clients.nom } : null,
