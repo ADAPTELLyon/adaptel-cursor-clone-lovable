@@ -244,17 +244,6 @@ export function SectionFixeCandidates({
 
         <Separator orientation="vertical" className="h-8" />
 
-        <Button
-    variant="ghost"
-    size="icon"
-    onClick={resetFiltres}
-    className="border border-gray-300 rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-    title="Réinitialiser les filtres"
-  >
-    <RotateCcw size={18} />
-  </Button>
-
-  <Separator orientation="vertical" className="h-8" />
 
   <Button
     variant="ghost"
