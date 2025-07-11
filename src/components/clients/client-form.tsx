@@ -269,13 +269,6 @@ export function ClientForm({
             </FormControl>
           </FormItem>
         )} />
-
-        <div className="flex justify-end gap-2 pt-4">
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Annuler
-          </Button>
-          <Button type="submit">Enregistrer</Button>
-        </div>
       </form>
     </Form>
   )
