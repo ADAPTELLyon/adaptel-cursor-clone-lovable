@@ -1,48 +1,46 @@
-import * as z from "zod"
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ClientForm, formSchema } from "./client-form"
 import { ClientContactsTab } from "./ClientContactsTab"
 import { ClientPostesTypesTab } from "./ClientPostesTypesTab"
 import { ClientSuiviTab } from "./ClientSuiviTab"
 import { ClientIncidentsTab } from "./client-incident"
-import type { Client } from "@/types/types-front"
 import { useToast } from "@/hooks/use-toast"
+import type { z } from "zod"
+import type { Client } from "@/types/types-front"
 
 type ClientFormTabsProps = {
   initialData?: z.infer<typeof formSchema> & { id?: string }
   onSubmit: (data: z.infer<typeof formSchema>) => void
   onCancel: () => void
-  onClose: () => void
 }
 
 export function ClientFormTabs({
   initialData,
   onSubmit,
   onCancel,
-  onClose,
 }: ClientFormTabsProps) {
   const [activeTab, setActiveTab] = useState("infos")
   const [secteurs, setSecteurs] = useState<string[]>([])
   const [services, setServices] = useState<string[]>([])
+  const [isSaved, setIsSaved] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
     if (initialData) {
       setSecteurs(initialData.secteurs || [])
       setServices(initialData.services || [])
+      setIsSaved(!!initialData.id) // si on a un id, on considère que le client est déjà enregistré
+    } else {
+      setIsSaved(false)
     }
   }, [initialData])
 
-  // Vérifie si la fiche client est déjà enregistrée (présence d'id)
-  const isSaved = !!initialData?.id
-
-  // Intercepte le changement d'onglet
-  function handleTabChange(newTab: string) {
+  const handleTabChange = (newTab: string) => {
     if (!isSaved && newTab !== "infos") {
       toast({
         title: "Enregistrement requis",
-        description: "Merci d'enregistrer la fiche client avant de changer d’onglet.",
+        description: "Veuillez enregistrer les informations du client avant de changer d’onglet.",
         variant: "destructive",
       })
       return
@@ -50,9 +48,9 @@ export function ClientFormTabs({
     setActiveTab(newTab)
   }
 
-  // Soumission formulaire déclenche le onSubmit parent
-  function handleSubmitForm(data: z.infer<typeof formSchema>) {
+  const handleSubmit = (data: z.infer<typeof formSchema>) => {
     onSubmit(data)
+    setIsSaved(true)
   }
 
   return (
@@ -76,38 +74,17 @@ export function ClientFormTabs({
         <TabsContent value="infos" className="flex-1 overflow-y-auto pr-2">
           <ClientForm
             initialData={initialData}
-            onSubmit={handleSubmitForm}
+            onSubmit={handleSubmit}
             onCancel={onCancel}
             onSecteursChange={setSecteurs}
             onServicesChange={setServices}
           />
-
-          {/* Boutons Enregistrer / Annuler / Fermer */}
-          <div className="flex justify-end gap-2 mt-4">
+          {/* Bouton Fermer ajouté ici */}
+          <div className="mt-4 flex justify-end gap-2">
             <button
               onClick={onCancel}
-              className="px-4 py-2 border rounded hover:bg-gray-100"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={() => {
-                // Le vrai submit est dans ClientForm (via onSubmit)
-                // Ici on déclenche l'enregistrement via un ref ou event personnalisé
-                // Mais si tu n'as pas mis ce mécanisme, tu peux remplacer ce bouton par le submit natif du formulaire
-                // Pour simplifier, on suppose que l'utilisateur clique sur le bouton Enregistrer dans ClientForm
-                toast({
-                  title: "Veuillez utiliser le bouton Enregistrer dans le formulaire.",
-                  variant: "destructive",
-                })
-              }}
-              className="px-4 py-2 bg-[#840404] text-white rounded hover:bg-[#750303]"
-            >
-              Enregistrer
-            </button>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border rounded hover:bg-gray-100"
+              className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+              type="button"
             >
               Fermer
             </button>
@@ -118,9 +95,9 @@ export function ClientFormTabs({
           value="contacts"
           className="flex-1 overflow-y-auto px-2 text-sm text-muted-foreground"
         >
-          {isSaved ? (
+          {initialData?.id ? (
             <ClientContactsTab
-              clientId={initialData!.id}
+              clientId={initialData.id}
               selectedServices={services}
             />
           ) : secteurs.length > 0 ? (
@@ -136,7 +113,7 @@ export function ClientFormTabs({
           value="postes"
           className="flex-1 overflow-y-auto px-2 text-sm text-muted-foreground"
         >
-          {(isSaved || secteurs.length > 0) ? (
+          {initialData?.id || secteurs.length > 0 ? (
             <ClientPostesTypesTab
               client={{
                 ...(initialData || {}),
@@ -151,7 +128,10 @@ export function ClientFormTabs({
           )}
         </TabsContent>
 
-        <TabsContent value="missions" className="px-4 text-sm text-muted-foreground">
+        <TabsContent
+          value="missions"
+          className="px-4 text-sm text-muted-foreground"
+        >
           <p className="italic">À venir</p>
         </TabsContent>
 
@@ -159,9 +139,9 @@ export function ClientFormTabs({
           value="interdits"
           className="flex-1 overflow-y-auto px-2 text-sm text-muted-foreground"
         >
-          {isSaved ? (
+          {initialData?.id ? (
             <ClientSuiviTab
-              clientId={initialData!.id}
+              clientId={initialData.id}
               secteurs={secteurs}
               services={services}
             />
@@ -176,8 +156,8 @@ export function ClientFormTabs({
           value="incidents"
           className="flex-1 overflow-y-auto px-4 text-sm text-muted-foreground"
         >
-          {isSaved ? (
-            <ClientIncidentsTab clientId={initialData!.id} />
+          {initialData?.id ? (
+            <ClientIncidentsTab clientId={initialData.id} />
           ) : (
             <p className="text-sm italic text-muted-foreground mt-4">
               Enregistrez les informations du client pour consulter les incidents.
