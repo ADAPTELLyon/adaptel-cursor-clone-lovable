@@ -42,6 +42,23 @@ export default function NouvelleCommandeDialog({
   >([])
   const [isReloading, setIsReloading] = useState(false)
 
+  useEffect(() => {
+    // Trouve la semaine sélectionnée
+    const semaineObj = semainesDisponibles.find(s => s.value === semaine)
+    if (!semaineObj) return
+  
+    // Crée un nouvel état joursState pour les 7 jours de la semaine, tous décochés
+    const newJoursState: Record<string, boolean> = {}
+    for (let i = 0; i < 7; i++) {
+      const dayKey = format(addDays(semaineObj.startDate, i), "yyyy-MM-dd")
+      newJoursState[dayKey] = false
+    }
+    setJoursState(newJoursState)
+  
+    // Vide les heures par jour (réinitialise)
+    setHeuresParJour({})
+  }, [semaine, semainesDisponibles])
+
   const { clients } = useClientsBySecteur(secteur)
   const selectedClient = clients.find((c) => c.id === clientId)
   const services = selectedClient?.services || []

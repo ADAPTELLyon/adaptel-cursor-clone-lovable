@@ -1,237 +1,198 @@
-import { useState, useEffect } from "react"
-import { useQueryClient } from "@tanstack/react-query"
-import { supabase } from "@/integrations/supabase/client"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Switch } from "@/components/ui/switch"
-import { MultiSelect } from "@/components/ui/multi-select"
-import { toast } from "@/hooks/use-toast"
-import { FormLabel } from "@/components/ui/form"
+import * as z from "zod"
+import { useEffect, useState } from "react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ClientForm, formSchema } from "./client-form"
+import { ClientContactsTab } from "./ClientContactsTab"
+import { ClientPostesTypesTab } from "./ClientPostesTypesTab"
+import { ClientSuiviTab } from "./ClientSuiviTab"
+import { ClientIncidentsTab } from "./client-incident"
+import type { Client } from "@/types/types-front"
+import { useToast } from "@/hooks/use-toast"
 
-type Contact = {
-  id?: string
-  client_id: string
-  nom: string
-  prénom?: string | null
-  fonction?: string | null
-  telephone?: string | null
-  email?: string | null
-  secteur?: string | null
-  services?: string[]
-  actif?: boolean
+type ClientFormTabsProps = {
+  initialData?: z.infer<typeof formSchema> & { id?: string }
+  onSubmit: (data: z.infer<typeof formSchema>) => void
+  onCancel: () => void
+  onClose: () => void
 }
 
-type ClientContactsTabProps = {
-  clientId: string
-  selectedServices: string[]
-}
-
-export function ClientContactsTab({ clientId, selectedServices }: ClientContactsTabProps) {
-  const queryClient = useQueryClient()
-
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [editingContactId, setEditingContactId] = useState<string | "new" | null>(null)
-  const [formData, setFormData] = useState<Contact>({
-    nom: "",
-    services: [],
-    actif: true,
-    client_id: clientId,
-  })
+export function ClientFormTabs({
+  initialData,
+  onSubmit,
+  onCancel,
+  onClose,
+}: ClientFormTabsProps) {
+  const [activeTab, setActiveTab] = useState("infos")
+  const [secteurs, setSecteurs] = useState<string[]>([])
+  const [services, setServices] = useState<string[]>([])
+  const { toast } = useToast()
 
   useEffect(() => {
-    if (!clientId) return
-    fetchContacts()
-    // reset edition à chaque client
-    setEditingContactId(null)
-    setFormData({
-      nom: "",
-      services: [],
-      actif: true,
-      client_id: clientId,
-    })
-  }, [clientId])
-
-  const fetchContacts = async () => {
-    const { data, error } = await supabase
-      .from("contacts_clients")
-      .select("*")
-      .eq("client_id", clientId)
-      .order("nom")
-    if (error) {
-      toast({ title: "Erreur chargement contacts", variant: "destructive" })
-      return
+    if (initialData) {
+      setSecteurs(initialData.secteurs || [])
+      setServices(initialData.services || [])
     }
-    setContacts(data || [])
-  }
+  }, [initialData])
 
-  const onChange = (field: keyof Contact, value: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }
+  // Vérifie si la fiche client est déjà enregistrée (présence d'id)
+  const isSaved = !!initialData?.id
 
-  const startEdit = (contact: Contact | "new") => {
-    if (contact === "new") {
-      setFormData({
-        nom: "",
-        services: [],
-        actif: true,
-        client_id: clientId,
+  // Intercepte le changement d'onglet
+  function handleTabChange(newTab: string) {
+    if (!isSaved && newTab !== "infos") {
+      toast({
+        title: "Enregistrement requis",
+        description: "Merci d'enregistrer la fiche client avant de changer d’onglet.",
+        variant: "destructive",
       })
-      setEditingContactId("new")
-    } else {
-      setFormData(contact)
-      setEditingContactId(contact.id || null)
-    }
-  }
-
-  const cancelEdit = () => {
-    setEditingContactId(null)
-    setFormData({
-      nom: "",
-      services: [],
-      actif: true,
-      client_id: clientId,
-    })
-  }
-
-  const saveContact = async () => {
-    if (!formData.nom || formData.nom.trim() === "") {
-      toast({ title: "Le nom est obligatoire", variant: "destructive" })
       return
     }
-
-    const payload: Contact = {
-      ...formData,
-      client_id: clientId,
-      actif: formData.actif ?? true,
-      services: formData.services || [],
-      nom: formData.nom.trim(),
-    }
-
-    try {
-      if (editingContactId && editingContactId !== "new") {
-        const { error } = await supabase
-          .from("contacts_clients")
-          .update(payload)
-          .eq("id", editingContactId)
-        if (error) throw error
-        toast({ title: "Contact mis à jour" })
-      } else {
-        const { error } = await supabase.from("contacts_clients").insert([payload])
-        if (error) throw error
-        toast({ title: "Contact ajouté" })
-      }
-      cancelEdit()
-      fetchContacts()
-      queryClient.invalidateQueries({ queryKey: ["contacts", clientId] })
-    } catch {
-      toast({ title: "Erreur lors de la sauvegarde", variant: "destructive" })
-    }
+    setActiveTab(newTab)
   }
 
-  const deleteContact = async (id: string) => {
-    if (!window.confirm("Confirmez-vous la suppression ?")) return
-
-    const { error } = await supabase.from("contacts_clients").delete().eq("id", id)
-    if (error) {
-      toast({ title: "Erreur lors de la suppression", variant: "destructive" })
-      return
-    }
-    toast({ title: "Contact supprimé" })
-    fetchContacts()
-    queryClient.invalidateQueries({ queryKey: ["contacts", clientId] })
+  // Soumission formulaire déclenche le onSubmit parent
+  function handleSubmitForm(data: z.infer<typeof formSchema>) {
+    onSubmit(data)
   }
 
   return (
-    <div>
-      <Button onClick={() => startEdit("new")} className="mb-4">
-        + Ajouter un contact
-      </Button>
+    <div className="flex flex-col h-[600px]">
+      <Tabs
+        value={activeTab}
+        onValueChange={handleTabChange}
+        className="flex-1 flex flex-col overflow-hidden"
+      >
+        <TabsList className="grid grid-cols-4 sm:grid-cols-8 w-full mb-2 border bg-muted text-muted-foreground rounded-lg">
+          <TabsTrigger value="infos">📝 Informations</TabsTrigger>
+          <TabsTrigger value="contacts">📇 Contacts</TabsTrigger>
+          <TabsTrigger value="postes">🧩 Postes</TabsTrigger>
+          <TabsTrigger value="missions">📆 Missions</TabsTrigger>
+          <TabsTrigger value="interdits">🚫 Suivi</TabsTrigger>
+          <TabsTrigger value="incidents">⚠️ Incidents</TabsTrigger>
+          <TabsTrigger value="historique">📜 Historique</TabsTrigger>
+          <TabsTrigger value="stats">📊 Stats</TabsTrigger>
+        </TabsList>
 
-      {editingContactId && (
-        <div className="p-4 border rounded mb-6 space-y-4 bg-white shadow-sm">
-          <FormLabel>Nom *</FormLabel>
-          <Input
-            value={formData.nom}
-            onChange={(e) => onChange("nom", e.target.value)}
+        <TabsContent value="infos" className="flex-1 overflow-y-auto pr-2">
+          <ClientForm
+            initialData={initialData}
+            onSubmit={handleSubmitForm}
+            onCancel={onCancel}
+            onSecteursChange={setSecteurs}
+            onServicesChange={setServices}
           />
 
-          <FormLabel>Prénom</FormLabel>
-          <Input
-            value={formData.prénom || ""}
-            onChange={(e) => onChange("prénom", e.target.value)}
-          />
-
-          <FormLabel>Fonction</FormLabel>
-          <Input
-            value={formData.fonction || ""}
-            onChange={(e) => onChange("fonction", e.target.value)}
-          />
-
-          <FormLabel>Téléphone</FormLabel>
-          <Input
-            value={formData.telephone || ""}
-            onChange={(e) => onChange("telephone", e.target.value)}
-          />
-
-          <FormLabel>Email</FormLabel>
-          <Input
-            value={formData.email || ""}
-            onChange={(e) => onChange("email", e.target.value)}
-          />
-
-          <FormLabel>Secteur</FormLabel>
-          <Input
-            value={formData.secteur || ""}
-            onChange={(e) => onChange("secteur", e.target.value)}
-          />
-
-          <FormLabel>Services</FormLabel>
-          <MultiSelect
-            options={selectedServices}
-            selected={formData.services || []}
-            onChange={(values) => onChange("services", values)}
-          />
-
-          <FormLabel>Actif</FormLabel>
-          <Switch
-            checked={formData.actif ?? true}
-            onCheckedChange={(checked) => onChange("actif", checked)}
-          />
-
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={cancelEdit}>
+          {/* Boutons Enregistrer / Annuler / Fermer */}
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 border rounded hover:bg-gray-100"
+            >
               Annuler
-            </Button>
-            <Button onClick={saveContact}>Enregistrer</Button>
+            </button>
+            <button
+              onClick={() => {
+                // Le vrai submit est dans ClientForm (via onSubmit)
+                // Ici on déclenche l'enregistrement via un ref ou event personnalisé
+                // Mais si tu n'as pas mis ce mécanisme, tu peux remplacer ce bouton par le submit natif du formulaire
+                // Pour simplifier, on suppose que l'utilisateur clique sur le bouton Enregistrer dans ClientForm
+                toast({
+                  title: "Veuillez utiliser le bouton Enregistrer dans le formulaire.",
+                  variant: "destructive",
+                })
+              }}
+              className="px-4 py-2 bg-[#840404] text-white rounded hover:bg-[#750303]"
+            >
+              Enregistrer
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border rounded hover:bg-gray-100"
+            >
+              Fermer
+            </button>
           </div>
-        </div>
-      )}
+        </TabsContent>
 
-      <div className="space-y-4">
-        {contacts.map((contact) => (
-          <div
-            key={contact.id}
-            className="flex justify-between items-center p-3 border rounded shadow-sm bg-white"
-          >
-            <div>
-              <strong>{contact.nom}</strong> {contact.prénom} — {contact.fonction}
-              <br />
-              <small>{contact.telephone} | {contact.email}</small>
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => startEdit(contact)}>
-                Modifier
-              </Button>
-              <Button size="sm" variant="destructive" onClick={() => deleteContact(contact.id!)}>
-                Supprimer
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
+        <TabsContent
+          value="contacts"
+          className="flex-1 overflow-y-auto px-2 text-sm text-muted-foreground"
+        >
+          {isSaved ? (
+            <ClientContactsTab
+              clientId={initialData!.id}
+              selectedServices={services}
+            />
+          ) : secteurs.length > 0 ? (
+            <ClientContactsTab clientId={"temp"} selectedServices={services} />
+          ) : (
+            <p className="text-sm italic text-muted-foreground mt-4">
+              Enregistrez les informations du client avant d’ajouter des contacts.
+            </p>
+          )}
+        </TabsContent>
+
+        <TabsContent
+          value="postes"
+          className="flex-1 overflow-y-auto px-2 text-sm text-muted-foreground"
+        >
+          {(isSaved || secteurs.length > 0) ? (
+            <ClientPostesTypesTab
+              client={{
+                ...(initialData || {}),
+                secteurs,
+                postes_bases_actifs: [],
+              } as Client}
+            />
+          ) : (
+            <p className="text-sm italic text-muted-foreground mt-4">
+              Enregistrez les informations du client avant de gérer les postes.
+            </p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="missions" className="px-4 text-sm text-muted-foreground">
+          <p className="italic">À venir</p>
+        </TabsContent>
+
+        <TabsContent
+          value="interdits"
+          className="flex-1 overflow-y-auto px-2 text-sm text-muted-foreground"
+        >
+          {isSaved ? (
+            <ClientSuiviTab
+              clientId={initialData!.id}
+              secteurs={secteurs}
+              services={services}
+            />
+          ) : (
+            <p className="text-sm italic text-muted-foreground mt-4">
+              Enregistrez les informations du client pour voir ou gérer les priorités/interdictions.
+            </p>
+          )}
+        </TabsContent>
+
+        <TabsContent
+          value="incidents"
+          className="flex-1 overflow-y-auto px-4 text-sm text-muted-foreground"
+        >
+          {isSaved ? (
+            <ClientIncidentsTab clientId={initialData!.id} />
+          ) : (
+            <p className="text-sm italic text-muted-foreground mt-4">
+              Enregistrez les informations du client pour consulter les incidents.
+            </p>
+          )}
+        </TabsContent>
+
+        <TabsContent value="historique" className="px-4 text-sm text-muted-foreground">
+          <p className="italic">À venir</p>
+        </TabsContent>
+
+        <TabsContent value="stats" className="px-4 text-sm text-muted-foreground">
+          <p className="italic">À venir</p>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
