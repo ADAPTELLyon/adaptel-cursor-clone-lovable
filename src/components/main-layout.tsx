@@ -20,8 +20,10 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const checkMissionsToday = async () => {
-      const prenom = user?.prenom
-      if (!user || !prenom) return
+      if (!user) return
+
+      // Utilise user.prenom, pas user.user_metadata.prenom
+      const prenom = (user as any).prenom ?? "Utilisateur"
 
       const today = new Date().toISOString().slice(0, 10)
 
@@ -43,11 +45,16 @@ function MainLayout({ children }: { children: React.ReactNode }) {
           : `Bonjour ${prenom}, vous n’avez pas de mission en recherche aujourd’hui.`
 
       setMessageAccueil(msg)
+      // Pour ne pas répéter le message à chaque navigation, on stocke un flag en session
+      sessionStorage.setItem("messageAccueilAffiche", "true")
 
       setTimeout(() => setMessageAccueil(null), 6000)
     }
 
-    checkMissionsToday()
+    // Affiche le message uniquement si pas déjà affiché cette session
+    if (!sessionStorage.getItem("messageAccueilAffiche")) {
+      checkMissionsToday()
+    }
   }, [user])
 
   const scrollToTop = () => {
