@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react"
+import * as z from "zod"
+import { useEffect, useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ClientForm, formSchema } from "./client-form"
 import { ClientContactsTab } from "./ClientContactsTab"
 import { ClientPostesTypesTab } from "./ClientPostesTypesTab"
 import { ClientSuiviTab } from "./ClientSuiviTab"
 import { ClientIncidentsTab } from "./client-incident" // ✅ AJOUT
-import type { z } from "zod"
 import type { Client } from "@/types/types-front"
 
 type ClientFormTabsProps = {
@@ -22,6 +22,7 @@ export function ClientFormTabs({
   const [activeTab, setActiveTab] = useState("infos")
   const [secteurs, setSecteurs] = useState<string[]>([])
   const [services, setServices] = useState<string[]>([])
+  const [warning, setWarning] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialData) {
@@ -30,11 +31,26 @@ export function ClientFormTabs({
     }
   }, [initialData])
 
+  // Nouvelle fonction pour gérer changement onglet avec vérification id
+  const handleChangeTab = (tab: string) => {
+    if (tab !== "infos" && !initialData?.id) {
+      setWarning("Veuillez enregistrer le client avant de changer d'onglet.")
+      setTimeout(() => setWarning(null), 4000)
+      return
+    }
+    setActiveTab(tab)
+  }
+
   return (
     <div className="flex flex-col h-[600px]">
+      {warning && (
+        <div className="mb-2 p-2 bg-yellow-200 text-yellow-800 rounded text-center font-medium">
+          {warning}
+        </div>
+      )}
       <Tabs
         value={activeTab}
-        onValueChange={setActiveTab}
+        onValueChange={handleChangeTab}
         className="flex-1 flex flex-col overflow-hidden"
       >
         <TabsList className="grid grid-cols-4 sm:grid-cols-8 w-full mb-2 border bg-muted text-muted-foreground rounded-lg">
