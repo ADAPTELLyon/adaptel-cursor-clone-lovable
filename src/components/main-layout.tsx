@@ -20,8 +20,8 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const checkMissionsToday = async () => {
-      const prenom = user?.user_metadata?.prenom
-      if (!prenom) return
+      const prenom = user?.prenom
+      if (!user || !prenom) return
 
       const today = new Date().toISOString().slice(0, 10)
 

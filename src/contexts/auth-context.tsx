@@ -1,85 +1,99 @@
+import React, {
+  createContext,
+  useState,
+  useEffect,
+  useContext,
+  ReactNode,
+} from "react"
+import { Session } from "@supabase/supabase-js"
+import { supabase } from "@/lib/supabase"
+import { useToast } from "@/hooks/use-toast"
 
-import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { getSession, getUser } from '@/lib/auth';
-import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabase';
+type Utilisateur = {
+  id: string
+  prenom: string
+  nom: string
+  email: string
+  actif: boolean
+}
 
 type AuthContextType = {
-  user: User | null;
-  isLoading: boolean;
-  isAuthenticated: boolean;
-};
+  user: Utilisateur | null
+  isLoading: boolean
+  isAuthenticated: boolean
+  session: Session | null
+}
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoading: true,
   isAuthenticated: false,
-});
+  session: null,
+})
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const { toast } = useToast();
+  const [user, setUser] = useState<Utilisateur | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
 
-  useEffect(() => {
-    // Set up auth state change listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        console.log('Auth state changed:', event, session?.user?.id);
-        setUser(session?.user ?? null);
+  const loadUserData = async (session: Session | null) => {
+    try {
+      if (!session?.user?.id) {
+        setUser(null)
+        setIsLoading(false)
+        return
       }
-    );
 
-    // Check for existing session
-    async function loadUserData() {
-      try {
-        const { session, error: sessionError } = await getSession();
-        
-        if (sessionError) {
-          console.error('Session error:', sessionError);
-          setIsLoading(false);
-          return;
-        }
+      const { data, error } = await supabase
+        .from("utilisateurs")
+        .select("*")
+        .eq("id", session.user.id)
+        .single()
 
-        if (session) {
-          const { user: userData, error: userError } = await getUser();
-          
-          if (userError) {
-            console.error('User error:', userError);
-            setIsLoading(false);
-            return;
-          }
-          
-          setUser(userData);
-        }
-      } catch (error) {
-        console.error('Auth context error:', error);
+      if (error) {
+        console.error("Erreur récupération utilisateur:", error)
         toast({
           title: "Erreur d'authentification",
-          description: "Un problème est survenu avec votre session.",
+          description: "Impossible de charger les informations utilisateur.",
           variant: "destructive",
-        });
-      } finally {
-        setIsLoading(false);
+        })
       }
+
+      setUser(data ?? null)
+    } catch (error) {
+      console.error("Erreur chargement utilisateur:", error)
+    } finally {
+      setIsLoading(false)
     }
+  }
 
-    loadUserData();
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      loadUserData(data.session)
+    })
 
-    // Cleanup subscription on component unmount
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSession(session)
+        loadUserData(session)
+      }
+    )
+
     return () => {
-      subscription.unsubscribe();
-    };
-  }, [toast]);
+      authListener.subscription.unsubscribe()
+    }
+  }, [])
 
   const value = {
     user,
     isLoading,
     isAuthenticated: !!user,
-  };
+    session,
+  }
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export const useAuth = () => useContext(AuthContext);
+export const useAuth = () => useContext(AuthContext)
