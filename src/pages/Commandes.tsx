@@ -47,7 +47,7 @@ export default function Commandes() {
         heure_debut_matin, heure_fin_matin,
         heure_debut_soir, heure_fin_soir,
         commentaire, created_at,
-        candidat (id, nom, prenom),
+        candidats (id, nom, prenom),
         clients (nom)
       `)
 
@@ -83,10 +83,10 @@ export default function Commandes() {
             commentaire: item.commentaire,
             created_at: item.created_at,
             candidat:
-              item.candidat?.nom && item.candidat?.prenom
+              item.candidats?.nom && item.candidats?.prenom
                 ? {
-                    nom: item.candidat.nom,
-                    prenom: item.candidat.prenom,
+                    nom: item.candidats.nom,
+                    prenom: item.candidats.prenom,
                   }
                 : null,
             client: item.clients?.nom ? { nom: item.clients.nom } : null,
