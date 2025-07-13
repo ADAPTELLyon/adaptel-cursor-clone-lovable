@@ -155,11 +155,15 @@ console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
         commentaire: item.commentaire,
         created_at: item.created_at,
         candidat:
-          item.candidat?.nom && item.candidat?.prenom
-            ? { nom: item.candidat.nom, prenom: item.candidat.prenom }
+          item.candidat
+            ? {
+                nom: item.candidat.nom ?? "–",
+                prenom: item.candidat.prenom ?? "–",
+              }
             : null,
         client: item.client?.nom ? { nom: item.client.nom } : null,
       }
+
 
       if (jourIndex !== -1) {
         map[nomClient][jourIndex].commandes.push(commande)

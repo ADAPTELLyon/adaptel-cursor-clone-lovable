@@ -94,24 +94,32 @@ export function CellulePlanning({
       style={{
         backgroundColor: statutColor.bg,
         color: statutColor.text,
-        borderLeft: `5px solid ${statutBorders[commande.statut] || "transparent"}`,
+        borderLeft: `5px solid ${borderColor}`,
       }}
     >
- <PopoverChangementStatut
+<PopoverChangementStatut
   commande={commande}
   onSuccess={onSuccess || (() => {})}
   trigger={
-    <div className="leading-tight font-semibold cursor-pointer space-y-[2px] min-h-[2.5rem]">
+    <div className="cursor-pointer min-h-[2.5rem] leading-tight font-semibold">
       {commande.statut === "Validé" && commande.candidat ? (
-        <>
-          <div className="block text-sm font-bold">{commande.candidat.nom}</div>
-          <div className="block text-xs font-medium min-h-[1.1rem]">{commande.candidat.prenom}</div>
-        </>
+        <div className="flex flex-col">
+          <div className="text-sm font-bold leading-tight whitespace-nowrap">
+            {commande.candidat.nom}
+          </div>
+          <div className="text-xs font-medium leading-tight whitespace-nowrap">
+            {commande.candidat.prenom}
+          </div>
+        </div>
       ) : (
-        <>
-          <div className="block text-sm font-semibold">{commande.statut}</div>
-          <div className="block text-xs font-normal min-h-[1.1rem]">&nbsp;</div>
-        </>
+        <div className="flex flex-col">
+          <div className="text-sm font-semibold leading-tight whitespace-nowrap">
+            {commande.statut}
+          </div>
+          <div className="text-xs font-normal min-h-[1.1rem] whitespace-nowrap">
+            &nbsp;
+          </div>
+        </div>
       )}
     </div>
   }
@@ -123,8 +131,6 @@ export function CellulePlanning({
           const heureFin = commande[`heure_fin_${creneau}` as keyof CommandeWithCandidat] ?? ""
           const keyDebut = `${commande.id}-${creneau}-debut`
           const keyFin = `${commande.id}-${creneau}-fin`
-
-          console.log("commande.statut =", commande.statut)
 
           return (
             <div key={creneau} className="flex gap-1 items-center">
