@@ -33,8 +33,11 @@ export default function Commandes() {
   const { planning: planningContext, refreshPlanning } = usePlanning()
 
   useEffect(() => {
-    localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs))
-  }, [selectedSecteurs])
+    if (semaineEnCours) {
+      const semaineActuelle = getWeek(new Date(), { weekStartsOn: 1 }).toString()
+      setSelectedSemaine(semaineActuelle)
+    }
+  }, [semaineEnCours])
 
   const fetchPlanning = async () => {
     const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })

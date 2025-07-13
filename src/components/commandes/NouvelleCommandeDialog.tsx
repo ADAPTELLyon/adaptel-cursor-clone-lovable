@@ -100,6 +100,20 @@ export default function NouvelleCommandeDialog({
     setSemaine(getWeekNumber(new Date()).toString())
   }, [])
 
+  useEffect(() => {
+    if (open) {
+      setSecteur("")
+      setClientId("")
+      setService("")
+      setSemaine(getWeekNumber(new Date()).toString())
+      setCommentaire("")
+      setMotif("Extra Usage constant")
+      setJoursState({})
+      setHeuresParJour({})
+      setPosteTypeId("")
+    }
+  }, [open])  
+
   const handleSave = async () => {
     if (!clientId || !secteur || !semaine) return
   
@@ -205,6 +219,7 @@ export default function NouvelleCommandeDialog({
       await onRefreshDone()
     }
     setIsReloading(false)
+    onOpenChange(false) 
   }
   
 
