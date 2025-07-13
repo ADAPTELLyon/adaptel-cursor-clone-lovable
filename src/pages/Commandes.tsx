@@ -83,12 +83,12 @@ export default function Commandes() {
             commentaire: item.commentaire,
             created_at: item.created_at,
             candidat:
-              item.candidats?.nom && item.candidats?.prenom
-                ? {
-                    nom: item.candidats.nom,
-                    prenom: item.candidats.prenom,
-                  }
-                : null,
+            item.candidats
+              ? {
+                  nom: item.candidats.nom ?? "–",
+                  prenom: item.candidats.prenom ?? "–",
+                }
+              : null,
             client: item.clients?.nom ? { nom: item.clients.nom } : null,
           },
         ],
