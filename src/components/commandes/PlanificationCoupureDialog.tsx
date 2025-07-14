@@ -88,12 +88,23 @@ export function PlanificationCoupureDialog({
 
       if (!missingMatin && !missingSoir) return
 
+      // ✅ Calcul du prochain slot disponible pour ce client / secteur / date
+      const { data: existingCommandes } = await supabase
+        .from("commandes")
+        .select("mission_slot")
+        .eq("client_id", client_id)
+        .eq("secteur", secteur)
+        .eq("date", date)
+
+      const existingSlots = (existingCommandes || []).map(c => c.mission_slot ?? 0)
+      const slot = existingSlots.length > 0 ? Math.max(...existingSlots) + 1 : 1
+
       const newCommande = {
         date,
         secteur,
         service: service || null,
         statut: "En recherche",
-        mission_slot: mission_slot + 1,
+        mission_slot: slot,
         client_id,
         heure_debut_matin: missingMatin ? heureDebutMatin : null,
         heure_fin_matin: missingMatin ? heureFinMatin : null,

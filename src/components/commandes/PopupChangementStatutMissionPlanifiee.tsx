@@ -1,3 +1,5 @@
+// src/components/commandes/PopupChangementStatutMissionPlanifiee.tsx
+
 import { useState } from "react"
 import {
   Dialog,
@@ -16,6 +18,7 @@ import { toast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
 import type { CommandeWithCandidat, StatutCommande } from "@/types/types-front"
 import { X } from "lucide-react"
+import { getWeek } from "date-fns"
 
 interface Props {
   statut: StatutCommande
@@ -54,31 +57,34 @@ export function PopupChangementStatutMissionPlanifiee({
 
     const candidatId = commande.candidat_id
 
-    // Supprimer la planification
+    // 🔁 Supprimer la planification s’il y a un candidat
     if (candidatId) {
       await supabase
         .from("planification")
         .delete()
         .eq("commande_id", commande.id)
         .eq("candidat_id", candidatId)
+    }
 
-      // ✅ Mise à jour commande : on conserve le candidat_id
-      await supabase.from("commandes").update({
-        statut,
-        candidat_id: candidatId,
-        ...(motif ? { complement_motif: motif } : {}),
-      }).eq("id", commande.id)
+    // ✅ Mise à jour commande
+    await supabase.from("commandes").update({
+      statut,
+      candidat_id: candidatId,
+      ...(motif ? { complement_motif: motif } : {}),
+    }).eq("id", commande.id)
 
-      // Mise à jour disponibilités
-      const statutPourCandidat =
-        askStatutCandidat
-          ? statutCandidat
-          : statut === "Annule Int"
-          ? "Annule Int"
-          : statut === "Absence"
-          ? "Absence"
-          : "Non Dispo"
+    // 🧠 Déterminer le statut à appliquer au planning candidat
+    const statutPourCandidat =
+      askStatutCandidat
+        ? statutCandidat
+        : statut === "Annule Int"
+        ? "Annule Int"
+        : statut === "Absence"
+        ? "Absence"
+        : "Non Dispo"
 
+    // ✅ Ajout dans disponibilites si candidat_id présent
+    if (candidatId) {
       await supabase.from("disponibilites").upsert({
         candidat_id: candidatId,
         date: commande.date,
@@ -86,37 +92,54 @@ export function PopupChangementStatutMissionPlanifiee({
         statut: statutPourCandidat,
         updated_at: new Date().toISOString(),
       }, { onConflict: "candidat_id,date,secteur" })
+    }
 
-      // Historique
-      await supabase.from("historique").insert({
-        table_cible: "commandes",
-        ligne_id: commande.id,
-        action: "statut",
-        user_id: userId,
-        date_action: new Date().toISOString(),
-        description: `Statut ${statut} appliqué à une mission planifiée`,
-        apres: {
-          statut,
-          ...(motif ? { complement_motif: motif } : {}),
-          candidat: commande.candidat ? { nom: commande.candidat.nom, prenom: commande.candidat.prenom } : {},
-          statut_candidat: statutPourCandidat,
-          remettre_en_recherche: remettreEnRecherche || false,
-        }
-      })
-
-      if (remettreEnRecherche) {
-        await supabase.from("commandes").insert({
-          client_id: commande.client_id,
-          date: commande.date,
-          secteur: commande.secteur,
-          service: commande.service,
-          statut: "En recherche",
-          heure_debut_matin: commande.heure_debut_matin,
-          heure_fin_matin: commande.heure_fin_matin,
-          heure_debut_soir: commande.heure_debut_soir,
-          heure_fin_soir: commande.heure_fin_soir,
-        })
+    // ✅ Historique
+    await supabase.from("historique").insert({
+      table_cible: "commandes",
+      ligne_id: commande.id,
+      action: "statut",
+      user_id: userId,
+      date_action: new Date().toISOString(),
+      description: `Statut ${statut} appliqué à une mission planifiée`,
+      apres: {
+        statut,
+        ...(motif ? { complement_motif: motif } : {}),
+        candidat: commande.candidat ? { nom: commande.candidat.nom, prenom: commande.candidat.prenom } : {},
+        statut_candidat: statutPourCandidat,
+        remettre_en_recherche: remettreEnRecherche || false,
       }
+    })
+
+    // ✅ Création d'une commande "En recherche" si demandé
+    if (remettreEnRecherche) {
+      const semaine = getWeek(new Date(commande.date))
+
+      const { data: autres } = await supabase
+        .from("commandes")
+        .select("mission_slot")
+        .eq("client_id", commande.client_id)
+        .eq("secteur", commande.secteur)
+        .in("statut", ["En recherche", "Validé", "Absence", "Annule Int"])
+        .gte("date", new Date(commande.date).toISOString())
+        .lte("date", new Date(new Date(commande.date).setDate(new Date(commande.date).getDate() + 6)).toISOString())
+
+      const slots = autres?.map((c) => c.mission_slot).filter((s) => typeof s === "number") || []
+      const maxSlot = slots.length ? Math.max(...slots) : 0
+      const newSlot = maxSlot + 1
+
+      await supabase.from("commandes").insert({
+        client_id: commande.client_id,
+        date: commande.date,
+        secteur: commande.secteur,
+        service: commande.service,
+        statut: "En recherche",
+        heure_debut_matin: commande.heure_debut_matin,
+        heure_fin_matin: commande.heure_fin_matin,
+        heure_debut_soir: commande.heure_debut_soir,
+        heure_fin_soir: commande.heure_fin_soir,
+        mission_slot: newSlot,
+      })
     }
 
     toast({ title: `Statut "${statut}" appliqué avec succès` })

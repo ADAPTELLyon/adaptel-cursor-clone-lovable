@@ -31,7 +31,8 @@ export default function AjoutDispoCandidat({
   const [candidat, setCandidat] = useState<Candidat | null>(null)
   const [commentaire, setCommentaire] = useState("")
   const [search, setSearch] = useState("")
-  const [semaine, setSemaine] = useState(getWeek(new Date()).toString())
+  const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
+  const [semaine, setSemaine] = useState(getWeek(lundi).toString())  
   const [semainesDisponibles, setSemainesDisponibles] = useState<
     { value: string; label: string; startDate: Date }[]
   >([])
@@ -104,12 +105,12 @@ export default function AjoutDispoCandidat({
           .eq("secteur", secteur)
           .in("date", dates),
         supabase
-          .from("commandes")
-          .select("date, client:clients(nom), heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+        .from("planification")
+        .select("date, statut, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")      
           .eq("candidat_id", candidat.id)
           .eq("secteur", secteur)
           .in("date", dates),
-      ])
+      ])      
 
       if (disposRes.error || planningRes.error) return
 
@@ -125,28 +126,32 @@ export default function AjoutDispoCandidat({
       const planMap: Record<string, { client: string; horaire: string }[]> = {}
       for (const p of planningRes.data) {
         const date = p.date
-        const client = p.client?.nom || "Client"
+        const client = "Client"
+      
+        // ❗️On ne bloque les modifications que si la mission est validée
+        if (p.statut !== "Validé") continue
+      
         const plans: { client: string; horaire: string }[] = []
-
+      
         if (p.heure_debut_matin) {
           plans.push({
             client,
             horaire: `${p.heure_debut_matin.slice(0, 5)} → ${p.heure_fin_matin?.slice(0, 5) || "--:--"}`,
           })
         }
-
+      
         if (p.heure_debut_soir) {
           plans.push({
             client,
             horaire: `${p.heure_debut_soir.slice(0, 5)} → ${p.heure_fin_soir?.slice(0, 5) || "--:--"}`,
           })
         }
-
+      
         if (plans.length) {
           if (!planMap[date]) planMap[date] = []
           planMap[date].push(...plans)
         }
-      }
+      }      
 
       setDispos(dispoMap)
       setPlanningMap(planMap)
