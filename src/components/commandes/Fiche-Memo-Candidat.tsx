@@ -176,11 +176,6 @@ export default function FicheMemoCandidat({
                   }
                 />
                 <InfoItem
-                  icon={<EnvelopeIcon className="h-4 w-4" />}
-                  label="Email"
-                  value={candidat?.email || "-"}
-                />
-                <InfoItem
                   icon={<CheckCircleIcon className="h-4 w-4" />}
                   label="Statut"
                   value={candidat?.actif ? "Actif" : "Inactif"}

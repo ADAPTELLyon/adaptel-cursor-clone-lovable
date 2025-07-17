@@ -10,15 +10,15 @@ import { toast } from "@/hooks/use-toast"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 
 interface CellulePlanningCandidateProps {
-  disponibilite?: CandidatDispoWithNom
-  commande?: CommandeFull
-  autresCommandes?: CommandeFull[]
-  secteur: string
-  date: string
-  candidatId: string
-  service: string
-  nomPrenom: string
-  onSuccess: () => void
+  disponibilite?: CandidatDispoWithNom;
+  commande?: CommandeFull;
+  autresCommandes?: CommandeFull[];
+  secteur: string;
+  date: string;
+  candidatId: string;
+  service: string;
+  nomPrenom: string;
+  onSuccess: () => void;
 }
 
 export function CellulePlanningCandidate({
@@ -36,8 +36,38 @@ export function CellulePlanningCandidate({
   const [commentaireTemp, setCommentaireTemp] = useState(disponibilite?.commentaire || "")
   const [editingComment, setEditingComment] = useState(false)
 
-  const isPlanifie = !!commande
-  const statut = isPlanifie ? "Validé" : (disponibilite?.statut ?? "Non renseigné")
+  const statutInitial = commande?.statut
+    ? commande.statut
+    : (disponibilite?.statut ?? "Non renseigné")
+
+  const isPlanifie = commande?.statut === "Validé"
+  const isStatutAnnexeBase = ["Annule Int", "Absence"].includes(statutInitial)
+  const isMissionVerrouillée = isPlanifie
+
+  // ✅ Affichage de dispo si plus récente que le statut annexe
+  const showDispo = () => {
+    if (isPlanifie) return false; // Toujours afficher la mission validée
+    
+    if (!commande && disponibilite) return true; // Pas de commande, afficher la dispo
+    if (commande && !disponibilite) return false; // Pas de dispo, afficher la commande
+    
+    // Si les deux existent, comparer les dates de modification
+    if (commande?.updated_at && disponibilite?.updated_at) {
+      return new Date(disponibilite.updated_at) > new Date(commande.updated_at);
+    }
+    
+    // Par défaut afficher la commande si statut annexe
+    return !isStatutAnnexeBase;
+  };
+
+  const shouldShowDispo = showDispo();
+  
+  const statut = shouldShowDispo
+    ? disponibilite?.statut ?? "Non renseigné"
+    : statutInitial;
+
+  const isStatutAnnexe = ["Annule Int", "Absence", "Annule Client", "Annule ADA"].includes(statut);
+
   const matin = disponibilite?.matin ?? false
   const soir = disponibilite?.soir ?? false
 
@@ -58,9 +88,9 @@ export function CellulePlanningCandidate({
               borderLeft: `5px solid ${statutBorders[statut] || "transparent"}`,
             }}
             onClick={() => {
-              if (isPlanifie) {
+              if (isMissionVerrouillée) {
                 toast({
-                  title: "Candidat en mission",
+                  title: "Mission ou statut en cours",
                   description: "Impossible de modifier la disponibilité.",
                   variant: "default",
                 })
@@ -69,21 +99,25 @@ export function CellulePlanningCandidate({
               setOpen(true)
             }}
           >
-            {/* ligne 1 : statut ou client */}
+            {/* ligne 1 : statut (si annexe) ou client */}
             <div className="font-semibold text-[13px] leading-tight min-h-[1.2rem]">
               {isPlanifie
                 ? commande?.client?.nom || "Mission validée"
+                : isStatutAnnexe
+                ? statut
                 : statut !== "Non renseigné"
                 ? statut
                 : ""}
             </div>
 
-            {/* ligne 2 : vide (pas de prénom) */}
-            <div className="text-xs font-normal min-h-[1rem]">&nbsp;</div>
+            {/* ligne 2 : client (si statut annexe) */}
+            <div className="text-xs font-normal italic min-h-[1rem]">
+              {isStatutAnnexe && commande?.client?.nom ? commande.client.nom : ""}
+            </div>
 
             {/* ligne 3 : créneau matin */}
             <div className="text-[13px] font-bold min-h-[1rem]">
-              {isPlanifie && commande?.heure_debut_matin && commande?.heure_fin_matin
+              {commande?.heure_debut_matin && commande?.heure_fin_matin
                 ? `${commande.heure_debut_matin.slice(0, 5)} - ${commande.heure_fin_matin.slice(0, 5)}`
                 : statut === "Dispo" && matin
                 ? "Matin / Midi"
@@ -93,7 +127,7 @@ export function CellulePlanningCandidate({
             {/* ligne 4 : créneau soir */}
             <div className="text-[13px] font-bold min-h-[1rem]">
               {secteur !== "Étages" &&
-                (isPlanifie && commande?.heure_debut_soir && commande?.heure_fin_soir
+                (commande?.heure_debut_soir && commande?.heure_fin_soir
                   ? `${commande.heure_debut_soir.slice(0, 5)} - ${commande.heure_fin_soir.slice(0, 5)}`
                   : statut === "Dispo" && soir
                   ? "Soir"
@@ -124,11 +158,15 @@ export function CellulePlanningCandidate({
                       className="w-full border rounded px-2 py-1"
                     />
                     <div className="flex justify-end">
-                      <Button variant="ghost" size="icon" onClick={() => {
-                        toast({ title: "Commentaire mis à jour" })
-                        setEditingComment(false)
-                        onSuccess()
-                      }}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          toast({ title: "Commentaire mis à jour" })
+                          setEditingComment(false)
+                          onSuccess()
+                        }}
+                      >
                         <Check className="w-4 h-4 text-green-600" />
                       </Button>
                     </div>
@@ -139,19 +177,18 @@ export function CellulePlanningCandidate({
           </div>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-sm capitalize">
-  {date &&
-    new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      timeZone: "Europe/Paris",
-    })}
-
+          {date &&
+            new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+              timeZone: "Europe/Paris",
+            })}
         </TooltipContent>
       </Tooltip>
 
       {/* pop-up saisie dispo */}
-      {!isPlanifie && (
+      {!isMissionVerrouillée && (
         <CandidateJourneeDialog
           open={open}
           onClose={() => setOpen(false)}

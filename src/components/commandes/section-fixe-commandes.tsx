@@ -21,6 +21,11 @@ import FicheMemoCandidat from "@/components/commandes/Fiche-Memo-Candidat"
 import FicheMemoClient from "@/components/clients/FicheMemoClient"
 import PopoverSelectCandidat from "./PopoverSelectCandidat"
 import PopoverSelectClient from "@/components/commandes/PopoverSelectClient"
+import { useEffect } from "react"
+import { supabase } from "@/lib/supabase"
+import { usePlanning } from "@/contexts/PlanningContext"
+import { getWeek, getYear } from "date-fns"
+import { fr } from "date-fns/locale"
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -45,6 +50,9 @@ export function SectionFixeCommandes({
   resetFiltres,
   semainesDisponibles,
   clientsDisponibles,
+  refreshTrigger,
+  onRefresh,  
+  planningContext,
 }: any) {
   const [openNouvelleCommande, setOpenNouvelleCommande] = useState(false)
   const [openDispo, setOpenDispo] = useState(false)
@@ -57,6 +65,54 @@ export function SectionFixeCommandes({
   const [showSelectClient, setShowSelectClient] = useState(false)
   const [openFicheClient, setOpenFicheClient] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+  
+  const [indicateurs, setIndicateurs] = useState({
+    demandées: 0,
+    validées: 0,
+    enRecherche: 0,
+    nonPourvue: 0,
+  })
+
+  const [secteurStats, setSecteurStats] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    let d = 0, v = 0, r = 0, np = 0
+
+    if (!planningContext || Object.keys(planningContext).length === 0) return
+
+    Object.values(planningContext).forEach((item: any) => {
+      if (item.statut !== "Annule Client" && item.statut !== "Annule ADA") {
+        d++
+        if (item.statut === "Validé") v++
+        if (item.statut === "En recherche") r++
+        if (item.statut === "Non pourvue") np++
+      }
+    })
+
+    setIndicateurs({ demandées: d, validées: v, enRecherche: r, nonPourvue: np })
+  }, [planningContext])
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("realtime:secteurs")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "commandes",
+        },
+        () => {
+          if (onRefresh) onRefresh()
+        }
+      )
+      .subscribe()
+  
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [onRefresh])
+ 
 
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm px-6 pb-4 pt-2 border-b border-gray-100">

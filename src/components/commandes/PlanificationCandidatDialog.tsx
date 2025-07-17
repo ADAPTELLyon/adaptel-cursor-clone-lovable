@@ -10,6 +10,8 @@ import type { CommandeWithCandidat } from "@/types/types-front"
 import { CheckCircle2, Clock, AlertCircle, Car, Ban, Check, History, ChevronRight, ArrowDownCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PlanificationCoupureDialog } from "./PlanificationCoupureDialog"
+import { Icon } from "@iconify/react"
+
 
 const statusConfig = {
   dispo: {
@@ -339,27 +341,27 @@ export function PlanificationCandidatDialog({
             <div className="flex items-center gap-1">
   {candidat.vehicule && (
     <span className="p-1 rounded-full bg-muted" title="Véhicule">
-      <Car className="w-3 h-3 text-blue-500" />
+      <Car className="w-4 h-4 text-blue-500" />
     </span>
   )}
   {candidat.interditClient && (
     <span className="p-1 rounded-full bg-muted" title="Interdit sur ce client">
-      <Ban className="w-3 h-3 text-red-500" />
+      <Icon icon="material-symbols:do-not-disturb-on" className="w-4 h-4 text-red-500" />
     </span>
   )}
   {candidat.prioritaire && (
     <span className="p-1 rounded-full bg-muted" title="Prioritaire">
-      <Check className="w-3 h-3 text-green-500" />
+      <Icon icon="mdi:star" className="w-4 h-4 text-yellow-500" />
     </span>
   )}
   {candidat.dejaPlanifie && (
     <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce client">
-      <History className="w-3 h-3 text-amber-500" />
+      <History className="w-4 h-4 text-amber-500" />
     </span>
   )}
   {candidat.dejaTravaille && (
     <span className="p-1 rounded-full bg-muted" title="A déjà travaillé pour ce client">
-      <ArrowDownCircle className="w-3 h-3 text-violet-600" />
+      <ArrowDownCircle className="w-4 h-4 text-violet-600" />
     </span>
   )}
 </div>

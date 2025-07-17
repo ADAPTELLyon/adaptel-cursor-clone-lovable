@@ -92,17 +92,20 @@ export type Commande = {
   heure_fin_nuit?: string | null;
   commentaire?: string | null;
   created_at: string;
+  updated_at?: string; // ← optionnel
   mission_slot: number;
 };
 
 export type CommandeWithCandidat = Commande & {
   candidat?: Pick<Candidat, "nom" | "prenom"> | null;
   client?: Pick<Client, "nom"> | null;
+  motif_contrat?: string | null;
 };
 
 export type CommandeFull = Commande & {
   candidat?: Pick<Candidat, "nom" | "prenom"> | null;
   client?: Pick<Client, "nom"> | null;
+  motif_contrat?: string | null;
 };
 
 // === Planning client ===

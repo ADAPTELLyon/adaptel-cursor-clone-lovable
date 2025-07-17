@@ -8,8 +8,7 @@ import { supabase } from "@/lib/supabase"
 import { addDays, format, startOfWeek, getWeek } from "date-fns"
 import type { JourPlanning } from "@/types/types-front"
 import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateurs"
-import FullScreenLoader from "@/components/ui/FullScreenLoader"
-import { EntetePlanningFixe } from "@/components/commandes/EntetePlanningFixe"
+
 
 export default function Commandes() {
   const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(() => {
@@ -29,7 +28,6 @@ export default function Commandes() {
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
   const [openDialog, setOpenDialog] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
-  const [loading, setLoading] = useState(false)
   const { planning: planningContext, refreshPlanning } = usePlanning()
 
   useEffect(() => {
@@ -266,12 +264,6 @@ console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
     setSelectedSemaine(getWeek(new Date(), { weekStartsOn: 1 }).toString())
   }
 
-  const lancerChargementEtRafraichir = async () => {
-    setLoading(true)
-    await refreshPlanning()
-    setTimeout(() => setLoading(false), 800)
-  }
-
   const semainesDisponibles = Array.from(
     new Set(
       Object.values(planning).flat().map((j) =>
@@ -315,7 +307,7 @@ console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
         },
         (payload) => {
           console.log("🔄 Changement en live sur 'commandes' :", payload)
-          refreshPlanning()
+          fetchPlanning()
         }
       )
       .subscribe()
@@ -327,7 +319,6 @@ console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
 
   return (
     <MainLayout>
-      {loading && <FullScreenLoader />}
       <div className="sticky top-[64px] z-20 bg-white shadow-md space-y-6 pb-4">
         <CommandesIndicateurs
           stats={stats}
@@ -335,6 +326,7 @@ console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
           planning={planning}
           filteredPlanning={filteredPlanning}
         />
+        
         <SectionFixeCommandes
           selectedSecteurs={selectedSecteurs}
           setSelectedSecteurs={setSelectedSecteurs}
@@ -362,6 +354,9 @@ console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
           resetFiltres={resetFiltres}
           semainesDisponibles={semainesDisponibles}
           clientsDisponibles={clientsDisponibles}
+          refreshTrigger={refreshTrigger}
+          onRefresh={refreshPlanning}
+          planningContext={planningContext}
         />
       </div>
 
@@ -376,7 +371,7 @@ console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
       <NouvelleCommandeDialog
         open={openDialog}
         onOpenChange={setOpenDialog}
-        onRefreshDone={lancerChargementEtRafraichir}
+        onRefreshDone={refreshPlanning}
       />
     </MainLayout>
   )

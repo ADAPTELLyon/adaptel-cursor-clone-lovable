@@ -13,56 +13,79 @@ type Props = {
 export function SectionSecteurs({ refreshTrigger }: Props) {
   const [stats, setStats] = useState<Record<string, { recherche: number; validees: number }>>({});
 
-  useEffect(() => {
-    const fetchData = async () => {
-      // on récupère toutes les commandes +/- 8 jours autour d'aujourd'hui
-      const today = new Date();
-      const startDate = new Date(today);
-      startDate.setDate(today.getDate() - 7);
-      const endDate = new Date(today);
-      endDate.setDate(today.getDate() + 7);
+  const fetchData = async () => {
+    // on récupère toutes les commandes +/- 8 jours autour d'aujourd'hui
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - 7);
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + 7);
 
-      const { data, error } = await supabase
-        .from("commandes")
-        .select("secteur, statut, date")
-        .gte("date", startDate.toISOString().slice(0,10))
-        .lte("date", endDate.toISOString().slice(0,10));
+    const { data, error } = await supabase
+      .from("commandes")
+      .select("secteur, statut, date")
+      .gte("date", startDate.toISOString().slice(0,10))
+      .lte("date", endDate.toISOString().slice(0,10));
 
-      if (error || !data) {
-        console.error("Erreur chargement indicateurs secteurs", error);
-        return;
+    if (error || !data) {
+      console.error("Erreur chargement indicateurs secteurs", error);
+      return;
+    }
+
+    const semaineActuelle = getWeek(today, { weekStartsOn: 1, locale: fr });
+    const anneeActuelle = getYear(today);
+
+    const filteredData = data.filter(cmd => {
+      const d = new Date(cmd.date);
+      return (
+        getWeek(d, { weekStartsOn: 1, locale: fr }) === semaineActuelle &&
+        getYear(d) === anneeActuelle
+      );
+    });
+
+    const counts: Record<string, { recherche: number; validees: number }> = {};
+
+    secteursList.forEach(({ label }) => {
+      counts[label] = { recherche: 0, validees: 0 };
+    });
+
+    filteredData.forEach((cmd) => {
+      const secteur = cmd.secteur || "";
+      if (secteursList.some((s) => s.label === secteur)) {
+        if (cmd.statut === "En recherche") counts[secteur].recherche++;
+        if (cmd.statut === "Validé") counts[secteur].validees++;
       }
+    });
 
-      const semaineActuelle = getWeek(today, { weekStartsOn: 1, locale: fr });
-      const anneeActuelle = getYear(today);
+    setStats(counts);
+  };
 
-      const filteredData = data.filter(cmd => {
-        const d = new Date(cmd.date);
-        return (
-          getWeek(d, { weekStartsOn: 1, locale: fr }) === semaineActuelle &&
-          getYear(d) === anneeActuelle
-        );
-      });
-
-      const counts: Record<string, { recherche: number; validees: number }> = {};
-
-      secteursList.forEach(({ label }) => {
-        counts[label] = { recherche: 0, validees: 0 };
-      });
-
-      filteredData.forEach((cmd) => {
-        const secteur = cmd.secteur || "";
-        if (secteursList.some((s) => s.label === secteur)) {
-          if (cmd.statut === "En recherche") counts[secteur].recherche++;
-          if (cmd.statut === "Validé") counts[secteur].validees++;
-        }
-      });
-
-      setStats(counts);
-    };
-
+  // Chargement initial et via refreshTrigger
+  useEffect(() => {
     fetchData();
   }, [refreshTrigger]);
+
+  // 🔁 Abonnement live à la table commandes
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime:section-secteurs')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'commandes',
+        },
+        () => {
+          fetchData(); // met à jour automatiquement les stats
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   return (
     <div className="grid grid-cols-5 gap-2 w-full">

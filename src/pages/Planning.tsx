@@ -81,7 +81,8 @@ export default function Planning() {
 
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) => {
-        if (j.commande) {
+        const statut = j.commande?.statut
+        if (statut === "Validé") {
           p++
         } else {
           const s = j.disponibilite?.statut || "Non renseigné"
@@ -90,7 +91,7 @@ export default function Planning() {
           else nr++
         }
       })
-    )
+    )  
 
     setStats({
       "Non renseigné": nr,
@@ -104,12 +105,16 @@ export default function Planning() {
     try {
       // Récupérer toutes les données sans restriction de date
       const { data: commandesData, error: commandesError } = await supabase
-        .from("commandes")
-        .select(`
-          *,
-          client:client_id ( nom ),
-          candidat:candidat_id ( nom, prenom )
-        `)
+      .from("commandes")
+      .select(`
+        id, date, statut, secteur, service, client_id, candidat_id,
+        heure_debut_matin, heure_fin_matin,
+        heure_debut_soir, heure_fin_soir,
+        heure_debut_nuit, heure_fin_nuit,
+        commentaire, created_at, updated_at, mission_slot,
+        client:client_id ( nom ),
+        candidat:candidat_id ( nom, prenom )
+      `)
 
       const { data: dispoData, error: dispoError } = await supabase
         .from("disponibilites")
@@ -141,8 +146,8 @@ export default function Planning() {
         const jours: JourPlanningCandidat[] = []
 
         // On traite toutes les commandes et disponibilités pour ce candidat
-        const commandesCandidat = commandesData?.filter(c => c.candidat_id === candidatId) || []
-        const dispoCandidat = dispoData?.filter(d => d.candidat_id === candidatId) || []
+        const commandesCandidat = commandesData?.filter(c => c.candidat_id === candidatId) || [];
+        const dispoCandidat = dispoData?.filter(d => d.candidat_id === candidatId) || [];
 
         // Fusionner les dates uniques
         const datesUniques = Array.from(new Set([
@@ -176,7 +181,10 @@ export default function Planning() {
               secondaires.push(cFull)
             }
           })
-
+          
+          const isAnnuleClientOuAda = principale && ["Annule Client", "Annule ADA"].includes(principale.statut)
+          const isAnnexe = principale && ["Annule Int", "Absence", "Annule Client", "Annule ADA"].includes(principale.statut)
+          
           if (principale && principale.statut === "Validé") {
             jours.push({
               date: dateStr,
@@ -185,75 +193,37 @@ export default function Planning() {
               commande: principale,
               autresCommandes: secondaires,
             })
-          } else if (
-            principale &&
-            ["Annule Int", "Annule Client", "Annule ADA", "Absence", "Non pourvue"].includes(
-              principale.statut
-            )
-          ) {
-            if (dispoJour) {
-              jours.push({
-                date: dateStr,
-                secteur: dispoJour.secteur,
-                service: dispoJour.service,
-                disponibilite: {
-                  id: dispoJour.id,
-                  date: dispoJour.date,
-                  secteur: dispoJour.secteur,
-                  statut: dispoJour.statut as "Dispo" | "Non Dispo" | "Non Renseigné",
-                  commentaire: dispoJour.commentaire,
-                  candidat_id: dispoJour.candidat_id,
-                  matin: dispoJour.dispo_matin ?? false,
-                  soir: dispoJour.dispo_soir ?? false,
-                  nuit: dispoJour.dispo_nuit ?? false,
-                  created_at: dispoJour.created_at,
-                  updated_at: dispoJour.updated_at,
-                  candidat: dispoJour.candidats
-                    ? { nom: dispoJour.candidats.nom, prenom: dispoJour.candidats.prenom }
-                    : undefined,
-                },
-                autresCommandes: secondaires,
-              })
-            } else {
-              jours.push({
-                date: dateStr,
-                secteur: principale.secteur,
-                service: principale.service,
-                commande: principale,
-                autresCommandes: secondaires,
-              })
-            }
-          } else if (dispoJour) {
+          } else if (isAnnexe || dispoJour) {
             jours.push({
               date: dateStr,
-              secteur: dispoJour.secteur,
-              service: dispoJour.service,
-              disponibilite: {
-                id: dispoJour.id,
-                date: dispoJour.date,
-                secteur: dispoJour.secteur,
-                statut: dispoJour.statut as "Dispo" | "Non Dispo" | "Non Renseigné",
-                commentaire: dispoJour.commentaire,
-                candidat_id: dispoJour.candidat_id,
-                matin: dispoJour.dispo_matin ?? false,
-                soir: dispoJour.dispo_soir ?? false,
-                nuit: dispoJour.dispo_nuit ?? false,
-                created_at: dispoJour.created_at,
-                updated_at: dispoJour.updated_at,
-                candidat: dispoJour.candidats
-                  ? { nom: dispoJour.candidats.nom, prenom: dispoJour.candidats.prenom }
-                  : undefined,
-              },
+              secteur: dispoJour?.secteur || principale?.secteur || "Inconnu",
+              service: dispoJour?.service || principale?.service || null,
+              commande: isAnnuleClientOuAda ? undefined : (isAnnexe ? principale : undefined),
+              disponibilite: dispoJour
+                ? {
+                    id: dispoJour.id,
+                    date: dispoJour.date,
+                    secteur: dispoJour.secteur,
+                    statut: dispoJour.statut as "Dispo" | "Non Dispo" | "Non Renseigné",
+                    commentaire: dispoJour.commentaire,
+                    candidat_id: dispoJour.candidat_id,
+                    matin: dispoJour.dispo_matin ?? false,
+                    soir: dispoJour.dispo_soir ?? false,
+                    nuit: dispoJour.dispo_nuit ?? false,
+                    created_at: dispoJour.created_at,
+                    updated_at: dispoJour.updated_at,
+                    candidat: dispoJour.candidats
+                      ? {
+                          nom: dispoJour.candidats.nom,
+                          prenom: dispoJour.candidats.prenom,
+                        }
+                      : undefined,
+                  }
+                : undefined,
               autresCommandes: secondaires,
             })
-          } else {
-            jours.push({
-              date: dateStr,
-              secteur: "Inconnu",
-              autresCommandes: secondaires,
-            })
-          }
-
+          }          
+  
           // Ajouter la semaine aux semaines disponibles
           const semaine = getWeek(parseISO(dateStr), { weekStartsOn: 1 }).toString()
           semainesAvecDonnees.add(semaine)

@@ -8,6 +8,8 @@ import type { CommandeWithCandidat } from "@/types/types-front"
 import { toast } from "@/hooks/use-toast"
 import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 import { PlanificationCoupureDialog } from "@/components/commandes/PlanificationCoupureDialog"
+import { Icon } from "@iconify/react"
+
 
 type CandidatMini = {
   id: string
@@ -244,15 +246,15 @@ export function PopoverPlanificationRapide({
                       </span>
                     )}
                     {c.interditClient && (
-                      <span className="p-1 rounded-full bg-muted" title="Interdit client">
-                        <Ban className="w-3 h-3 text-red-500" />
+  <span className="p-1 rounded-full bg-muted" title="Interdit client">
+    <Icon icon="material-symbols:do-not-disturb-on" className="w-3 h-3 text-red-500" />
                       </span>
                     )}
-                    {c.prioritaire && (
-                      <span className="p-1 rounded-full bg-muted" title="Prioritaire">
-                        <Check className="w-3 h-3 text-green-600" />
-                      </span>
-                    )}
+{c.prioritaire && (
+  <span className="p-1 rounded-full bg-muted" title="Prioritaire">
+    <Icon icon="mdi:star" className="w-3 h-3 text-yellow-500" />
+  </span>
+)}
                     {c.dejaTravaille && (
                       <span className="p-1 rounded-full bg-muted" title="A déjà travaillé ici">
                         <ArrowDownCircle className="w-3 h-3 text-violet-600" />

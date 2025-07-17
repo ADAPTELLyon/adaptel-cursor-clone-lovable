@@ -40,8 +40,8 @@ export default function AjoutDispoCandidat({
     Record<string, { statut: "dispo" | "absence" | "non"; matin: boolean; soir: boolean }>
   >({})
   const [planningMap, setPlanningMap] = useState<
-    Record<string, { client: string; horaire: string }[]>
-  >({})
+  Record<string, { client: string; horaire: string; statut?: string }[]>
+>({})
   const [allMatin, setAllMatin] = useState(true)
   const [allSoir, setAllSoir] = useState(true)
 
@@ -100,16 +100,17 @@ export default function AjoutDispoCandidat({
       const [disposRes, planningRes] = await Promise.all([
         supabase
           .from("disponibilites")
-          .select("*")
+          .select("date, statut, dispo_matin, dispo_soir, updated_at")
           .eq("candidat_id", candidat.id)
           .eq("secteur", secteur)
           .in("date", dates),
         supabase
-        .from("planification")
-        .select("date, statut, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")      
+          .from("commandes")
+          .select("id, date, statut, updated_at, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, client:client_id(nom)")
           .eq("candidat_id", candidat.id)
           .eq("secteur", secteur)
           .in("date", dates),
+
       ])      
 
       if (disposRes.error || planningRes.error) return
@@ -123,40 +124,66 @@ export default function AjoutDispoCandidat({
         }
       }
 
-      const planMap: Record<string, { client: string; horaire: string }[]> = {}
-      for (const p of planningRes.data) {
-        const date = p.date
-        const client = "Client"
+      const finalMap: typeof planningMap = {}
+
+      for (const date of dates) {
+        const commandes = planningRes.data.filter((p) => p.date === date)
+        const dispo = dispoMap[date]
       
-        // ❗️On ne bloque les modifications que si la mission est validée
-        if (p.statut !== "Validé") continue
+        // On récupère la date de dernière mise à jour pour chaque source (approximatif ici)
+        const dateDispo = null
+        const cmdAnnexe = commandes.find((c) =>
+          ["Annule Int", "Annule Client", "Annule ADA", "Absence"].includes(c.statut)
+        )
+        const cmdValidee = commandes.find((c) => c.statut === "Validé")
       
-        const plans: { client: string; horaire: string }[] = []
+        const dateAnnexe = cmdAnnexe ? new Date(cmdAnnexe.updated_at || cmdAnnexe.date) : null
+        const dateValidee = cmdValidee ? new Date(cmdValidee.updated_at || cmdValidee.date) : null
       
-        if (p.heure_debut_matin) {
-          plans.push({
-            client,
-            horaire: `${p.heure_debut_matin.slice(0, 5)} → ${p.heure_fin_matin?.slice(0, 5) || "--:--"}`,
-          })
+        // Choix prioritaire
+        if (cmdAnnexe && (!dateDispo || dateAnnexe >= dateDispo)) {
+          finalMap[date] = [{
+            client: (cmdAnnexe as any)?.client?.nom || "Client",
+            horaire: "",
+            statut: cmdAnnexe.statut
+          }]
+          continue
         }
       
-        if (p.heure_debut_soir) {
-          plans.push({
-            client,
-            horaire: `${p.heure_debut_soir.slice(0, 5)} → ${p.heure_fin_soir?.slice(0, 5) || "--:--"}`,
-          })
+        if (cmdValidee && (!dateDispo || dateValidee >= dateDispo)) {
+          const client = (cmdValidee as any)?.client?.nom || "Client"
+          const horaires = []
+      
+          if (cmdValidee.heure_debut_matin) {
+            horaires.push({
+              client,
+              horaire: `${cmdValidee.heure_debut_matin.slice(0, 5)} → ${cmdValidee.heure_fin_matin?.slice(0, 5) || "--:--"}`
+            })
+          }
+      
+          if (cmdValidee.heure_debut_soir) {
+            horaires.push({
+              client,
+              horaire: `${cmdValidee.heure_debut_soir.slice(0, 5)} → ${cmdValidee.heure_fin_soir?.slice(0, 5) || "--:--"}`
+            })
+          }
+      
+          if (horaires.length) {
+            finalMap[date] = horaires
+            continue
+          }
         }
       
-        if (plans.length) {
-          if (!planMap[date]) planMap[date] = []
-          planMap[date].push(...plans)
+        // Sinon on affiche dispo
+        if (dispo) {
+          finalMap[date] = []
+          continue
         }
-      }      
+      }
 
       setDispos(dispoMap)
-      setPlanningMap(planMap)
+      setPlanningMap(finalMap)
     }
-
     fetchDispoAndPlanning()
   }, [candidat, secteur, semaineObj])
 

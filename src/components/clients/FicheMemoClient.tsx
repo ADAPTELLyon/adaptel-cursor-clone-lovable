@@ -246,7 +246,6 @@ export default function FicheMemoClient({
                     {selectedContact && (
                       <div className="text-sm text-gray-600 mt-2 space-y-1 bg-gray-50 p-2 rounded">
                         <div><span className="font-medium">Fonction :</span> {selectedContact.fonction || "-"}</div>
-                        <div><span className="font-medium">Email :</span> {selectedContact.email || "-"}</div>
                         <div><span className="font-medium">Téléphone :</span> {selectedContact.telephone || "-"}</div>
                       </div>
                     )}
