@@ -88,38 +88,36 @@ export default function DispoSemainePanel({
 
       <div className="grid grid-cols-1 gap-2">
         {joursSemaine.map((j) => {
-          const dispo = dispos[j.key]?.statut || "non"
-          const planifies = j.planifies || []
-          const isBlocked =
-          planifies.length > 0 &&
-          (!planifies[0]?.statut || planifies[0].statut === "Validé")
+const dispo = dispos[j.key]?.statut || "non"
+const planifies = j.planifies || []
 
-          const statut = planifies[0]?.statut as string | undefined
-          const isAnnexe =
-            statut &&
-            ["Absence", "Annule Int", "Annule Client", "Annule ADA"].includes(
-              statut
-            )
-            const isBlocked = planifies.length > 0
-            const bgColor = isBlocked
-              ? statutColors["Validé"].bg
-              : j.isPast
-              ? "#e5e7eb"
-              : disponibiliteColors[
-                  dispo === "dispo"
-                    ? "Dispo"
-                    : dispo === "absence"
-                    ? "Non Dispo"
-                    : "Non Renseigné"
-                ].bg
-           
+const firstMission = planifies[0]
+const secondMission = planifies.length > 1 ? planifies[1] : null
+
+const statut = firstMission?.statut
+const isAnnexe =
+  statut &&
+  ["Absence", "Annule Int", "Annule Client", "Annule ADA"].includes(statut)
+
+const isBlocked = planifies.length > 0 && statut === "Validé"
+
+const bgColor =
+  statut && statutColors[statut]
+    ? statutColors[statut].bg
+    : j.isPast
+    ? "#e5e7eb"
+    : disponibiliteColors[
+        dispo === "dispo"
+          ? "Dispo"
+          : dispo === "absence"
+          ? "Non Dispo"
+          : "Non Renseigné"
+      ].bg
+          
 
           const handleClick = () => {
             if (!j.isPast && !isBlocked) toggleStatut(j.key)
           }
-
-          const firstMission = planifies[0]
-          const secondMission = planifies.length > 1 ? planifies[1] : null
 
           return (
             <div
