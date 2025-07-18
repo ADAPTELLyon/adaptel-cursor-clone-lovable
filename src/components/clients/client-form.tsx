@@ -187,20 +187,32 @@ export function ClientForm({
           </FormItem>
         )} />
 
-        <FormField control={form.control} name="groupe" render={({ field }) => (
-          <FormItem>
-            <FormLabel>Groupe</FormLabel>
-            <Select onValueChange={field.onChange} defaultValue={field.value}>
-              <FormControl><SelectTrigger><SelectValue placeholder="Sélectionner un groupe" /></SelectTrigger></FormControl>
-              <SelectContent>
-                {groupes.map((groupe) => (
-                  <SelectItem key={groupe} value={groupe}>{groupe}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )} />
+<FormField control={form.control} name="groupe" render={({ field }) => (
+  <FormItem>
+    <FormLabel>Groupe</FormLabel>
+    {groupes.length > 0 && (
+      <Select
+        value={field.value || ""}
+        onValueChange={(val) => field.onChange(val)}
+      >
+        <FormControl>
+          <SelectTrigger>
+            <SelectValue placeholder="Sélectionner un groupe" />
+          </SelectTrigger>
+        </FormControl>
+        <SelectContent>
+          {groupes.map((groupe) => (
+            <SelectItem key={groupe} value={groupe}>
+              {groupe}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    )}
+    <FormMessage />
+  </FormItem>
+)} />
+
 
         <h3 className="text-lg font-semibold mb-2">📍 Adresse</h3>
         <div className="grid grid-cols-3 gap-4">

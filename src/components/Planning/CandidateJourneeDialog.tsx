@@ -20,6 +20,7 @@ interface Props {
   disponibilite?: CandidatDispoWithNom
   onSuccess: () => void
   candidatNomPrenom: string
+  creneauVerrouille?: "matin" | "soir"
 }
 
 export function CandidateJourneeDialog({
@@ -32,6 +33,7 @@ export function CandidateJourneeDialog({
   disponibilite,
   onSuccess,
   candidatNomPrenom,
+  creneauVerrouille,
 }: Props) {
   const [statut, setStatut] = useState<"Dispo" | "Non Dispo" | "Non Renseigné">("Non Renseigné")
   const [matin, setMatin] = useState(false)
@@ -41,8 +43,8 @@ export function CandidateJourneeDialog({
   useEffect(() => {
     if (disponibilite) {
       setStatut(disponibilite.statut || "Non Renseigné")
-      setMatin(disponibilite.matin || false)
-      setSoir(disponibilite.soir || false)
+      setMatin(disponibilite.matin ?? false)
+      setSoir(disponibilite.soir ?? false)
       setCommentaire(disponibilite.commentaire || "")
     } else {
       setStatut("Non Renseigné")
@@ -54,10 +56,10 @@ export function CandidateJourneeDialog({
 
   useEffect(() => {
     if (statut === "Dispo" && !disponibilite) {
-      setMatin(true)
-      setSoir(secteur !== "Étages")
+      setMatin(creneauVerrouille === "matin" ? true : true)
+      setSoir(secteur !== "Étages" ? (creneauVerrouille === "soir" ? true : true) : false)
     }
-  }, [statut, secteur, disponibilite])
+  }, [statut, secteur, disponibilite, creneauVerrouille])
 
   const handleSave = async () => {
     if (!candidatId || !secteur || !date) {
@@ -72,8 +74,8 @@ export function CandidateJourneeDialog({
       service: service || null,
       statut,
       commentaire: commentaire || null,
-      dispo_matin: matin,
-      dispo_soir: soir,
+      dispo_matin: creneauVerrouille === "matin" ? true : matin,
+      dispo_soir: creneauVerrouille === "soir" ? true : soir,
       dispo_nuit: false,
     }
 
@@ -143,14 +145,35 @@ export function CandidateJourneeDialog({
           {/* Créneaux */}
           {statut === "Dispo" && (
             <div className="flex gap-6 items-center">
+              {/* Matin */}
               <div className="flex items-center gap-2">
-                <Switch checked={matin} onCheckedChange={setMatin} />
-                <span className="text-sm">Matin / Midi</span>
+                <Switch
+                  checked={creneauVerrouille === "matin" ? true : matin}
+                  disabled={creneauVerrouille === "matin"}
+                  onCheckedChange={(val) => setMatin(val)}
+                />
+                <span className="text-sm">
+                  Matin / Midi
+                  {creneauVerrouille === "matin" && (
+                    <span className="text-xs italic text-gray-500 ml-2">En mission</span>
+                  )}
+                </span>
               </div>
+
+              {/* Soir */}
               {secteur !== "Étages" && (
                 <div className="flex items-center gap-2">
-                  <Switch checked={soir} onCheckedChange={setSoir} />
-                  <span className="text-sm">Soir</span>
+                  <Switch
+                    checked={creneauVerrouille === "soir" ? true : soir}
+                    disabled={creneauVerrouille === "soir"}
+                    onCheckedChange={(val) => setSoir(val)}
+                  />
+                  <span className="text-sm">
+                    Soir
+                    {creneauVerrouille === "soir" && (
+                      <span className="text-xs italic text-gray-500 ml-2">En mission</span>
+                    )}
+                  </span>
                 </div>
               )}
             </div>

@@ -88,35 +88,61 @@ export default function DispoSemainePanel({
 
       <div className="grid grid-cols-1 gap-2">
         {joursSemaine.map((j) => {
-const dispo = dispos[j.key]?.statut || "non"
-const planifies = j.planifies || []
+          const dispo = dispos[j.key]?.statut || "non"
+          const planifies = j.planifies || []
 
-const firstMission = planifies[0]
-const secondMission = planifies.length > 1 ? planifies[1] : null
+          const firstMission = planifies[0]
+          const secondMission = planifies.length > 1 ? planifies[1] : null
 
-const statut = firstMission?.statut
-const isAnnexe =
-  statut &&
-  ["Absence", "Annule Int", "Annule Client", "Annule ADA"].includes(statut)
+          const statut = firstMission?.statut
+          const isAnnexe =
+            statut &&
+            ["Absence", "Annule Int", "Annule Client", "Annule ADA"].includes(statut)
 
-const isBlocked = planifies.length > 0 && statut === "Validé"
+          const isBlocked = statut === "Validé"
 
-const bgColor =
-  statut && statutColors[statut]
-    ? statutColors[statut].bg
-    : j.isPast
-    ? "#e5e7eb"
-    : disponibiliteColors[
-        dispo === "dispo"
-          ? "Dispo"
-          : dispo === "absence"
-          ? "Non Dispo"
-          : "Non Renseigné"
-      ].bg
-          
+          const secteur = firstMission?.client?.toLowerCase() || ""
+          const isEtages = secteur.includes("etage")
+
+          const bgColor =
+            statut && statutColors[statut]
+              ? statutColors[statut].bg
+              : dispo === "dispo"
+              ? disponibiliteColors["Dispo"].bg
+              : dispo === "absence"
+              ? disponibiliteColors["Non Dispo"].bg
+              : j.isPast
+              ? "#e5e7eb"
+              : disponibiliteColors["Non Renseigné"].bg
 
           const handleClick = () => {
-            if (!j.isPast && !isBlocked) toggleStatut(j.key)
+            if (!j.isPast && !isBlocked) {
+              const actuel = dispo
+              const suivant =
+                actuel === "non"
+                  ? "dispo"
+                  : actuel === "dispo"
+                  ? "absence"
+                  : "non"
+
+              const matin = suivant === "dispo" ? true : dispo === "dispo" ? dispos[j.key]?.matin ?? true : true
+              const soir = suivant === "dispo"
+                ? isEtages
+                  ? false
+                  : true
+                : dispo === "dispo"
+                ? dispos[j.key]?.soir ?? true
+                : true
+
+              toggleStatut(j.key)
+
+              // simulate switch manually
+              dispos[j.key] = {
+                statut: suivant as "dispo" | "absence" | "non",
+                matin,
+                soir,
+              }
+            }
           }
 
           return (
@@ -160,14 +186,16 @@ const bgColor =
                       className="scale-90"
                     />
                   </div>
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs">Soir</span>
-                    <Switch
-                      checked={dispos[j.key]?.soir}
-                      onCheckedChange={() => handleToggleSoir(j.key)}
-                      className="scale-90"
-                    />
-                  </div>
+                  {!isEtages && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs">Soir</span>
+                      <Switch
+                        checked={dispos[j.key]?.soir}
+                        onCheckedChange={() => handleToggleSoir(j.key)}
+                        className="scale-90"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>

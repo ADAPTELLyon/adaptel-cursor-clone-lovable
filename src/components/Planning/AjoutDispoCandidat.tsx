@@ -169,9 +169,12 @@ export default function AjoutDispoCandidat({
           }
       
           if (horaires.length) {
-            finalMap[date] = horaires
+            finalMap[date] = horaires.map((h) => ({
+              ...h,
+              statut: "Validé"
+            }))
             continue
-          }
+          }         
         }
       
         // Sinon on affiche dispo

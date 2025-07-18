@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { Info, Check } from "lucide-react"
+import { Info, Check, XCircle, CheckCircle, HelpCircle, Plus } from "lucide-react"
 import { disponibiliteColors, statutColors, statutBorders } from "@/lib/colors"
 import { CandidateJourneeDialog } from "@/components/Planning/CandidateJourneeDialog"
 import type { CandidatDispoWithNom, CommandeFull } from "@/types/types-front"
@@ -33,46 +33,44 @@ export function CellulePlanningCandidate({
   onSuccess,
 }: CellulePlanningCandidateProps) {
   const [open, setOpen] = useState(false)
+  const [creneauVerrouille, setCreneauVerrouille] = useState<"matin" | "soir" | undefined>()
   const [commentaireTemp, setCommentaireTemp] = useState(disponibilite?.commentaire || "")
   const [editingComment, setEditingComment] = useState(false)
 
-  const statutInitial = commande?.statut
-    ? commande.statut
-    : (disponibilite?.statut ?? "Non renseigné")
-
   const isPlanifie = commande?.statut === "Validé"
-  const isStatutAnnexeBase = ["Annule Int", "Absence"].includes(statutInitial)
-  const isMissionVerrouillée = isPlanifie
 
-  // ✅ Affichage de dispo si plus récente que le statut annexe
-  const showDispo = () => {
-    if (isPlanifie) return false; // Toujours afficher la mission validée
-    
-    if (!commande && disponibilite) return true; // Pas de commande, afficher la dispo
-    if (commande && !disponibilite) return false; // Pas de dispo, afficher la commande
-    
-    // Si les deux existent, comparer les dates de modification
-    if (commande?.updated_at && disponibilite?.updated_at) {
-      return new Date(disponibilite.updated_at) > new Date(commande.updated_at);
-    }
-    
-    // Par défaut afficher la commande si statut annexe
-    return !isStatutAnnexeBase;
-  };
+  const statutAnnexe = ["Annule Int", "Absence", "Annule Client", "Annule ADA"].includes(commande?.statut || "")
+  const isAnnexeActif =
+    statutAnnexe &&
+    (!disponibilite?.updated_at || !commande?.updated_at || new Date(commande.updated_at) > new Date(disponibilite.updated_at))
 
-  const shouldShowDispo = showDispo();
-  
-  const statut = shouldShowDispo
-    ? disponibilite?.statut ?? "Non renseigné"
-    : statutInitial;
-
-  const isStatutAnnexe = ["Annule Int", "Absence", "Annule Client", "Annule ADA"].includes(statut);
-
-  const matin = disponibilite?.matin ?? false
-  const soir = disponibilite?.soir ?? false
+  const statutDispo = disponibilite?.statut ?? "Non renseigné"
+  const matin = disponibilite?.matin
+  const soir = disponibilite?.soir
+  const isDispo = statutDispo === "Dispo" && (matin || soir)
+  const isNonDispo = statutDispo === "Non Dispo"
 
   const couleur =
-    statutColors[statut] ?? disponibiliteColors[statut] ?? { bg: "#e5e7eb", text: "#000000" }
+    statutColors[commande?.statut || ""] ??
+    disponibiliteColors[statutDispo] ??
+    { bg: "#e5e7eb", text: "#000000" }
+
+  const openPopup = (creneau?: "matin" | "soir") => {
+    setCreneauVerrouille(creneau)
+    setOpen(true)
+  }
+
+  const handleClick = () => {
+    if (!isPlanifie && !isAnnexeActif) {
+      openPopup()
+    }
+  }
+
+  const renderIcon = (valeur: "Dispo" | "Non Dispo" | "Non renseigné") => {
+    if (valeur === "Dispo") return <CheckCircle className="w-4 h-4 text-black ml-2" />
+    if (valeur === "Non Dispo") return <XCircle className="w-4 h-4 text-black ml-2" />
+    return <HelpCircle className="w-4 h-4 text-black ml-2" />
+  }
 
   return (
     <>
@@ -85,56 +83,79 @@ export function CellulePlanningCandidate({
             style={{
               backgroundColor: couleur.bg,
               color: couleur.text,
-              borderLeft: `5px solid ${statutBorders[statut] || "transparent"}`,
+              borderLeft: `5px solid ${statutBorders[commande?.statut || statutDispo] || "transparent"}`,
             }}
-            onClick={() => {
-              if (isMissionVerrouillée) {
-                toast({
-                  title: "Mission ou statut en cours",
-                  description: "Impossible de modifier la disponibilité.",
-                  variant: "default",
-                })
-                return
-              }
-              setOpen(true)
-            }}
+            onClick={handleClick}
           >
-            {/* ligne 1 : statut (si annexe) ou client */}
+            {/* Ligne 1 */}
             <div className="font-semibold text-[13px] leading-tight min-h-[1.2rem]">
-              {isPlanifie
+              {isPlanifie && !isAnnexeActif
                 ? commande?.client?.nom || "Mission validée"
-                : isStatutAnnexe
-                ? statut
-                : statut !== "Non renseigné"
-                ? statut
+                : isAnnexeActif
+                ? commande?.statut
+                : isNonDispo
+                ? "Non dispo"
+                : isDispo
+                ? "Dispo"
                 : ""}
             </div>
 
-            {/* ligne 2 : client (si statut annexe) */}
+            {/* Ligne 2 */}
             <div className="text-xs font-normal italic min-h-[1rem]">
-              {isStatutAnnexe && commande?.client?.nom ? commande.client.nom : ""}
+              {isAnnexeActif && commande?.client?.nom ? commande.client.nom : ""}
             </div>
 
-            {/* ligne 3 : créneau matin */}
-            <div className="text-[13px] font-bold min-h-[1rem]">
-              {commande?.heure_debut_matin && commande?.heure_fin_matin
-                ? `${commande.heure_debut_matin.slice(0, 5)} - ${commande.heure_fin_matin.slice(0, 5)}`
-                : statut === "Dispo" && matin
-                ? "Matin / Midi"
-                : ""}
+            {/* Ligne 3 : matin */}
+            <div className="text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center">
+              {isAnnexeActif ? null : commande?.heure_debut_matin && commande?.heure_fin_matin ? (
+                `${commande.heure_debut_matin.slice(0, 5)} - ${commande.heure_fin_matin.slice(0, 5)}`
+              ) : !isPlanifie && isDispo && matin ? (
+                "Matin / Midi"
+              ) : isPlanifie && secteur !== "Étages" && !commande?.heure_debut_matin ? (
+                <>
+                  <span>Matin / Midi</span>
+                  <span
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      openPopup("soir")
+                    }}
+                  >
+                    {renderIcon(
+                      matin === true ? "Dispo" : matin === false ? "Non Dispo" : "Non renseigné"
+                    )}
+                  </span>
+                </>
+              ) : null}
             </div>
 
-            {/* ligne 4 : créneau soir */}
-            <div className="text-[13px] font-bold min-h-[1rem]">
-              {secteur !== "Étages" &&
-                (commande?.heure_debut_soir && commande?.heure_fin_soir
-                  ? `${commande.heure_debut_soir.slice(0, 5)} - ${commande.heure_fin_soir.slice(0, 5)}`
-                  : statut === "Dispo" && soir
-                  ? "Soir"
-                  : "")}
-            </div>
+            {/* Ligne 4 : soir */}
+            {secteur !== "Étages" && (
+              <div className="text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center">
+                {isAnnexeActif ? null : commande?.heure_debut_soir && commande?.heure_fin_soir ? (
+                  `${commande.heure_debut_soir.slice(0, 5)} - ${commande.heure_fin_soir.slice(0, 5)}`
+                ) : !isPlanifie && isDispo && soir ? (
+                  "Soir"
+                ) : isPlanifie && !commande?.heure_debut_soir ? (
+                  <>
+                    <span>Soir</span>
+                    <span
+                      className="cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        openPopup("matin")
+                      }}
+                    >
+                      {renderIcon(
+                        soir === true ? "Dispo" : soir === false ? "Non Dispo" : "Non renseigné"
+                      )}
+                    </span>
+                  </>
+                ) : null}
+              </div>
+            )}
 
-            {/* commentaire éventuel */}
+            {/* Icône commentaire */}
             {disponibilite?.commentaire && (
               <div
                 className="absolute bottom-1 right-1 z-20"
@@ -174,6 +195,13 @@ export function CellulePlanningCandidate({
                 </Popover>
               </div>
             )}
+
+            {/* Case vide */}
+            {!commande && !disponibilite && (
+              <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
+                <Plus className="w-4 h-4 text-gray-400" />
+              </div>
+            )}
           </div>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-sm capitalize">
@@ -187,20 +215,18 @@ export function CellulePlanningCandidate({
         </TooltipContent>
       </Tooltip>
 
-      {/* pop-up saisie dispo */}
-      {!isMissionVerrouillée && (
-        <CandidateJourneeDialog
-          open={open}
-          onClose={() => setOpen(false)}
-          date={date}
-          secteur={secteur}
-          candidatId={candidatId}
-          service={service}
-          disponibilite={disponibilite}
-          onSuccess={onSuccess}
-          candidatNomPrenom={nomPrenom}
-        />
-      )}
+      <CandidateJourneeDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        date={date}
+        secteur={secteur}
+        candidatId={candidatId}
+        service={service}
+        disponibilite={disponibilite}
+        onSuccess={onSuccess}
+        candidatNomPrenom={nomPrenom}
+        creneauVerrouille={creneauVerrouille}
+      />
     </>
   )
 }
