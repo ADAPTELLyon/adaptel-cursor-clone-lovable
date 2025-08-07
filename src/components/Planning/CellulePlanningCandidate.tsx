@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils"
 import { Info, Check, XCircle, CheckCircle, HelpCircle, Plus } from "lucide-react"
 import { disponibiliteColors, statutColors, statutBorders } from "@/lib/colors"
 import { CandidateJourneeDialog } from "@/components/Planning/CandidateJourneeDialog"
+import { StatutDispoCreneauRestantDialog } from "@/components/Planning/StatutDispoCreneauRestantDialog"
 import type { CandidatDispoWithNom, CommandeFull } from "@/types/types-front"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
@@ -36,24 +37,25 @@ export function CellulePlanningCandidate({
   const [creneauVerrouille, setCreneauVerrouille] = useState<"matin" | "soir" | undefined>()
   const [commentaireTemp, setCommentaireTemp] = useState(disponibilite?.commentaire || "")
   const [editingComment, setEditingComment] = useState(false)
+  const [popupDispoRestant, setPopupDispoRestant] = useState<{ open: boolean; creneau: "matin" | "soir" }>({
+    open: false,
+    creneau: "matin",
+  })
 
   const isPlanifie = commande?.statut === "Validé"
-
   const statutAnnexe = ["Annule Int", "Absence", "Annule Client", "Annule ADA"].includes(commande?.statut || "")
   const isAnnexeActif =
     statutAnnexe &&
     (!disponibilite?.updated_at || !commande?.updated_at || new Date(commande.updated_at) > new Date(disponibilite.updated_at))
 
   const statutDispo = disponibilite?.statut ?? "Non renseigné"
-  const matin = disponibilite?.matin
-  const soir = disponibilite?.soir
-  const isDispo = statutDispo === "Dispo" && (matin || soir)
+  const dispoMatin = disponibilite?.matin
+  const dispoSoir = disponibilite?.soir
+  const isDispo = statutDispo === "Dispo" && (dispoMatin || dispoSoir)
   const isNonDispo = statutDispo === "Non Dispo"
 
   const couleur =
-    statutColors[commande?.statut || ""] ??
-    disponibiliteColors[statutDispo] ??
-    { bg: "#e5e7eb", text: "#000000" }
+    statutColors[commande?.statut || ""] ?? disponibiliteColors[statutDispo] ?? { bg: "#e5e7eb", text: "#000000" }
 
   const openPopup = (creneau?: "matin" | "soir") => {
     setCreneauVerrouille(creneau)
@@ -66,11 +68,26 @@ export function CellulePlanningCandidate({
     }
   }
 
-  const renderIcon = (valeur: "Dispo" | "Non Dispo" | "Non renseigné") => {
-    if (valeur === "Dispo") return <CheckCircle className="w-4 h-4 text-black ml-2" />
-    if (valeur === "Non Dispo") return <XCircle className="w-4 h-4 text-black ml-2" />
+  const renderIcon = (valeur: boolean | null | undefined) => {
+    if (valeur === true) return <CheckCircle className="w-4 h-4 text-black ml-2" />
+    if (valeur === false) return <XCircle className="w-4 h-4 text-black ml-2" />
     return <HelpCircle className="w-4 h-4 text-black ml-2" />
   }
+
+  const isPlanifieMatin = !!commande?.heure_debut_matin && !!commande?.heure_fin_matin && commande?.statut === "Validé"
+  const isPlanifieSoir = !!commande?.heure_debut_soir && !!commande?.heure_fin_soir && commande?.statut === "Validé"
+
+  const hasAutreCommandeMatin = autresCommandes?.some(
+    (cmd) => cmd.statut === "Validé" && !!cmd.heure_debut_matin && !!cmd.heure_fin_matin
+  )
+  const hasAutreCommandeSoir = autresCommandes?.some(
+    (cmd) => cmd.statut === "Validé" && !!cmd.heure_debut_soir && !!cmd.heure_fin_soir
+  )
+
+  const isDoublePlanifieDeuxClients = isPlanifieMatin && isPlanifieSoir && hasAutreCommandeSoir
+
+  const showDispoRestantMatin = isPlanifieSoir && !isPlanifieMatin && !hasAutreCommandeMatin
+  const showDispoRestantSoir = isPlanifieMatin && !isPlanifieSoir && !hasAutreCommandeSoir
 
   return (
     <>
@@ -87,7 +104,6 @@ export function CellulePlanningCandidate({
             }}
             onClick={handleClick}
           >
-            {/* Ligne 1 */}
             <div className="font-semibold text-[13px] leading-tight min-h-[1.2rem]">
               {isPlanifie && !isAnnexeActif
                 ? commande?.client?.nom || "Mission validée"
@@ -100,62 +116,55 @@ export function CellulePlanningCandidate({
                 : ""}
             </div>
 
-            {/* Ligne 2 */}
             <div className="text-xs font-normal italic min-h-[1rem]">
               {isAnnexeActif && commande?.client?.nom ? commande.client.nom : ""}
             </div>
 
-            {/* Ligne 3 : matin */}
             <div className="text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center">
-              {isAnnexeActif ? null : commande?.heure_debut_matin && commande?.heure_fin_matin ? (
-                `${commande.heure_debut_matin.slice(0, 5)} - ${commande.heure_fin_matin.slice(0, 5)}`
-              ) : !isPlanifie && isDispo && matin ? (
-                "Matin / Midi"
-              ) : isPlanifie && secteur !== "Étages" && !commande?.heure_debut_matin ? (
+              {isAnnexeActif ? null : isPlanifieMatin ? (
+                `${commande!.heure_debut_matin!.slice(0, 5)} - ${commande!.heure_fin_matin!.slice(0, 5)}`
+              ) : showDispoRestantMatin ? (
                 <>
                   <span>Matin / Midi</span>
                   <span
                     className="cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation()
-                      openPopup("soir")
+                      setPopupDispoRestant({ open: true, creneau: "matin" })
                     }}
                   >
-                    {renderIcon(
-                      matin === true ? "Dispo" : matin === false ? "Non Dispo" : "Non renseigné"
-                    )}
+                    {renderIcon(dispoMatin)}
                   </span>
                 </>
+              ) : isDispo && dispoMatin ? (
+                "Matin / Midi"
               ) : null}
             </div>
 
-            {/* Ligne 4 : soir */}
-            {secteur !== "Étages" && (
-              <div className="text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center">
-                {isAnnexeActif ? null : commande?.heure_debut_soir && commande?.heure_fin_soir ? (
-                  `${commande.heure_debut_soir.slice(0, 5)} - ${commande.heure_fin_soir.slice(0, 5)}`
-                ) : !isPlanifie && isDispo && soir ? (
-                  "Soir"
-                ) : isPlanifie && !commande?.heure_debut_soir ? (
-                  <>
-                    <span>Soir</span>
-                    <span
-                      className="cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openPopup("matin")
-                      }}
-                    >
-                      {renderIcon(
-                        soir === true ? "Dispo" : soir === false ? "Non Dispo" : "Non renseigné"
-                      )}
-                    </span>
-                  </>
-                ) : null}
-              </div>
-            )}
+            {secteur !== "Étages" &&
+              !isDoublePlanifieDeuxClients && (
+                <div className="text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center">
+                  {isAnnexeActif ? null : isPlanifieSoir ? (
+                    `${commande!.heure_debut_soir!.slice(0, 5)} - ${commande!.heure_fin_soir!.slice(0, 5)}`
+                  ) : showDispoRestantSoir ? (
+                    <>
+                      <span>Soir</span>
+                      <span
+                        className="cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setPopupDispoRestant({ open: true, creneau: "soir" })
+                        }}
+                      >
+                        {renderIcon(dispoSoir)}
+                      </span>
+                    </>
+                  ) : isDispo && dispoSoir && !isPlanifieSoir && !hasAutreCommandeSoir ? (
+                    "Soir"
+                  ) : null}
+                </div>
+              )}
 
-            {/* Icône commentaire */}
             {disponibilite?.commentaire && (
               <div
                 className="absolute bottom-1 right-1 z-20"
@@ -196,7 +205,6 @@ export function CellulePlanningCandidate({
               </div>
             )}
 
-            {/* Case vide */}
             {!commande && !disponibilite && (
               <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
                 <Plus className="w-4 h-4 text-gray-400" />
@@ -226,6 +234,20 @@ export function CellulePlanningCandidate({
         onSuccess={onSuccess}
         candidatNomPrenom={nomPrenom}
         creneauVerrouille={creneauVerrouille}
+      />
+
+      <StatutDispoCreneauRestantDialog
+        open={popupDispoRestant.open}
+        onClose={() => setPopupDispoRestant({ open: false, creneau: "matin" })}
+        candidatId={candidatId}
+        date={date}
+        secteur={secteur}
+        creneau={popupDispoRestant.creneau}
+        disponibilite={disponibilite}
+        service={service}
+        onSuccess={onSuccess}
+        candidatNomPrenom={nomPrenom}
+        commentaireActuel={disponibilite?.commentaire || ""}
       />
     </>
   )

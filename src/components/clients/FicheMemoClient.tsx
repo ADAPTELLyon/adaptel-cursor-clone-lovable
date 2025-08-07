@@ -287,7 +287,7 @@ export default function FicheMemoClient({
                 icon={<NoSymbolIcon className="h-4 w-4 text-gray-600" />}
                 badge={<Badge variant="destructive">{interdictions.length}</Badge>}
               >
-                <div className="flex-1 overflow-y-auto">
+                 <div className="flex-1 overflow-y-auto max-h-[260px] pr-1">
                   {interdictions.length > 0 ? interdictions.map(item => (
                     <ListItem 
                       key={item.id}
@@ -314,7 +314,7 @@ export default function FicheMemoClient({
                 icon={<ExclamationTriangleIcon className="h-4 w-4 text-gray-600" />}
                 badge={<Badge className="bg-amber-100 text-amber-800">{incidents.length}</Badge>}
               >
-                <div className="flex-1 overflow-y-auto">
+               <div className="flex-1 overflow-y-auto max-h-[260px] pr-1">
                   {incidents.length > 0 ? incidents.map(item => (
                     <ListItem 
                       key={item.id}
@@ -339,7 +339,7 @@ export default function FicheMemoClient({
                 icon={<StarIcon className="h-4 w-4 text-gray-600" />}
                 badge={<Badge className="bg-green-100 text-green-800">{priorites.length}</Badge>}
               >
-                <div className="flex-1 overflow-y-auto">
+           <div className="flex-1 overflow-y-auto max-h-[260px] pr-1">
                   {priorites.length > 0 ? priorites.map(item => (
                     <ListItem 
                       key={item.id}
