@@ -180,26 +180,29 @@ export function SectionFixeCommandes({
           <Separator orientation="vertical" className="h-8" />
 
           <div className="flex items-center gap-3">
-            <select
-              className="border rounded-lg px-3 py-2 text-sm"
-              value={selectedSemaine}
-              onChange={(e) => {
-                setSelectedSemaine(e.target.value)
-                const semaineActuelle = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
-                if (e.target.value !== semaineActuelle) {
-                  setSemaineEnCours(false)
-                } else {
-                  setSemaineEnCours(true)
-                }
-              }}
-            >
-              <option value="Toutes">Toutes les semaines</option>
-              {semainesDisponibles.map((s: string) => (
-                <option key={s} value={s}>
-                  Semaine {s}
-                </option>
-              ))}
-            </select>
+          <select
+  className="border rounded-lg px-3 py-2 text-sm"
+  value={
+    semaineEnCours
+      ? getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
+      : selectedSemaine
+  }
+  onChange={(e) => {
+    const value = e.target.value
+    setSelectedSemaine(value)
+
+    const current = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
+    setSemaineEnCours(value === current)
+  }}
+>
+  <option value="Toutes">Toutes les semaines</option>
+  {semainesDisponibles.map((s: string) => (
+    <option key={s} value={s}>
+      Semaine {s}
+    </option>
+  ))}
+</select>
+
 
             <select
               className="border rounded-lg px-3 py-2 text-sm"

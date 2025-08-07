@@ -13,14 +13,20 @@ import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateur
 export default function Commandes() {
   const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(() => {
     const stored = localStorage.getItem("selectedSecteurs")
-    return stored ? JSON.parse(stored) : ["Étages"]
+    return stored ? JSON.parse(stored) : []
   })
 
   const [planning, setPlanning] = useState<Record<string, JourPlanning[]>>({})
   const [filteredPlanning, setFilteredPlanning] = useState<Record<string, JourPlanning[]>>({})
-  const [semaineEnCours, setSemaineEnCours] = useState(true)
+  const [semaineEnCours, setSemaineEnCours] = useState(() => {
+    const stored = localStorage.getItem("semaineEnCours")
+    return stored ? JSON.parse(stored) : false
+  })
   const [semaine, setSemaine] = useState(format(new Date(), "yyyy-MM-dd"))
-  const [selectedSemaine, setSelectedSemaine] = useState(getWeek(new Date()).toString())
+  const [selectedSemaine, setSelectedSemaine] = useState(() => {
+    const stored = localStorage.getItem("selectedSemaine")
+    return stored ?? "Toutes"
+  })
   const [client, setClient] = useState("")
   const [search, setSearch] = useState("")
   const [toutAfficher, setToutAfficher] = useState(false)
@@ -31,11 +37,17 @@ export default function Commandes() {
   const { planning: planningContext, refreshPlanning } = usePlanning()
 
   useEffect(() => {
-    if (semaineEnCours) {
-      const semaineActuelle = getWeek(new Date(), { weekStartsOn: 1 }).toString()
-      setSelectedSemaine(semaineActuelle)
-    }
+    localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs))
+  }, [selectedSecteurs])
+
+  useEffect(() => {
+    localStorage.setItem("selectedSemaine", selectedSemaine)
+  }, [selectedSemaine])
+
+  useEffect(() => {
+    localStorage.setItem("semaineEnCours", JSON.stringify(semaineEnCours))
   }, [semaineEnCours])
+
 
   const fetchPlanning = async () => {
     const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
@@ -254,6 +266,8 @@ export default function Commandes() {
   ])
 
   const resetFiltres = () => {
+    const semaineActuelle = getWeek(new Date(), { weekStartsOn: 1 }).toString()
+
     setSelectedSecteurs(["Étages"])
     setClient("")
     setSearch("")
@@ -261,8 +275,13 @@ export default function Commandes() {
     setToutAfficher(false)
     setSemaineEnCours(true)
     setSemaine(format(new Date(), "yyyy-MM-dd"))
-    setSelectedSemaine(getWeek(new Date(), { weekStartsOn: 1 }).toString())
+    setSelectedSemaine(semaineActuelle)
+
+    localStorage.setItem("selectedSecteurs", JSON.stringify(["Étages"]))
+    localStorage.setItem("selectedSemaine", semaineActuelle)
+    localStorage.setItem("semaineEnCours", JSON.stringify(true))
   }
+
 
   const semainesDisponibles = Array.from(
     new Set(
