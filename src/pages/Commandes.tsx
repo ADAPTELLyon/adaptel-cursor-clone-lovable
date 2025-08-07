@@ -84,12 +84,12 @@ export default function Commandes() {
             commentaire: item.commentaire,
             created_at: item.created_at,
             candidat:
-            item.candidats
-              ? {
-                  nom: item.candidats.nom ?? "–",
-                  prenom: item.candidats.prenom ?? "–",
-                }
-              : null,
+              item.candidats
+                ? {
+                    nom: item.candidats.nom ?? "–",
+                    prenom: item.candidats.prenom ?? "–",
+                  }
+                : null,
             client: item.clients?.nom ? { nom: item.clients.nom } : null,
           },
         ],
@@ -100,24 +100,24 @@ export default function Commandes() {
 
     const mapTrie = Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)))
     setPlanning(mapTrie)
-    setSelectedSemaine(semaineCourante)
     setRefreshTrigger((v) => v + 1)
-// filtrage cohérent avec la sélection par défaut
-const filtered: Record<string, JourPlanning[]> = {};
-Object.entries(mapTrie).forEach(([clientNom, jours]) => {
-  const joursFiltres = jours.filter((j) => {
-    const semaineDuJour = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
-    const matchSecteur = selectedSecteurs.includes(j.secteur);
-    const matchSemaine = semaineEnCours ? semaineDuJour === semaineCourante : true;
-    return matchSecteur && matchSemaine;
-  });
-  if (joursFiltres.length > 0) {
-    filtered[clientNom] = joursFiltres;
-  }
-});
-setFilteredPlanning(filtered);
-console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
 
+    // Appliquer les filtres courants à nouveau (pas de réinitialisation)
+    const filtered: Record<string, JourPlanning[]> = {};
+    Object.entries(mapTrie).forEach(([clientNom, jours]) => {
+      const joursFiltres = jours.filter((j) => {
+        const semaineDuJour = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
+        const matchSecteur = selectedSecteurs.includes(j.secteur)
+        const matchSemaine = semaineEnCours ? semaineDuJour === getWeek(new Date(), { weekStartsOn: 1 }).toString() : true
+        return matchSecteur && matchSemaine
+      })
+      if (joursFiltres.length > 0) {
+        filtered[clientNom] = joursFiltres
+      }
+    })
+
+    setFilteredPlanning(filtered)
+    console.log("✅ fetchPlanning – données reçues :", Object.keys(mapTrie))
   }
 
   useEffect(() => {
