@@ -1,4 +1,5 @@
-import { useState } from "react"
+// section-fixe-commandes.tsx
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -12,7 +13,7 @@ import {
   Building2,
 } from "lucide-react"
 import { secteursList } from "@/lib/secteurs"
-import { startOfWeek } from "date-fns"
+import { startOfWeek, getWeek } from "date-fns"
 import NouvelleCommandeDialog from "../../components/commandes/NouvelleCommandeDialog"
 import AjoutDispoCandidat from "../../components/Planning/AjoutDispoCandidat"
 import SaisirIncidentDialog from "../../components/commandes/SaisirIncidentDialog"
@@ -21,11 +22,8 @@ import FicheMemoCandidat from "@/components/commandes/Fiche-Memo-Candidat"
 import FicheMemoClient from "@/components/clients/FicheMemoClient"
 import PopoverSelectCandidat from "./PopoverSelectCandidat"
 import PopoverSelectClient from "@/components/commandes/PopoverSelectClient"
-import { useEffect } from "react"
 import { supabase } from "@/lib/supabase"
 import { usePlanning } from "@/contexts/PlanningContext"
-import { getWeek, getYear } from "date-fns"
-import { fr } from "date-fns/locale"
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -51,7 +49,7 @@ export function SectionFixeCommandes({
   semainesDisponibles,
   clientsDisponibles,
   refreshTrigger,
-  onRefresh,  
+  onRefresh,
   planningContext,
 }: any) {
   const [openNouvelleCommande, setOpenNouvelleCommande] = useState(false)
@@ -65,7 +63,7 @@ export function SectionFixeCommandes({
   const [showSelectClient, setShowSelectClient] = useState(false)
   const [openFicheClient, setOpenFicheClient] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
-  
+
   const [indicateurs, setIndicateurs] = useState({
     demandées: 0,
     validées: 0,
@@ -93,27 +91,12 @@ export function SectionFixeCommandes({
   }, [planningContext])
 
   useEffect(() => {
-    const channel = supabase
-      .channel("realtime:secteurs")
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "commandes",
-        },
-        () => {
-          if (onRefresh) onRefresh()
-        }
-      )
-      .subscribe()
-  
-    return () => {
-      supabase.removeChannel(channel)
+    if (semaineEnCours) {
+      const semaineActuelle = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
+      setSelectedSemaine(semaineActuelle)
     }
-  }, [onRefresh])
- 
-
+  }, []) // au chargement uniquement
+  
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm px-6 pb-4 pt-2 border-b border-gray-100">
       <div className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-xl p-4 space-y-4 shadow-sm">
@@ -148,21 +131,21 @@ export function SectionFixeCommandes({
         <div className="flex flex-wrap items-center gap-6">
           <div className="flex items-center gap-4">
             <div className="flex items-center space-x-2">
-              <Switch
-                id="semaine-en-cours"
-                checked={semaineEnCours}
-                onCheckedChange={(val) => {
-                  setSemaineEnCours(val)
-                  if (val) {
-                    const today = new Date()
-                    const monday = startOfWeek(today, { weekStartsOn: 1 })
-                    const iso = monday.toISOString().slice(0, 10)
-                    setSemaine(iso)
-                    setSelectedSemaine(getWeekNumber(monday).toString())
-                  }
-                }}
-                className="data-[state=checked]:bg-[#840404]"
-              />
+            <Switch
+  id="semaine-en-cours"
+  checked={semaineEnCours}
+  onCheckedChange={(val) => {
+    setSemaineEnCours(val)
+    if (val) {
+      const semaineActuelle = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
+      setSelectedSemaine(semaineActuelle)
+    } else {
+      setSelectedSemaine("Toutes")
+    }
+  }}
+  className="data-[state=checked]:bg-[#840404]"
+/>
+
               <Label htmlFor="semaine-en-cours">Semaine en cours</Label>
             </div>
 
@@ -202,12 +185,19 @@ export function SectionFixeCommandes({
               value={selectedSemaine}
               onChange={(e) => {
                 setSelectedSemaine(e.target.value)
-                setSemaineEnCours(false)
+                const semaineActuelle = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
+                if (e.target.value !== semaineActuelle) {
+                  setSemaineEnCours(false)
+                } else {
+                  setSemaineEnCours(true)
+                }
               }}
             >
               <option value="Toutes">Toutes les semaines</option>
               {semainesDisponibles.map((s: string) => (
-                <option key={s} value={s}>Semaine {s}</option>
+                <option key={s} value={s}>
+                  Semaine {s}
+                </option>
               ))}
             </select>
 
@@ -218,7 +208,9 @@ export function SectionFixeCommandes({
             >
               <option value="">Tous les clients</option>
               {clientsDisponibles.map((nom: string) => (
-                <option key={nom} value={nom}>{nom}</option>
+                <option key={nom} value={nom}>
+                  {nom}
+                </option>
               ))}
             </select>
 
@@ -235,7 +227,12 @@ export function SectionFixeCommandes({
                 viewBox="0 0 24 24"
                 stroke="currentColor"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
               </svg>
             </div>
           </div>
@@ -345,14 +342,6 @@ export function SectionFixeCommandes({
       )}
     </div>
   )
-}
-
-function getWeekNumber(date: Date) {
-  const start = new Date(date.getFullYear(), 0, 1)
-  const diff =
-    (+date - +start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) /
-    86400000
-  return Math.floor((diff + start.getDay() + 6) / 7)
 }
 
 function Label({ htmlFor, className, children }: { htmlFor: string; className?: string; children: React.ReactNode }) {
