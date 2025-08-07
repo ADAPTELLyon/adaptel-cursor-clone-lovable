@@ -16,6 +16,8 @@ interface ColonneClientProps {
   semaineDate: string
   commandes: CommandeWithCandidat[]
   clientId: string
+  onOpenClientEdit?: (clientId: string) => void;
+  onOpenCommandeEdit?: () => void; // nouvelle prop pour popup édition
 }
 
 function calculerHeuresTotales(commandes: CommandeWithCandidat[]) {
@@ -49,6 +51,8 @@ export function ColonneClient({
   semaineDate,
   commandes,
   clientId,
+  onOpenClientEdit, 
+  onOpenCommandeEdit, // nouvelle prop pour gestion du click sur la 2e loupe
 }: ColonneClientProps) {
   const secteurInfo = secteursList.find((s) => s.value === secteur)
   const [openMemo, setOpenMemo] = useState(false)
@@ -87,8 +91,9 @@ export function ColonneClient({
         )}
       </div>
 
-      {/* Ligne 3 : Icône loupe + semaine + heure */}
+      {/* Ligne 3 : Icône loupe + semaine + heure + DUPLICATION de la loupe après les heures */}
       <div className="flex items-center gap-2 text-[13px] text-gray-600">
+        {/* Loupe historique */}
         <HistoriqueCommandeDialog
           commandeIds={commandeIdsLigne}
           secteur={secteur}
@@ -102,13 +107,29 @@ export function ColonneClient({
           />
         </HistoriqueCommandeDialog>
 
+        {/* Vignette semaine */}
         <div className="h-5 w-5 rounded bg-gray-900 text-white text-xs flex items-center justify-center font-semibold">
           {semaine}
         </div>
 
+        {/* Heures */}
         <div className="flex items-center gap-1">
           <Clock className="w-4 h-4" />
           <span>{totalHeures}</span>
+        </div>
+
+        {/* Loupe dupliquée - même style, juste après les heures */}
+        <div
+          className="cursor-pointer"
+          onClick={onOpenCommandeEdit}
+          style={{ marginLeft: -2 }}
+        >
+          <Icon
+    icon="fluent:add-square-20-regular"
+    width={25}
+            height={25}
+            className="text-gray-700"
+          />
         </div>
       </div>
 
@@ -118,6 +139,7 @@ export function ColonneClient({
           open={openMemo}
           onOpenChange={() => setOpenMemo(false)}
           clientId={clientId}
+          onOpenClientEdit={onOpenClientEdit}
         />
       )}
     </div>

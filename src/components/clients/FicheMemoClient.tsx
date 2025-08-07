@@ -56,12 +56,14 @@ interface FicheMemoClientProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   clientId: string;
+  onOpenClientEdit?: (clientId: string) => void;
 }
 
 export default function FicheMemoClient({
   open,
   onOpenChange,
   clientId,
+  onOpenClientEdit,
 }: FicheMemoClientProps) {
   const [client, setClient] = useState<Client | null>(null);
   const [contacts, setContacts] = useState<any[]>([]);
@@ -196,13 +198,19 @@ export default function FicheMemoClient({
               </div>
             </div>
             <div className="flex items-center  mr-8">
-  <button 
-    onClick={() => { onOpenChange(false); setTimeout(() => setShowEditDialog(true), 250); }}
-    className="flex items-center space-x-2 bg-[#840404] hover:bg-[#a50505] text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-  >
-    <PencilSquareIcon className="h-4 w-4" />
-    <span>Voir fiche complète</span>
-  </button>
+            <button 
+  onClick={() => {
+    onOpenChange(false)
+    setTimeout(() => {
+      onOpenClientEdit?.(clientId)
+    }, 400)
+  }}
+  className="flex items-center space-x-2 bg-[#840404] hover:bg-[#a50505] text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+>
+  <PencilSquareIcon className="h-4 w-4" />
+  <span>Voir fiche complète</span>
+</button>
+
 </div>
           </div>
 
@@ -411,11 +419,12 @@ export default function FicheMemoClient({
       </Dialog>
 
       {clientId && (
-        <ClientEditDialog
-          clientId={clientId}
-          open={showEditDialog}
-          onOpenChange={setShowEditDialog}
-        />
+  <ClientEditDialog
+    key={clientId}
+    clientId={clientId}
+    open={showEditDialog}
+    onOpenChange={setShowEditDialog}
+  />
       )}
     </>
   );

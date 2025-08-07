@@ -21,6 +21,7 @@ interface PlanningClientTableProps {
   onRefresh: () => void;
   refreshTrigger?: number;
   clientId?: string;
+  onOpenClientEdit?: (clientId: string) => void;
 }
 
 export function PlanningClientTable({
@@ -30,6 +31,7 @@ export function PlanningClientTable({
   onRefresh,
   refreshTrigger,
   clientId,
+  onOpenClientEdit,
 }: PlanningClientTableProps) {
   const [editId, setEditId] = useState<string | null>(null);
   const [heureTemp, setHeureTemp] = useState<Record<string, string>>({});
@@ -266,6 +268,7 @@ export function PlanningClientTable({
                           semaineDate={lundiSemaine.toISOString()}
                           commandes={toutesCommandes}
                           clientId={ligneClientId}
+                          onOpenClientEdit={onOpenClientEdit}
                         />
                         {jours.map((jour, index) => {
                           const jourCell = ligne.find(

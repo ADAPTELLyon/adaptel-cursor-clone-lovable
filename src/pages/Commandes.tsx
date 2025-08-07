@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase"
 import { addDays, format, startOfWeek, getWeek } from "date-fns"
 import type { JourPlanning } from "@/types/types-front"
 import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateurs"
+import { ClientEditDialog } from "@/components/clients/ClientEditDialog"
 
 
 export default function Commandes() {
@@ -34,6 +35,8 @@ export default function Commandes() {
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
   const [openDialog, setOpenDialog] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [clientIdToEdit, setClientIdToEdit] = useState<string | null>(null)
+  const [showEditDialog, setShowEditDialog] = useState(false)
   const { planning: planningContext, refreshPlanning } = usePlanning()
 
   useEffect(() => {
@@ -385,6 +388,10 @@ export default function Commandes() {
         selectedSemaine={selectedSemaine}
         onRefresh={refreshPlanning}
         refreshTrigger={refreshTrigger}
+        onOpenClientEdit={(id) => {
+          setClientIdToEdit(id)
+          setShowEditDialog(true)
+        }}
       />
 
       <NouvelleCommandeDialog
@@ -392,6 +399,18 @@ export default function Commandes() {
         onOpenChange={setOpenDialog}
         onRefreshDone={refreshPlanning}
       />
+
+{clientIdToEdit && (
+        <ClientEditDialog
+          clientId={clientIdToEdit}
+          open={showEditDialog}
+          onOpenChange={(open) => {
+            setShowEditDialog(open)
+            if (!open) setClientIdToEdit(null)
+          }}
+          onRefresh={refreshPlanning}
+        />
+      )}
     </MainLayout>
   )
 }
