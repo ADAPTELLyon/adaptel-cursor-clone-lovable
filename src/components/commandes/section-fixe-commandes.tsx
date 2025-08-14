@@ -11,6 +11,7 @@ import {
   RotateCcw,
   User2,
   Building2,
+  MessageSquare,
 } from "lucide-react"
 import { secteursList } from "@/lib/secteurs"
 import { startOfWeek, getWeek } from "date-fns"
@@ -22,8 +23,8 @@ import FicheMemoCandidat from "@/components/commandes/Fiche-Memo-Candidat"
 import FicheMemoClient from "@/components/clients/FicheMemoClient"
 import PopoverSelectCandidat from "./PopoverSelectCandidat"
 import PopoverSelectClient from "@/components/commandes/PopoverSelectClient"
-import { supabase } from "@/lib/supabase"
-import { usePlanning } from "@/contexts/PlanningContext"
+import { useAgentBadge } from "@/hooks/useAgent"
+import AgentWidget from "@/components/agent/AgentWidget"
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -71,13 +72,13 @@ export function SectionFixeCommandes({
     nonPourvue: 0,
   })
 
-  const [secteurStats, setSecteurStats] = useState<Record<string, number>>({})
+  // Agent
+  const [agentOpen, setAgentOpen] = useState(false)
+  const { badgeCount } = useAgentBadge()
 
   useEffect(() => {
     let d = 0, v = 0, r = 0, np = 0
-
     if (!planningContext || Object.keys(planningContext).length === 0) return
-
     Object.values(planningContext).forEach((item: any) => {
       if (item.statut !== "Annule Client" && item.statut !== "Annule ADA") {
         d++
@@ -86,7 +87,6 @@ export function SectionFixeCommandes({
         if (item.statut === "Non pourvue") np++
       }
     })
-
     setIndicateurs({ demandées: d, validées: v, enRecherche: r, nonPourvue: np })
   }, [planningContext])
 
@@ -95,12 +95,11 @@ export function SectionFixeCommandes({
       const semaineActuelle = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
       setSelectedSemaine(semaineActuelle)
     }
-  }, []) // au chargement uniquement
-  
+  }, [])
+
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm px-6 pb-4 pt-2 border-b border-gray-100">
       <div className="bg-gradient-to-br from-gray-50 to-white border border-gray-200 rounded-xl p-4 space-y-4 shadow-sm">
-
         {/* Secteurs */}
         <div className="grid grid-cols-5 gap-2">
           {secteursList.map(({ label, icon: Icon }) => {
@@ -131,21 +130,20 @@ export function SectionFixeCommandes({
         <div className="flex flex-wrap items-center gap-6">
           <div className="flex items-center gap-4">
             <div className="flex items-center space-x-2">
-            <Switch
-  id="semaine-en-cours"
-  checked={semaineEnCours}
-  onCheckedChange={(val) => {
-    setSemaineEnCours(val)
-    if (val) {
-      const semaineActuelle = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
-      setSelectedSemaine(semaineActuelle)
-    } else {
-      setSelectedSemaine("Toutes")
-    }
-  }}
-  className="data-[state=checked]:bg-[#840404]"
-/>
-
+              <Switch
+                id="semaine-en-cours"
+                checked={semaineEnCours}
+                onCheckedChange={(val) => {
+                  setSemaineEnCours(val)
+                  if (val) {
+                    const semaineActuelle = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
+                    setSelectedSemaine(semaineActuelle)
+                  } else {
+                    setSelectedSemaine("Toutes")
+                  }
+                }}
+                className="data-[state=checked]:bg-[#840404]"
+              />
               <Label htmlFor="semaine-en-cours">Semaine en cours</Label>
             </div>
 
@@ -165,11 +163,8 @@ export function SectionFixeCommandes({
                 checked={toutAfficher}
                 onCheckedChange={(val) => {
                   setToutAfficher(val)
-                  if (val) {
-                    setSelectedSecteurs(secteursList.map((s) => s.label))
-                  } else {
-                    setSelectedSecteurs(["Étages"])
-                  }
+                  if (val) setSelectedSecteurs(secteursList.map((s) => s.label))
+                  else setSelectedSecteurs(["Étages"])
                 }}
                 className="data-[state=checked]:bg-[#840404]"
               />
@@ -180,29 +175,25 @@ export function SectionFixeCommandes({
           <Separator orientation="vertical" className="h-8" />
 
           <div className="flex items-center gap-3">
-          <select
-  className="border rounded-lg px-3 py-2 text-sm"
-  value={
-    semaineEnCours
-      ? getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
-      : selectedSemaine
-  }
-  onChange={(e) => {
-    const value = e.target.value
-    setSelectedSemaine(value)
-
-    const current = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
-    setSemaineEnCours(value === current)
-  }}
->
-  <option value="Toutes">Toutes les semaines</option>
-  {semainesDisponibles.map((s: string) => (
-    <option key={s} value={s}>
-      Semaine {s}
-    </option>
-  ))}
-</select>
-
+            <select
+              className="border rounded-lg px-3 py-2 text-sm"
+              value={
+                semaineEnCours
+                  ? getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
+                  : selectedSemaine
+              }
+              onChange={(e) => {
+                const value = e.target.value
+                setSelectedSemaine(value)
+                const current = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
+                setSemaineEnCours(value === current)
+              }}
+            >
+              <option value="Toutes">Toutes les semaines</option>
+              {semainesDisponibles.map((s: string) => (
+                <option key={s} value={s}>Semaine {s}</option>
+              ))}
+            </select>
 
             <select
               className="border rounded-lg px-3 py-2 text-sm"
@@ -211,9 +202,7 @@ export function SectionFixeCommandes({
             >
               <option value="">Tous les clients</option>
               {clientsDisponibles.map((nom: string) => (
-                <option key={nom} value={nom}>
-                  {nom}
-                </option>
+                <option key={nom} value={nom}>{nom}</option>
               ))}
             </select>
 
@@ -224,18 +213,9 @@ export function SectionFixeCommandes({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
-              <svg
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
+              <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
               </svg>
             </div>
           </div>
@@ -301,16 +281,37 @@ export function SectionFixeCommandes({
           >
             <Building2 size={18} />
           </Button>
+
+          {/* Séparateur + Bouton Agent */}
+          <Separator orientation="vertical" className="h-8" />
+          <Button
+            variant="outline"
+            onClick={() => setAgentOpen((v) => !v)}
+            aria-expanded={agentOpen}
+            title="Ouvrir l’agent (rappels & notes)"
+            className={cn(
+              "relative h-9 px-3 rounded-lg border border-gray-300 bg-white",
+              "flex items-center gap-2 text-sm font-medium",
+              "hover:bg-gray-50 hover:border-[#840404] hover:text-[#840404]"
+            )}
+          >
+            <MessageSquare size={16} />
+            <span>Agent</span>
+            {badgeCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] px-1 rounded-full bg-red-600 text-white text-xs flex items-center justify-center">
+                {badgeCount}
+              </span>
+            )}
+          </Button>
         </div>
       </div>
 
-      <NouvelleCommandeDialog
-        open={openNouvelleCommande}
-        onOpenChange={setOpenNouvelleCommande}
-        onRefreshDone={() => {}}
-      />
+      {/* Dialogs existants */}
+      <NouvelleCommandeDialog open={openNouvelleCommande} onOpenChange={setOpenNouvelleCommande} onRefreshDone={() => {}} />
       <AjoutDispoCandidat open={openDispo} onOpenChange={setOpenDispo} onSuccess={() => {}} />
       <SaisirIncidentDialog open={openIncident} onOpenChange={setOpenIncident} />
+
+      {/* Popovers existants */}
       <PopoverSelectCandidat
         open={showSelectCandidat}
         onOpenChange={setShowSelectCandidat}
@@ -321,11 +322,7 @@ export function SectionFixeCommandes({
         }}
       />
       {selectedCandidatId && (
-        <FicheMemoCandidat
-          open={openFicheCandidat}
-          onOpenChange={setOpenFicheCandidat}
-          candidatId={selectedCandidatId}
-        />
+        <FicheMemoCandidat open={openFicheCandidat} onOpenChange={setOpenFicheCandidat} candidatId={selectedCandidatId} />
       )}
       <PopoverSelectClient
         open={showSelectClient}
@@ -337,12 +334,11 @@ export function SectionFixeCommandes({
         }}
       />
       {selectedClientId && (
-        <FicheMemoClient
-          open={openFicheClient}
-          onOpenChange={setOpenFicheClient}
-          clientId={selectedClientId}
-        />
+        <FicheMemoClient open={openFicheClient} onOpenChange={setOpenFicheClient} clientId={selectedClientId} />
       )}
+
+      {/* Widget Agent flottant */}
+      <AgentWidget open={agentOpen} onClose={() => setAgentOpen(false)} />
     </div>
   )
 }
