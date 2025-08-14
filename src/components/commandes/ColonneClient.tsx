@@ -17,7 +17,7 @@ interface ColonneClientProps {
   commandes: CommandeWithCandidat[]
   clientId: string
   onOpenClientEdit?: (clientId: string) => void;
-  onOpenCommandeEdit?: () => void; // nouvelle prop pour popup édition
+  onOpenCommandeEdit?: (commande: CommandeWithCandidat) => void;
 }
 
 function calculerHeuresTotales(commandes: CommandeWithCandidat[]) {
@@ -118,10 +118,10 @@ export function ColonneClient({
           <span>{totalHeures}</span>
         </div>
 
-        {/* Loupe dupliquée - même style, juste après les heures */}
+        {/* icone modification commande*/}
         <div
           className="cursor-pointer"
-          onClick={onOpenCommandeEdit}
+          onClick={() => onOpenCommandeEdit && onOpenCommandeEdit(commandes[0])}
           style={{ marginLeft: -2 }}
         >
           <Icon

@@ -34,6 +34,8 @@ interface CommandeFormGaucheProps {
   setMotif: (s: string) => void
   commentaire: string
   setCommentaire: (s: string) => void
+  complementMotif: string
+  setComplementMotif: (s: string) => void
   clients: { id: string; nom: string; services?: string[] }[]
   services: string[]
   semainesDisponibles: { value: string; label: string }[]
@@ -43,6 +45,7 @@ interface CommandeFormGaucheProps {
   setHeuresParJour: (val: any) => void
   setJoursState: (val: any) => void
 }
+
 
 export default function CommandeFormGauche({
   secteur,
@@ -57,6 +60,8 @@ export default function CommandeFormGauche({
   setMotif,
   commentaire,
   setCommentaire,
+  complementMotif,
+  setComplementMotif,
   clients,
   services,
   semainesDisponibles,
@@ -253,13 +258,14 @@ export default function CommandeFormGauche({
             motif === "Remplacement de personnel") && (
             <Input
               placeholder="Précisez le motif"
-              value={commentaire}
-              onChange={(e) => setCommentaire(e.target.value)}
+              value={complementMotif}
+              onChange={(e) => setComplementMotif(e.target.value)}
               className="w-full"
             />
           )}
         </div>
       </div>
+
 
       {/* Information complémentaire */}
       <div className="space-y-4 border rounded-lg p-4 bg-gray-50 shadow-sm">

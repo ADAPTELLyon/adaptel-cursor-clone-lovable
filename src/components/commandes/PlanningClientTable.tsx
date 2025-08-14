@@ -6,6 +6,7 @@ import { indicateurColors } from "@/lib/colors";
 import { supabase } from "@/lib/supabase";
 import type { CommandeWithCandidat, JourPlanning } from "@/types/types-front";
 import { ColonneClient } from "@/components/commandes/ColonneClient";
+import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
 import { CellulePlanning } from "@/components/commandes/CellulePlanning";
 import {
   Tooltip,
@@ -39,6 +40,9 @@ export function PlanningClientTable({
   const [commentaireTemp, setCommentaireTemp] = useState<string>("");
   const [lastClickedCommandeId, setLastClickedCommandeId] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
+  const [commandeToEdit, setCommandeToEdit] = useState<any | null>(null)
+  const [openEdit, setOpenEdit] = useState(false)
+
 
   useEffect(() => {
     const elt = document.getElementById("commandes-filters");
@@ -269,6 +273,10 @@ export function PlanningClientTable({
                           commandes={toutesCommandes}
                           clientId={ligneClientId}
                           onOpenClientEdit={onOpenClientEdit}
+                          onOpenCommandeEdit={(commande) => {
+                            setCommandeToEdit(commande)
+                            setOpenEdit(true)        
+                          }}
                         />
                         {jours.map((jour, index) => {
                           const jourCell = ligne.find(
@@ -329,6 +337,17 @@ export function PlanningClientTable({
           });
         })}
       </div>
+
+      <NouvelleCommandeDialog
+        open={openEdit}
+        onOpenChange={(o) => {
+          setOpenEdit(o);
+          if (!o) setCommandeToEdit(null);
+        }}
+        onRefreshDone={onRefresh}
+        commande={commandeToEdit}
+      />
+
     </TooltipProvider>
   );
 }

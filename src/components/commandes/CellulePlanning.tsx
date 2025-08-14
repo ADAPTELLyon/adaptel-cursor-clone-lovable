@@ -191,7 +191,8 @@ export function CellulePlanning({
         />
       )}
 
-      <div className="absolute bottom-2 right-1 z-20">
+         {/* z-index plus bas pour passer SOUS les sections fixes (z-20) */}
+         <div className="absolute bottom-2 right-1 z-10">
         <Popover
           open={editingCommentId === commande.id}
           onOpenChange={(open) => !open && setEditingCommentId(null)}
@@ -239,6 +240,7 @@ export function CellulePlanning({
           </PopoverContent>
         </Popover>
       </div>
+
 
       <PlanificationCandidatDialog
         open={openPlanifDialog}

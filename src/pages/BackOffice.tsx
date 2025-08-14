@@ -28,7 +28,7 @@ import {
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, getWeek } from "date-fns";
 import { fr } from "date-fns/locale";
 
 export default function BackOffice() {
@@ -38,9 +38,38 @@ export default function BackOffice() {
   const currentWeekNumber = getWeekNumber(today);
   const currentMonthName = format(today, "LLLL", { locale: fr });
 
-  const statsSemaine = useStatsDashboard();
-  const statsMois = useStatsDashboardMonth();
-  const stats = viewMode === "semaine" ? statsSemaine : statsMois;
+// Semaine sélectionnée + toutes les semaines de l'année courante (1 → 52/53)
+const [selectedWeek, setSelectedWeek] = useState<number>(currentWeekNumber);
+
+// nombre de semaines ISO dans l'année courante : on utilise la semaine du 28 déc (ISO)
+const weeksInYear = getWeek(new Date(new Date().getFullYear(), 11, 28), { weekStartsOn: 1 });
+const weeksOptions = Array.from({ length: weeksInYear }, (_, i) => i + 1);
+
+// --- Options pour le mode "mois"
+const monthsOptions = Array.from({ length: 12 }, (_, i) => ({
+  value: i + 1, // 1..12
+  label: format(new Date(2000, i, 1), "LLLL", { locale: fr }), // nom du mois en français
+}));
+
+// Quelques années récentes pour l’UI (on branchera sur les années “avec données” après)
+const yearsOptions = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).reverse();
+
+
+// --- Affichage "mois" : mois/année sélectionnés (affichage uniquement pour l'instant)
+const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth() + 1); // 1..12
+const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
+
+// Nom du mois sélectionné (ex: "novembre")
+const selectedMonthName = format(
+  new Date(selectedYear, selectedMonth - 1, 1),
+  "LLLL",
+  { locale: fr }
+);
+
+const statsSemaine = useStatsDashboard(selectedWeek);
+const statsMois = useStatsDashboardMonth(selectedMonth, selectedYear);
+const stats = viewMode === "semaine" ? statsSemaine : statsMois;
+
 
   const missionsTotal =
     viewMode === "semaine" ? stats.missionsSemaine ?? 0 : stats.missionsMois ?? 0;
@@ -116,31 +145,78 @@ export default function BackOffice() {
             <BarChart2 className="w-8 h-8 text-[#840404]" />
             <h1 className="text-3xl font-bold text-gray-900">Tableau de bord</h1>
             <span className="text-3xl font-bold text-gray-700 ml-4">
-              • {viewMode === "semaine" ? `Semaine ${currentWeekNumber}` : `Mois de ${currentMonthName}`}
-            </span>
+  • {viewMode === "semaine"
+      ? `Semaine ${selectedWeek}`
+      : `Mois de ${selectedMonthName} ${selectedYear}`}
+</span>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setViewMode("semaine")}
-              className={`px-4 py-2 rounded ${
-                viewMode === "semaine"
-                  ? "bg-[#840404] text-white"
-                  : "bg-gray-100 text-black hover:bg-gray-200"
-              }`}
-            >
-              Semaine
-            </button>
-            <button
-              onClick={() => setViewMode("mois")}
-              className={`px-4 py-2 rounded ${
-                viewMode === "mois"
-                  ? "bg-[#840404] text-white"
-                  : "bg-gray-100 text-black hover:bg-gray-200"
-              }`}
-            >
-              Mois
-            </button>
-          </div>
+          <div className="flex gap-2 items-center">
+  <button
+    onClick={() => setViewMode("semaine")}
+    className={`px-4 py-2 rounded ${
+      viewMode === "semaine"
+        ? "bg-[#840404] text-white"
+        : "bg-gray-100 text-black hover:bg-gray-200"
+    }`}
+  >
+    Semaine
+  </button>
+  <button
+    onClick={() => setViewMode("mois")}
+    className={`px-4 py-2 rounded ${
+      viewMode === "mois"
+        ? "bg-[#840404] text-white"
+        : "bg-gray-100 text-black hover:bg-gray-200"
+    }`}
+  >
+    Mois
+  </button>
+
+  {/* Sélecteur SEMAINE (visible en mode semaine) */}
+  {viewMode === "semaine" && (
+    <select
+      value={selectedWeek}
+      onChange={(e) => setSelectedWeek(Number(e.target.value))}
+      className="ml-2 px-3 py-2 border rounded bg-white text-sm shadow-sm"
+    >
+      {weeksOptions.map((w) => (
+        <option key={w} value={w}>
+          Semaine {w}
+        </option>
+      ))}
+    </select>
+  )}
+
+  {/* Sélecteurs MOIS + ANNÉE (visibles en mode mois) */}
+  {viewMode === "mois" && (
+    <>
+      <select
+        value={selectedMonth}
+        onChange={(e) => setSelectedMonth(Number(e.target.value))}
+        className="ml-2 px-3 py-2 border rounded bg-white text-sm shadow-sm"
+      >
+        {monthsOptions.map((m) => (
+          <option key={m.value} value={m.value}>
+            {m.label.charAt(0).toUpperCase() + m.label.slice(1)}
+          </option>
+        ))}
+      </select>
+
+      <select
+        value={selectedYear}
+        onChange={(e) => setSelectedYear(Number(e.target.value))}
+        className="px-3 py-2 border rounded bg-white text-sm shadow-sm"
+      >
+        {yearsOptions.map((y) => (
+          <option key={y} value={y}>
+            {y}
+          </option>
+        ))}
+      </select>
+    </>
+  )}
+</div>
+
           <div className="bg-gray-200 text-gray-800 rounded px-4 py-2 text-base font-semibold shadow border">
             Position : {position}
           </div>
@@ -175,25 +251,29 @@ export default function BackOffice() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={repartitionSecteursData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="missionsN1" name={viewMode === "semaine" ? "Semaine N-1" : "Mois N-1"} fill="#9ca3af" />
-                  <Bar
-                    dataKey="value"
-                    name={
-                      viewMode === "semaine"
-                        ? `Semaine ${currentWeekNumber}`
-                        : `Mois de ${currentMonthName}`
-                    }
-                    fill="#840404"
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+            <ResponsiveContainer width="100%" height={300}>
+  <BarChart
+    data={repartitionSecteursData}
+    margin={{ top: 24, right: 16, left: 0, bottom: 0 }}
+  >
+    <CartesianGrid strokeDasharray="3 3" />
+    <XAxis dataKey="name" />
+    <YAxis domain={[0, 'dataMax + 2']} allowDecimals={false} />
+    <Tooltip />
+    <Legend />
+    <Bar dataKey="missionsN1" name={viewMode === "semaine" ? "Semaine N-1" : "Mois N-1"} fill="#9ca3af" />
+    <Bar
+      dataKey="value"
+      name={
+        viewMode === "semaine"
+          ? `Semaine ${selectedWeek}`
+          : `Mois de ${selectedMonthName} ${selectedYear}`
+      }
+      fill="#840404"
+    />
+  </BarChart>
+</ResponsiveContainer>
+
             </CardContent>
           </Card>
 
@@ -328,33 +408,37 @@ export default function BackOffice() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={stats.missionsByDay}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar
-                  dataKey="missionsN1"
-                  name={viewMode === "semaine" ? "Semaine N-1" : "Mois N-1"}
-                  fill="#9ca3af"
-                >
-                  <LabelList dataKey="missionsN1" position="top" style={{ fill: "#555", fontSize: 12 }} />
-                </Bar>
-                <Bar
-                  dataKey="missions"
-                  name={
-                    viewMode === "semaine"
-                      ? `Semaine ${currentWeekNumber}`
-                      : `Mois ${currentMonthName}`
-                  }
-                  fill="#840404"
-                >
-                  <LabelList dataKey="missions" position="top" style={{ fill: "#111", fontWeight: "bold" }} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          <ResponsiveContainer width="100%" height={300}>
+  <BarChart
+    data={stats.missionsByDay}
+    margin={{ top: 28, right: 16, left: 0, bottom: 0 }}
+  >
+    <CartesianGrid strokeDasharray="3 3" />
+    <XAxis dataKey="day" />
+    <YAxis domain={[0, 'dataMax + 2']} allowDecimals={false} />
+    <Tooltip />
+    <Legend />
+    <Bar
+      dataKey="missionsN1"
+      name={viewMode === "semaine" ? "Semaine N-1" : "Mois N-1"}
+      fill="#9ca3af"
+    >
+      <LabelList dataKey="missionsN1" position="top" style={{ fill: "#555", fontSize: 12 }} />
+    </Bar>
+    <Bar
+      dataKey="missions"
+      name={
+        viewMode === "semaine"
+          ? `Semaine ${selectedWeek}`
+          : `Mois ${selectedMonthName} ${selectedYear}`
+      }
+      fill="#840404"
+    >
+      <LabelList dataKey="missions" position="top" style={{ fill: "#111", fontWeight: "bold" }} />
+    </Bar>
+  </BarChart>
+</ResponsiveContainer>
+
           </CardContent>
         </Card>
       </div>
