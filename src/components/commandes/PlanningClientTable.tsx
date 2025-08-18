@@ -6,7 +6,7 @@ import { indicateurColors } from "@/lib/colors";
 import { supabase } from "@/lib/supabase";
 import type { CommandeWithCandidat, JourPlanning } from "@/types/types-front";
 import { ColonneClient } from "@/components/commandes/ColonneClient";
-import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
+import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog";
 import { CellulePlanning } from "@/components/commandes/CellulePlanning";
 import {
   Tooltip,
@@ -40,9 +40,8 @@ export function PlanningClientTable({
   const [commentaireTemp, setCommentaireTemp] = useState<string>("");
   const [lastClickedCommandeId, setLastClickedCommandeId] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
-  const [commandeToEdit, setCommandeToEdit] = useState<any | null>(null)
-  const [openEdit, setOpenEdit] = useState(false)
-
+  const [commandeToEdit, setCommandeToEdit] = useState<any | null>(null);
+  const [openEdit, setOpenEdit] = useState(false);
 
   useEffect(() => {
     const elt = document.getElementById("commandes-filters");
@@ -92,7 +91,7 @@ export function PlanningClientTable({
         ligne_id: commande.id,
         action: isChampHoraire ? "modification_horaire" : "modification_commentaire",
         description: isChampHoraire
-          ? `Changement de ${champ} à ${nouvelleValeur}`
+          ? `Changement de ${String(champ)} à ${nouvelleValeur}`
           : `Nouveau commentaire : ${nouvelleValeur}`,
         user_id: userId,
         date_action: new Date().toISOString(),
@@ -274,8 +273,8 @@ export function PlanningClientTable({
                           clientId={ligneClientId}
                           onOpenClientEdit={onOpenClientEdit}
                           onOpenCommandeEdit={(commande) => {
-                            setCommandeToEdit(commande)
-                            setOpenEdit(true)        
+                            setCommandeToEdit(commande);
+                            setOpenEdit(true);
                           }}
                         />
                         {jours.map((jour, index) => {
@@ -347,7 +346,6 @@ export function PlanningClientTable({
         onRefreshDone={onRefresh}
         commande={commandeToEdit}
       />
-
     </TooltipProvider>
   );
 }

@@ -4,6 +4,12 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!
 
 type ChatReply = {
@@ -20,7 +26,10 @@ type InvokeBody = {
 }
 
 function jsonResponse(obj: any, status = 200) {
-  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } })
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { "Content-Type": "application/json", ...corsHeaders },
+  })
 }
 
 async function getCurrentUtilisateurId(supabase: any): Promise<string | null> {
@@ -93,7 +102,7 @@ async function saveEvent(supabase: any, created_by: string | null, pe: any) {
   return data.id as string
 }
 
-// Simple Q/A: qui est dispo (date, période, secteur[, service])
+// Q/A simple: dispo par date/secteur/période
 async function queryDisponibles(supabase: any, args: { date: string; periode?: "matin"|"soir"|"nuit"; secteur?: string; service?: string|null }) {
   let q = supabase.from("disponibilites").select(`
     id, date, secteur, statut, matin, soir, nuit, creneaux, candidat_id,
@@ -121,7 +130,7 @@ async function queryDisponibles(supabase: any, args: { date: string; periode?: "
   return candidats.slice(0, 20)
 }
 
-// LLM call: renvoie un JSON (intent + slots)
+// LLM: renvoie JSON (intent + slots)
 async function llmParse(input: string, context: { utilisateurs: any[]; clients: any[]; candidats: any[] }) {
   const usersCtx = context.utilisateurs || []
   const clientsCtx = (context.clients || []).slice(0, 200)
@@ -186,6 +195,11 @@ Règles:
 }
 
 Deno.serve(async (req) => {
+  // CORS preflight
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
+  }
+
   try {
     if (req.method !== "POST") return jsonResponse({ error: "POST only" }, 405)
     const { message, fill }: InvokeBody = await req.json()
@@ -286,6 +300,9 @@ Deno.serve(async (req) => {
 
     return jsonResponse({ replies: [{ id: crypto.randomUUID(), role: "agent", text: "Je n’ai pas compris. Peux-tu reformuler ?" }] })
   } catch (e) {
-    return jsonResponse({ error: String(e?.message || e) }, 500)
+    return new Response(JSON.stringify({ error: String(e?.message || e) }), {
+      status: 500,
+      headers: corsHeaders,
+    })
   }
 })
