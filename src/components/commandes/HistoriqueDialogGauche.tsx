@@ -3,10 +3,9 @@ import { Badge } from "@/components/ui/badge"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
-import { Clock, UserRound, Pencil } from "lucide-react"
+import { Clock, UserRound, Pencil, FileText, RefreshCcw } from "lucide-react"
 import { statutColors } from "@/lib/colors"
 import { Historique } from "@/types/types-front"
-import { Commande } from "@/types/types-front"
 
 interface Props {
   commandeIds: string[]
@@ -55,75 +54,111 @@ export function HistoriqueDialogGauche({ commandeIds, open }: Props) {
     fetchCommandes()
   }, [historique])
 
-  const formatHeure = (h?: string | null) => h && h.length >= 5 ? h.slice(0, 5) : "--:--"
+  const formatHeure = (h?: string | null) => (h && h.length >= 5 ? h.slice(0, 5) : "--:--")
 
   const renderBloc = (item: Historique) => {
-    const apres = item.apres as any
+    const apres = (item.apres || {}) as any
     const date = format(new Date(item.date_action), "EEEE d MMMM yyyy - HH:mm", { locale: fr })
     const action = item.action
     const commande = commandesMap[item.ligne_id]
     const candidat = apres?.candidat
 
     let titre = "Action inconnue"
-    let badge = null
-    let complement = null
+    let badge: JSX.Element | null = null
+    let complement: JSX.Element | null = null
+    let Icon = Pencil
 
+    // ———————————————————
+    // Création
+    // ———————————————————
     if (action === "creation") {
       titre = "Création de commande"
+      Icon = Pencil
       badge = (
-        <Badge style={{
-          backgroundColor: statutColors["En recherche"]?.bg,
-          color: statutColors["En recherche"]?.text,
-        }}>
+        <Badge
+          style={{
+            backgroundColor: statutColors["En recherche"]?.bg,
+            color: statutColors["En recherche"]?.text,
+          }}
+        >
           En recherche
         </Badge>
       )
       complement = (
         <>
-          <div>Journée : {commande?.date ? format(new Date(commande.date), "EEEE d MMMM", { locale: fr }) : "?"}</div>
+          <div>
+            Journée :{" "}
+            {commande?.date ? format(new Date(commande.date), "EEEE d MMMM", { locale: fr }) : "?"}
+          </div>
           {commande?.heure_debut_matin && (
-            <div>Matin : {formatHeure(commande.heure_debut_matin)} - {formatHeure(commande.heure_fin_matin)}</div>
+            <div>
+              Matin : {formatHeure(commande.heure_debut_matin)} - {formatHeure(commande.heure_fin_matin)}
+            </div>
           )}
           {commande?.heure_debut_soir && (
-            <div>Soir : {formatHeure(commande.heure_debut_soir)} - {formatHeure(commande.heure_fin_soir)}</div>
+            <div>
+              Soir : {formatHeure(commande.heure_debut_soir)} - {formatHeure(commande.heure_fin_soir)}
+            </div>
           )}
         </>
       )
     }
 
+    // ———————————————————
+    // Planification
+    // ———————————————————
     else if (action === "planification") {
       titre = "Planification"
-      badge = candidat && (
-        <Badge style={{
-          backgroundColor: statutColors["Validé"]?.bg,
-          color: statutColors["Validé"]?.text,
-        }}>
-          {candidat.nom} {candidat.prenom}
-        </Badge>
-      )
+      Icon = Pencil
+      badge =
+        candidat && (
+          <Badge
+            style={{
+              backgroundColor: statutColors["Validé"]?.bg,
+              color: statutColors["Validé"]?.text,
+            }}
+          >
+            {candidat.nom} {candidat.prenom}
+          </Badge>
+        )
       complement = (
         <>
-          <div>Journée : {apres?.date ? format(new Date(apres.date), "EEEE d MMMM", { locale: fr }) : "?"}</div>
+          <div>
+            Journée :{" "}
+            {apres?.date ? format(new Date(apres.date), "EEEE d MMMM", { locale: fr }) : "?"}
+          </div>
           {apres?.heure_debut_matin && (
-            <div>Matin : {formatHeure(apres.heure_debut_matin)} - {formatHeure(apres.heure_fin_matin)}</div>
+            <div>
+              Matin : {formatHeure(apres.heure_debut_matin)} - {formatHeure(apres.heure_fin_matin)}
+            </div>
           )}
           {apres?.heure_debut_soir && (
-            <div>Soir : {formatHeure(apres.heure_debut_soir)} - {formatHeure(apres.heure_fin_soir)}</div>
+            <div>
+              Soir : {formatHeure(apres.heure_debut_soir)} - {formatHeure(apres.heure_fin_soir)}
+            </div>
           )}
         </>
       )
     }
 
+    // ———————————————————
+    // Modification horaire
+    // ———————————————————
     else if (action === "modification_horaire") {
       titre = "Modification horaire"
+      Icon = Pencil
       const champ = apres?.champ || "?"
       const valeur = apres?.valeur || "?"
       badge = <Badge variant="secondary">{champ}</Badge>
       complement = <div>Nouvelle valeur : {formatHeure(valeur)}</div>
     }
 
+    // ———————————————————
+    // Modification commentaire
+    // ———————————————————
     else if (action === "modification_commentaire") {
       titre = "Modification commentaire"
+      Icon = Pencil
       complement = (
         <div className="text-sm text-muted-foreground italic">
           {apres?.commentaire || "(commentaire vide)"}
@@ -131,39 +166,115 @@ export function HistoriqueDialogGauche({ commandeIds, open }: Props) {
       )
     }
 
+    // ———————————————————
+    // Remplacement candidat
+    // ———————————————————
     else if (action === "remplacement") {
       titre = "Remplacement candidat"
-      badge = apres?.nouveau_candidat && (
-        <Badge style={{
-          backgroundColor: statutColors["Validé"]?.bg,
-          color: statutColors["Validé"]?.text,
-        }}>
-          {apres.nouveau_candidat.nom} {apres.nouveau_candidat.prenom}
+      Icon = Pencil
+      badge =
+        apres?.nouveau_candidat && (
+          <Badge
+            style={{
+              backgroundColor: statutColors["Validé"]?.bg,
+              color: statutColors["Validé"]?.text,
+            }}
+          >
+            {apres.nouveau_candidat.nom} {apres.nouveau_candidat.prenom}
+          </Badge>
+        )
+      complement =
+        apres?.ancien_candidat && (
+          <div className="text-sm text-muted-foreground">
+            Remplace <strong>{apres.ancien_candidat.nom} {apres.ancien_candidat.prenom}</strong>
+          </div>
+        )
+    }
+
+    // ———————————————————
+    // Changement de statut (avec différenciation remise en recherche)
+    // ———————————————————
+    else if (action === "statut") {
+      titre = apres?.remettre_en_recherche ? "Annulation + remise en recherche" : "Changement de statut"
+      Icon = RefreshCcw
+      const statut = apres?.statut || "?"
+      badge = (
+        <Badge
+          style={{
+            backgroundColor: statutColors[statut]?.bg || "#e5e7eb",
+            color: statutColors[statut]?.text || "#111827",
+          }}
+        >
+          {statut}
         </Badge>
       )
-      complement = apres?.ancien_candidat && (
-        <div className="text-sm text-muted-foreground">
-          Remplace <strong>{apres.ancien_candidat.nom} {apres.ancien_candidat.prenom}</strong>
+      complement = (
+        <div className="text-sm text-muted-foreground space-y-1">
+          {apres?.scope === "all_week" ? (
+            <div>Portée : <strong>toute la semaine</strong></div>
+          ) : (
+            <div>Portée : <strong>uniquement ce jour</strong></div>
+          )}
+          {apres?.remettre_en_recherche && (
+            <div>Action : recréation de commande(s) en <strong>En recherche</strong></div>
+          )}
+          {apres?.candidat && (
+            <div>
+              Candidat concerné : <strong>{apres.candidat?.nom} {apres.candidat?.prenom}</strong>
+            </div>
+          )}
+          {apres?.complement_motif && (
+            <div>Motif (ADA) : <strong>{apres.complement_motif}</strong></div>
+          )}
         </div>
       )
     }
 
-    else if (action === "statut") {
-      titre = "Changement de statut"
-      const statut = apres?.statut || "?"
-      badge = (
-        <Badge style={{
-          backgroundColor: statutColors[statut]?.bg || "#e5e7eb",
-          color: statutColors[statut]?.text || "#111827",
-        }}>
-          {statut}
-        </Badge>
-      )
-      complement = apres?.candidat && (
+    // ———————————————————
+    // Motif de contrat (nouveau/ancien libellé)
+    // ———————————————————
+    else if (action === "modification_motif_contrat" || action === "modification_motif") {
+      titre = "Motif de contrat"
+      Icon = FileText
+      const motif = apres?.motif_contrat ?? apres?.motif
+      const complementMotif = apres?.complement_motif
+      badge = motif ? <Badge variant="secondary">{motif}</Badge> : null
+      complement = (
         <div className="text-sm text-muted-foreground">
-          Candidat remplacé : <strong>{apres.candidat.nom} {apres.candidat.prenom}</strong>
+          {complementMotif ? <>Précision : <strong>{complementMotif}</strong></> : "Aucune précision"}
         </div>
       )
+    }
+
+    // ———————————————————
+    // Recréation de commande(s) explicite
+    // ———————————————————
+    else if (action === "recreation_commande" || action === "recreation_commande_batch") {
+      titre = "Recréation de mission(s)"
+      Icon = RefreshCcw
+      badge = (
+        <Badge
+          style={{
+            backgroundColor: statutColors["En recherche"]?.bg,
+            color: statutColors["En recherche"]?.text,
+          }}
+        >
+          En recherche
+        </Badge>
+      )
+      const dates: string[] =
+        apres?.dates ||
+        (apres?.nouvelles_commandes?.map?.((x: any) => x.date).filter(Boolean) ?? [])
+      complement = dates.length ? (
+        <div className="text-sm text-muted-foreground">
+          Dates recréées :{" "}
+          <strong>
+            {dates
+              .map((d) => format(new Date(d), "dd/MM", { locale: fr }))
+              .join(", ")}
+          </strong>
+        </div>
+      ) : null
     }
 
     return (
@@ -181,7 +292,7 @@ export function HistoriqueDialogGauche({ commandeIds, open }: Props) {
 
         <div className="text-sm space-y-1">
           <div className="flex items-center gap-2 font-medium">
-            <Pencil className="h-4 w-4 text-gray-600" />
+            <Icon className="h-4 w-4 text-gray-600" />
             <span>{titre}</span>
             {badge}
           </div>

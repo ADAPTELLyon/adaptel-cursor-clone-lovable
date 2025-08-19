@@ -12,13 +12,7 @@ import {
 import { secteursList } from "@/lib/secteurs"
 import type { PosteType } from "@/types/types-front"
 import { Card } from "@/components/ui/card"
-import { PieChart } from "lucide-react" // nouvel import si pas encore présent
-import {
-  User,
-  Calendar,
-  ClipboardList,
-  Info,
-} from "lucide-react"
+import { PieChart, User, Calendar, ClipboardList, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface CommandeFormGaucheProps {
@@ -45,7 +39,6 @@ interface CommandeFormGaucheProps {
   setHeuresParJour: (val: any) => void
   setJoursState: (val: any) => void
 }
-
 
 export default function CommandeFormGauche({
   secteur,
@@ -89,14 +82,12 @@ export default function CommandeFormGauche({
 
   return (
     <Card className="p-6 h-full flex flex-col bg-white space-y-6 overflow-y-auto">
-
-{/* Secteur */}
-<div className="space-y-4 border rounded-lg p-4 bg-gray-50 shadow-sm">
-  <div className="flex items-center gap-2 mb-2">
-    <PieChart className="w-4 h-4 text-muted-foreground" />
-    <h3 className="font-medium text-sm">Secteur</h3>
-  </div>
-
+      {/* Secteur */}
+      <div className="space-y-4 border rounded-lg p-4 bg-gray-50 shadow-sm">
+        <div className="flex items-center gap-2 mb-2">
+          <PieChart className="w-4 h-4 text-muted-foreground" />
+          <h3 className="font-medium text-sm">Secteur</h3>
+        </div>
 
         <div className="grid grid-cols-5 gap-2">
           {secteursList.map(({ label, icon: Icon }) => (
@@ -237,7 +228,16 @@ export default function CommandeFormGauche({
         </div>
 
         <div className="space-y-2">
-          <Select value={motif} onValueChange={setMotif}>
+          <Select
+            value={motif}
+            onValueChange={(val) => {
+              setMotif(val)
+              // garde le comportement actuel ; si retour à "Extra", on vide la précision
+              if (val === "Extra Usage constant") {
+                setComplementMotif("")
+              }
+            }}
+          >
             <SelectTrigger>
               <SelectValue placeholder="Sélectionner un motif" />
             </SelectTrigger>
@@ -265,7 +265,6 @@ export default function CommandeFormGauche({
           )}
         </div>
       </div>
-
 
       {/* Information complémentaire */}
       <div className="space-y-4 border rounded-lg p-4 bg-gray-50 shadow-sm">

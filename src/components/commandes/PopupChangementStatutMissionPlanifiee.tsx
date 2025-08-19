@@ -79,7 +79,11 @@ export function PopupChangementStatutMissionPlanifiee({
     return userApp?.id || null
   }
 
-  const insertHistorique = async (userId: string, cmd: CommandeWithCandidat | CommandeLite, extra: any = {}) => {
+  const insertHistorique = async (
+    userId: string,
+    cmd: CommandeWithCandidat | CommandeLite,
+    extra: any = {}
+  ) => {
     await supabase.from("historique").insert({
       table_cible: "commandes",
       ligne_id: (cmd as any).id,
@@ -92,6 +96,24 @@ export function PopupChangementStatutMissionPlanifiee({
         ...(statut === "Annule ADA" && motif ? { complement_motif: motif } : {}),
         remettre_en_recherche: !!extra.remettre_en_recherche,
         scope: extra.scope || "single",
+      },
+    })
+  }
+
+  const insertHistoriqueRecreation = async (
+    userId: string,
+    source: CommandeWithCandidat | CommandeLite,
+    dates: string[]
+  ) => {
+    await supabase.from("historique").insert({
+      table_cible: "commandes",
+      ligne_id: (source as any).id,
+      action: "recreation_commande",
+      user_id: userId,
+      date_action: new Date().toISOString(),
+      description: "Recréation de mission(s) en 'En recherche'",
+      apres: {
+        dates, // ex: ["2025-08-18", "2025-08-19"]
       },
     })
   }
@@ -148,7 +170,7 @@ export function PopupChangementStatutMissionPlanifiee({
       .gte("date", mondayStr)
       .lte("date", sundayStr)
 
-    const base = data || []
+    const base = (data || []) as CommandeLite[]
     const exists = base.some((c) => c.id === commande.id)
     const merged = exists ? base : [...base, toLite(commande)]
     setWeekLabel(label)
@@ -193,7 +215,7 @@ export function PopupChangementStatutMissionPlanifiee({
         })
         .in("id", ids)
 
-      // Historique
+      // Historique (statut + flags)
       await Promise.all(
         selectedTargets.map((t) =>
           insertHistorique(userId, t, {
@@ -218,10 +240,14 @@ export function PopupChangementStatutMissionPlanifiee({
         heure_fin_nuit: t.heure_fin_nuit ?? commande.heure_fin_nuit ?? null,
         mission_slot: newSlot,
         motif_contrat: commande.motif_contrat || "",
+        complement_motif: commande.complement_motif || null,
       }))
 
       if (inserts.length > 0) {
-        const { error: insertErr } = await supabase.from("commandes").insert(inserts)
+        const { data: newRows, error: insertErr } = await supabase
+          .from("commandes")
+          .insert(inserts)
+          .select("id, date")
         if (insertErr) {
           console.error(insertErr)
           toast({
@@ -232,6 +258,10 @@ export function PopupChangementStatutMissionPlanifiee({
           setLoading(false)
           return
         }
+
+        // Historique explicite de la recréation (une seule entrée rattachée à la ligne d’origine)
+        const dates = (newRows || []).map((r: any) => r.date)
+        await insertHistoriqueRecreation(userId, selectedTargets[0], dates)
       }
 
       toast({
@@ -301,7 +331,6 @@ export function PopupChangementStatutMissionPlanifiee({
       )
 
       if (askStatutCandidat && commande.candidat_id) {
-        // On affiche le dialog statut candidat une seule fois (jour courant)
         setShowCandidateDialog(true)
         setLoading(false)
         setAskScopeOpen(false)
@@ -333,7 +362,7 @@ export function PopupChangementStatutMissionPlanifiee({
   // =========================
   // Handler principal (bouton “Valider” des mini-popups)
   // =========================
-  const handleValiderStatut = async (remettreEnRecherche: boolean = false) => {
+  const handleValiderStatut = async (remettreEnRech: boolean = false) => {
     try {
       setLoading(true)
 
@@ -354,7 +383,7 @@ export function PopupChangementStatutMissionPlanifiee({
       }
 
       // 1) Statuts “remettre en recherche ?” → on décide après la question de portée
-      if (remettreEnRecherche && askRemettreEnRecherche) {
+      if (remettreEnRech && askRemettreEnRecherche) {
         const group = await fetchWeekTargetsForCandidate()
         setTargets(group)
         setCandidateName(
@@ -416,11 +445,8 @@ export function PopupChangementStatutMissionPlanifiee({
     }
   }
 
-  // =========================
-  // Rendus conditionnels (popups)
-  // =========================
+  // ——————————————— UI (identique à ta base, seul le logging a été enrichi) ———————————————
 
-  // Annule ADA : demande de motif (avant portée)
   if (statut === "Annule ADA" && !showCandidateDialog && !askScopeOpen) {
     return (
       <Dialog open onOpenChange={onClose}>
@@ -439,7 +465,7 @@ export function PopupChangementStatutMissionPlanifiee({
                 Annuler
               </Button>
               <Button
-                onClick={() => handleValiderStatut(false)} // on ouvre la portée ensuite
+                onClick={() => handleValiderStatut(false)}
                 disabled={!motif.trim() || loading}
               >
                 Continuer
@@ -451,7 +477,6 @@ export function PopupChangementStatutMissionPlanifiee({
     )
   }
 
-  // Annule Client : ouverture vers portée
   if (statut === "Annule Client" && !showCandidateDialog && !askScopeOpen) {
     return (
       <Dialog open onOpenChange={onClose}>
@@ -475,7 +500,6 @@ export function PopupChangementStatutMissionPlanifiee({
     )
   }
 
-  // Non pourvue : ouverture vers portée
   if (statut === "Non pourvue" && !askScopeOpen) {
     return (
       <Dialog open onOpenChange={onClose}>
@@ -499,7 +523,6 @@ export function PopupChangementStatutMissionPlanifiee({
     )
   }
 
-  // 1er popup – Remettre en En recherche ? (Annule Int / Absence)
   if (askRemettreEnRecherche && !askScopeOpen && !showCandidateDialog) {
     return (
       <Dialog open onOpenChange={onClose}>
@@ -507,7 +530,7 @@ export function PopupChangementStatutMissionPlanifiee({
           <DialogHeader>
             <DialogTitle>Remettre en “En recherche” ?</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 text-sm">
+        <div className="space-y-4 text-sm">
             <p>
               Souhaitez-vous remettre cette mission en statut <strong>En recherche</strong> ?
             </p>
@@ -525,9 +548,6 @@ export function PopupChangementStatutMissionPlanifiee({
     )
   }
 
-  // 2e popup – Portée (jour vs semaine) : utilisé pour
-  // - Annule Int / Absence quand “remettre en recherche = Oui”
-  // - Annule Client / Annule ADA / Non pourvue (toujours, sans recréation)
   if (askScopeOpen && !showCandidateDialog) {
     const isRecreateFlow = ["Annule Int", "Absence"].includes(statut)
     return (
@@ -553,8 +573,8 @@ export function PopupChangementStatutMissionPlanifiee({
                     {format(new Date(commande.date), "dd/MM/yyyy")}.
                   </li>
                   <li>
-                    <strong>Toutes les journées</strong> : appliquer “{statut}” sur chaque journée concernée,
-                    supprimer les planifications, puis recréer toutes les missions “En recherche” sur une même ligne (slot identique).
+                    <strong>Toutes les journées</strong> : appliquer “{statut}”, supprimer les planifications,
+                    puis recréer toutes les missions “En recherche” sur une même ligne (slot identique).
                   </li>
                 </ul>
               </>
@@ -563,11 +583,11 @@ export function PopupChangementStatutMissionPlanifiee({
                 <p>Choisissez la portée :</p>
                 <ul className="list-disc pl-5 space-y-1">
                   <li>
-                    <strong>Uniquement ce jour</strong> : appliquer “{statut}” sur la date{" "}
+                    <strong>Uniquement ce jour</strong> : appliquer “{statut}” le{" "}
                     {format(new Date(commande.date), "dd/MM/yyyy")}.
                   </li>
                   <li>
-                    <strong>Toute la semaine</strong> : appliquer “{statut}” sur toutes les journées de la semaine pour ce candidat.
+                    <strong>Toute la semaine</strong> : appliquer “{statut}” sur toutes les journées de la semaine.
                   </li>
                 </ul>
               </>
@@ -594,7 +614,6 @@ export function PopupChangementStatutMissionPlanifiee({
     )
   }
 
-  // Flux post Annule ADA / Annule Client → statut candidat (dialog existant)
   if (askStatutCandidat && showCandidateDialog && commande.candidat_id) {
     return (
       <CandidateJourneeDialog
@@ -619,7 +638,6 @@ export function PopupChangementStatutMissionPlanifiee({
     )
   }
 
-  // Fallback générique (si un flux passait à travers)
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent>
