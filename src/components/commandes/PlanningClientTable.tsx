@@ -6,7 +6,7 @@ import { indicateurColors } from "@/lib/colors";
 import { supabase } from "@/lib/supabase";
 import type { CommandeWithCandidat, JourPlanning } from "@/types/types-front";
 import { ColonneClient } from "@/components/commandes/ColonneClient";
-import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog";
+import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
 import { CellulePlanning } from "@/components/commandes/CellulePlanning";
 import {
   Tooltip,
@@ -40,8 +40,8 @@ export function PlanningClientTable({
   const [commentaireTemp, setCommentaireTemp] = useState<string>("");
   const [lastClickedCommandeId, setLastClickedCommandeId] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
-  const [commandeToEdit, setCommandeToEdit] = useState<any | null>(null);
-  const [openEdit, setOpenEdit] = useState(false);
+  const [commandeToEdit, setCommandeToEdit] = useState<any | null>(null)
+  const [openEdit, setOpenEdit] = useState(false)
 
   useEffect(() => {
     const elt = document.getElementById("commandes-filters");
@@ -66,6 +66,7 @@ export function PlanningClientTable({
     nouvelleValeur: string
   ) => {
     const isChampHoraire = champsHoraire.includes(champ);
+    const isMotif = champ === "motif_contrat";
     const isValidTime = !isChampHoraire || /^\d{2}:\d{2}$/.test(nouvelleValeur);
     if (!isValidTime) return;
 
@@ -86,16 +87,30 @@ export function PlanningClientTable({
       .eq("id", commande.id);
 
     if (!error && userId) {
+      const action = isChampHoraire
+        ? "modification_horaire"
+        : isMotif
+        ? "modification_motif"
+        : "modification_commentaire";
+
+      const description = isChampHoraire
+        ? `Changement de ${String(champ)} à ${nouvelleValeur}`
+        : isMotif
+        ? `Motif contrat mis à jour : ${nouvelleValeur || "—"}`
+        : `Nouveau commentaire : ${nouvelleValeur}`;
+
       await supabase.from("historique").insert({
         table_cible: "commandes",
         ligne_id: commande.id,
-        action: isChampHoraire ? "modification_horaire" : "modification_commentaire",
-        description: isChampHoraire
-          ? `Changement de ${String(champ)} à ${nouvelleValeur}`
-          : `Nouveau commentaire : ${nouvelleValeur}`,
+        action,
+        description,
         user_id: userId,
         date_action: new Date().toISOString(),
-        apres: { champ, valeur: nouvelleValeur },
+        apres: isChampHoraire
+          ? { champ, valeur: nouvelleValeur }
+          : isMotif
+          ? { motif_contrat: nouvelleValeur }
+          : { commentaire: nouvelleValeur },
       });
     }
   };
@@ -273,8 +288,8 @@ export function PlanningClientTable({
                           clientId={ligneClientId}
                           onOpenClientEdit={onOpenClientEdit}
                           onOpenCommandeEdit={(commande) => {
-                            setCommandeToEdit(commande);
-                            setOpenEdit(true);
+                            setCommandeToEdit(commande)
+                            setOpenEdit(true)
                           }}
                         />
                         {jours.map((jour, index) => {
@@ -346,6 +361,7 @@ export function PlanningClientTable({
         onRefreshDone={onRefresh}
         commande={commandeToEdit}
       />
+
     </TooltipProvider>
   );
 }

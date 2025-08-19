@@ -32,6 +32,8 @@ type CommandeRow = {
   commentaire?: string | null
   created_at: string
   updated_at?: string | null
+  motif_contrat?: string | null         
+  complement_motif?: string | null      
 }
 
 export default function Commandes() {
@@ -99,6 +101,7 @@ export default function Commandes() {
         ? { nom: item.clients.nom }
         : (clientNames[item.client_id] ? { nom: clientNames[item.client_id] } : null),
       motif_contrat: item.motif_contrat ?? null,
+      complement_motif: item.complement_motif ?? null, 
     }
   }, [clientNames])
 
@@ -250,6 +253,7 @@ export default function Commandes() {
         heure_debut_matin, heure_fin_matin,
         heure_debut_soir, heure_fin_soir,
         commentaire, created_at, updated_at,
+        motif_contrat, complement_motif,   
         candidats (id, nom, prenom),
         clients (nom)
       `)
@@ -288,6 +292,7 @@ export default function Commandes() {
         candidat: item.candidats ? { nom: item.candidats.nom ?? "–", prenom: item.candidats.prenom ?? "–" } : null,
         client: item.clients?.nom ? { nom: item.clients.nom } : null,
         motif_contrat: item.motif_contrat ?? null,
+        complement_motif: item.complement_motif ?? null,
       } as CommandeWithCandidat
 
       const jourKey = (j: JourPlanning) =>

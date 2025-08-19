@@ -7,11 +7,10 @@ import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 import { toast } from "@/hooks/use-toast"
 import type { CommandeWithCandidat } from "@/types/types-front"
-import { CheckCircle2, Clock, AlertCircle, Car, Ban, Check, History, ChevronRight, ArrowDownCircle } from "lucide-react"
+import { CheckCircle2, Clock, AlertCircle, Car, History, ChevronRight, ArrowDownCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { PlanificationCoupureDialog } from "./PlanificationCoupureDialog"
 import { Icon } from "@iconify/react"
-
 
 const statusConfig = {
   dispo: {
@@ -173,34 +172,32 @@ export function PlanificationCandidatDialog({
     }
 
     fetchDispoEtPlanif()
-  }, [open, date, secteur, candidats])
-
-  const hasHeures = (debut?: string | null, fin?: string | null) => !!(debut && fin)
+  }, [open, date, secteur, candidats, commande.client_id])
 
   const handleSelect = async (candidatId: string) => {
     const jour = date.slice(0, 10)
     const candidat = candidats.find((c) => c.id === candidatId)
-  
-    const aMatin = commande.heure_debut_matin && commande.heure_fin_matin
-    const aSoir = commande.heure_debut_soir && commande.heure_fin_soir
-  
+
+    const aMatin = !!(commande.heure_debut_matin && commande.heure_fin_matin)
+    const aSoir = !!(commande.heure_debut_soir && commande.heure_fin_soir)
+
     if (aMatin && aSoir) {
       setSelectedCandidatId(candidatId)
       setOpenCoupureDialog(true)
       return
     }
-  
+
     const { data: existingPlanifs } = await supabase
       .from("planification")
       .select("heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
       .eq("candidat_id", candidatId)
       .eq("date", jour)
-  
+
     const conflitMatin =
       aMatin && existingPlanifs?.some((p) => p.heure_debut_matin && p.heure_fin_matin)
     const conflitSoir =
       aSoir && existingPlanifs?.some((p) => p.heure_debut_soir && p.heure_fin_soir)
-  
+
     if (conflitMatin || conflitSoir) {
       toast({
         title: "Conflit de créneau",
@@ -209,7 +206,7 @@ export function PlanificationCandidatDialog({
       })
       return
     }
-  
+
     await supabase.from("planification").insert({
       commande_id: commande.id,
       candidat_id: candidatId,
@@ -223,7 +220,7 @@ export function PlanificationCandidatDialog({
       heure_debut_nuit: null,
       heure_fin_nuit: null,
     })
-  
+
     await supabase
       .from("commandes")
       .update({
@@ -231,19 +228,19 @@ export function PlanificationCandidatDialog({
         statut: "Validé",
       })
       .eq("id", commande.id)
-  
+
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
-  
+
     if (userEmail && candidat) {
       const { data: userApp } = await supabase
         .from("utilisateurs")
         .select("id")
         .eq("email", userEmail)
         .single()
-  
+
       const userId = userApp?.id || null
-  
+
       if (userId) {
         await supabase.from("historique").insert({
           table_cible: "commandes",
@@ -266,12 +263,12 @@ export function PlanificationCandidatDialog({
         })
       }
     }
-  
+
     toast({ title: "Candidat planifié avec succès" })
     onClose()
-    onSuccess()
+    // pas de onSuccess() / onRefresh() ici pour éviter le “saut” de vue.
+    // l’affichage Nom/Prénom sera instantané via la cellule.
   }
-  
 
   const dateFormatee = format(new Date(date), "eeee d MMMM", { locale: fr })
 
@@ -326,7 +323,7 @@ export function PlanificationCandidatDialog({
     planification?: any
   }) => {
     const config = statusConfig[status]
-    const formatHeure = (heure: string | null | undefined) => (heure ? heure.slice(0, 5) : "")
+    const formatHeure = (h?: string | null) => (h ? h.slice(0, 5) : "")
 
     return (
       <div
@@ -339,34 +336,33 @@ export function PlanificationCandidatDialog({
               {candidat.nom} {candidat.prenom}
             </p>
             <div className="flex items-center gap-1">
-  {candidat.vehicule && (
-    <span className="p-1 rounded-full bg-muted" title="Véhicule">
-      <Car className="w-4 h-4 text-blue-500" />
-    </span>
-  )}
-  {candidat.interditClient && (
-    <span className="p-1 rounded-full bg-muted" title="Interdit sur ce client">
-      <Icon icon="material-symbols:do-not-disturb-on" className="w-4 h-4 text-red-500" />
-    </span>
-  )}
-  {candidat.prioritaire && (
-    <span className="p-1 rounded-full bg-muted" title="Prioritaire">
-      <Icon icon="mdi:star" className="w-4 h-4 text-yellow-500" />
-    </span>
-  )}
-  {candidat.dejaPlanifie && (
-    <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce client">
-      <History className="w-4 h-4 text-amber-500" />
-    </span>
-  )}
-  {candidat.dejaTravaille && (
-    <span className="p-1 rounded-full bg-muted" title="A déjà travaillé pour ce client">
-      <ArrowDownCircle className="w-4 h-4 text-violet-600" />
-    </span>
-  )}
-</div>
-</div>
-
+              {candidat.vehicule && (
+                <span className="p-1 rounded-full bg-muted" title="Véhicule">
+                  <Car className="w-4 h-4 text-blue-500" />
+                </span>
+              )}
+              {candidat.interditClient && (
+                <span className="p-1 rounded-full bg-muted" title="Interdit sur ce client">
+                  <Icon icon="material-symbols:do-not-disturb-on" className="w-4 h-4 text-red-500" />
+                </span>
+              )}
+              {candidat.prioritaire && (
+                <span className="p-1 rounded-full bg-muted" title="Prioritaire">
+                  <Icon icon="mdi:star" className="w-4 h-4 text-yellow-500" />
+                </span>
+              )}
+              {candidat.dejaPlanifie && (
+                <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce client">
+                  <History className="w-4 h-4 text-amber-500" />
+                </span>
+              )}
+              {candidat.dejaTravaille && (
+                <span className="p-1 rounded-full bg-muted" title="A déjà travaillé pour ce client">
+                  <ArrowDownCircle className="w-4 h-4 text-violet-600" />
+                </span>
+              )}
+            </div>
+          </div>
 
           {status === "planifie" && planification && (
             <div className="text-xs text-muted-foreground mt-1">
@@ -407,11 +403,11 @@ export function PlanificationCandidatDialog({
               Planifier un candidat • {secteur}
             </DialogTitle>
             <p className="text-sm text-muted-foreground">
-              {dateFormatee}
+              {format(new Date(date), "eeee d MMMM", { locale: fr })}
               {service && ` • ${service}`}
             </p>
           </DialogHeader>
-  
+
           <div className="flex gap-4 h-[500px]">
             <StatusColumn statusKey="dispo" candidats={dispos} />
             <StatusColumn statusKey="nonRenseigne" candidats={nonRenseignes} />
@@ -419,7 +415,7 @@ export function PlanificationCandidatDialog({
           </div>
         </DialogContent>
       </Dialog>
-  
+
       {selectedCandidatId && (
         <PlanificationCoupureDialog
           open={openCoupureDialog}
@@ -435,12 +431,12 @@ export function PlanificationCandidatDialog({
             candidats.find((c) => c.id === selectedCandidatId)?.prenom
           }
           onSuccess={() => {
-            onSuccess()
+            // pas de refresh lourd pour ne pas bouleverser la vue
             setOpenCoupureDialog(false)
             onClose()
           }}
         />
       )}
     </>
-  )  
+  )
 }

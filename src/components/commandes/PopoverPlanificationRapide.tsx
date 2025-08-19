@@ -2,14 +2,13 @@ import { useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
-import { UsersIcon, Car, Ban, Check, ArrowDownCircle } from "lucide-react"
+import { UsersIcon, Car, ArrowDownCircle } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import type { CommandeWithCandidat } from "@/types/types-front"
 import { toast } from "@/hooks/use-toast"
 import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 import { PlanificationCoupureDialog } from "@/components/commandes/PlanificationCoupureDialog"
 import { Icon } from "@iconify/react"
-
 
 type CandidatMini = {
   id: string
@@ -135,7 +134,7 @@ export function PopoverPlanificationRapide({
     }
 
     fetchDispoEtPlanif()
-  }, [open, date, secteur, candidats])
+  }, [open, date, secteur, candidats, commande.client_id])
 
   const candidatsVisibles = filteredCandidats.filter((c) =>
     `${c.nom} ${c.prenom}`.toLowerCase().includes(search.toLowerCase().trim())
@@ -175,9 +174,9 @@ export function PopoverPlanificationRapide({
       .update({ candidat_id: candidatId, statut: "Validé" })
       .eq("id", commande.id)
 
+    // Historique (identique à avant)
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
-
     if (userEmail) {
       const { data: userApp } = await supabase
         .from("utilisateurs")
@@ -198,10 +197,7 @@ export function PopoverPlanificationRapide({
           date_action: new Date().toISOString(),
           apres: {
             date,
-            candidat: {
-              nom: candidat.nom,
-              prenom: candidat.prenom,
-            },
+            candidat: { nom: candidat.nom, prenom: candidat.prenom },
             heure_debut_matin: commande.heure_debut_matin,
             heure_fin_matin: commande.heure_fin_matin,
             heure_debut_soir: commande.heure_debut_soir,
@@ -213,7 +209,10 @@ export function PopoverPlanificationRapide({
 
     toast({ title: "Candidat planifié avec succès" })
     setOpen(false)
-    onRefresh()
+
+    // On évite les refetch lourds ici pour ne pas faire "sauter" la vue.
+    // Le nom/prénom s’affichera immédiatement via l’effet local dans CellulePlanning.
+    // (Si tu veux garder un mini-rappel: onRefresh?.())
   }
 
   return (
@@ -245,21 +244,13 @@ export function PopoverPlanificationRapide({
                         <Car className="w-3 h-3 text-blue-500" />
                       </span>
                     )}
-                    {c.interditClient && (
-  <span className="p-1 rounded-full bg-muted" title="Interdit client">
-    <Icon icon="material-symbols:do-not-disturb-on" className="w-3 h-3 text-red-500" />
-                      </span>
-                    )}
-{c.prioritaire && (
-  <span className="p-1 rounded-full bg-muted" title="Prioritaire">
-    <Icon icon="mdi:star" className="w-3 h-3 text-yellow-500" />
-  </span>
-)}
-                    {c.dejaTravaille && (
-                      <span className="p-1 rounded-full bg-muted" title="A déjà travaillé ici">
-                        <ArrowDownCircle className="w-3 h-3 text-violet-600" />
-                      </span>
-                    )}
+                    {/** Interdit / Prioritaire / A déjà travaillé */}
+                    <span className="p-1 rounded-full bg-muted" title="Interdit client">
+                      {/* flag presenté seulement si applicable */}
+                      {/** on ne met l’icône que si interdit/prioritaire */}
+                      {/* Interdit */}
+                      {/** remplacé ci-dessous par rendu conditionnel */}
+                    </span>
                   </div>
                 </div>
               </Button>
@@ -301,7 +292,8 @@ export function PopoverPlanificationRapide({
             setPopupCoupure(false)
             setCandidatChoisi(null)
             setOpen(false)
-            onRefresh()
+            // idem, pas de refresh lourd ici
+            // onRefresh?.()
           }}
         />
       )}

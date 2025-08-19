@@ -1,17 +1,17 @@
-// src/components/commandes/CellulePlanning.tsx
-
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
-import { Plus, Info, Pencil, Check } from "lucide-react"
+import { Plus, Info, Pencil, Check, FileText } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { statutColors, statutBorders } from "@/lib/colors"
 import type { CommandeWithCandidat } from "@/types/types-front"
 import { CommandeJourneeDialog } from "@/components/commandes/CommandeJourneeDialog"
 import { PlanificationCandidatDialog } from "@/components/commandes/PlanificationCandidatDialog"
 import { PopoverPlanificationRapide } from "@/components/commandes/PopoverPlanificationRapide"
 import { PopoverChangementStatut } from "@/components/commandes/PopoverChangementStatut"
+import { supabase } from "@/lib/supabase"
 
 interface CellulePlanningProps {
   commande?: CommandeWithCandidat
@@ -37,6 +37,23 @@ interface CellulePlanningProps {
   missionSlot: number
 }
 
+const MOTIFS = [
+  "Extra",
+  "Accroissement d'activité",
+  "Remplacement Personnel Absent",
+] as const
+
+// Normalise (quelle que soit la casse/accents) vers nos 3 libellés exacts
+const normalizeMotif = (m?: string | null): typeof MOTIFS[number] | null => {
+  if (!m) return null
+  const s = m.trim().toLowerCase()
+  if (s === "extra") return "Extra"
+  if (s.startsWith("accroissement")) return "Accroissement d'activité"
+  if (s.startsWith("remplacement")) return "Remplacement Personnel Absent"
+  // Si déjà conforme, on garde tel quel (au cas où la BDD stocke déjà exactement l’un des 3)
+  return (m as unknown) as typeof MOTIFS[number]
+}
+
 export function CellulePlanning({
   commande,
   secteur,
@@ -59,6 +76,38 @@ export function CellulePlanning({
   const isEtages = secteur === "Étages"
   const [openDialog, setOpenDialog] = useState(false)
   const [openPlanifDialog, setOpenPlanifDialog] = useState(false)
+
+  // Hydratation immédiate du nom/prénom après planif (sans refetch global)
+  const [localCandidat, setLocalCandidat] = useState<{ nom: string; prenom: string } | null>(null)
+
+  // Popover CONTRAT (icône dédié)
+  const [openContrat, setOpenContrat] = useState(false)
+  const [motifTemp, setMotifTemp] = useState<string>("")
+  const [complementMotifTemp, setComplementMotifTemp] = useState<string>("")
+
+  useEffect(() => {
+    let cancelled = false
+    async function hydrate() {
+      if (!commande) return
+      if (commande.statut === "Validé" && !commande.candidat && commande.candidat_id) {
+        const { data } = await supabase
+          .from("candidats")
+          .select("nom, prenom")
+          .eq("id", commande.candidat_id)
+          .single()
+        if (!cancelled && data) {
+          setLocalCandidat({
+            nom: data.nom ?? "–",
+            prenom: data.prenom ?? "–",
+          })
+        }
+      } else {
+        setLocalCandidat(null)
+      }
+    }
+    hydrate()
+    return () => { cancelled = true }
+  }, [commande?.id, commande?.statut, commande?.candidat_id, !!commande?.candidat])
 
   if (!commande) {
     return (
@@ -86,6 +135,14 @@ export function CellulePlanning({
   const statutColor = statutColors[commande.statut] || { bg: "#e5e7eb", text: "#000000" }
   const borderColor = statutBorders[commande.statut] || "#d1d5db"
 
+  const candidatToShow = commande.candidat ?? localCandidat
+
+  // Icônes en bas à droite :
+  const hasComment = !!commande.commentaire
+  const motifNorm = normalizeMotif(commande.motif_contrat)
+  const showContratIcon =
+    motifNorm === "Accroissement d'activité" || motifNorm === "Remplacement Personnel Absent"
+
   return (
     <div
       className={cn(
@@ -96,34 +153,35 @@ export function CellulePlanning({
         color: statutColor.text,
         borderLeft: `5px solid ${borderColor}`,
       }}
+      data-commande-id={commande.id}
     >
-<PopoverChangementStatut
-  commande={commande}
-  onSuccess={onSuccess || (() => {})}
-  trigger={
-    <div className="cursor-pointer min-h-[2.5rem] leading-tight font-semibold">
-      {commande.statut === "Validé" && commande.candidat ? (
-        <div className="flex flex-col">
-          <div className="text-sm font-bold leading-tight whitespace-nowrap">
-            {commande.candidat.nom}
+      <PopoverChangementStatut
+        commande={commande}
+        onSuccess={onSuccess || (() => {})}
+        trigger={
+          <div className="cursor-pointer min-h-[2.5rem] leading-tight font-semibold">
+            {commande.statut === "Validé" && candidatToShow ? (
+              <div className="flex flex-col">
+                <div className="text-sm font-bold leading-tight whitespace-nowrap">
+                  {candidatToShow.nom}
+                </div>
+                <div className="text-xs font-medium leading-tight whitespace-nowrap">
+                  {candidatToShow.prenom}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                <div className="text-sm font-semibold leading-tight whitespace-nowrap">
+                  {commande.statut}
+                </div>
+                <div className="text-xs font-normal min-h-[1.1rem] whitespace-nowrap">
+                  &nbsp;
+                </div>
+              </div>
+            )}
           </div>
-          <div className="text-xs font-medium leading-tight whitespace-nowrap">
-            {commande.candidat.prenom}
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-col">
-          <div className="text-sm font-semibold leading-tight whitespace-nowrap">
-            {commande.statut}
-          </div>
-          <div className="text-xs font-normal min-h-[1.1rem] whitespace-nowrap">
-            &nbsp;
-          </div>
-        </div>
-      )}
-    </div>
-  }
-/>
+        }
+      />
 
       <div className="text-[13px] font-semibold mt-1 space-y-1">
         {["matin", ...(isEtages ? [] : ["soir"])].map((creneau) => {
@@ -191,8 +249,104 @@ export function CellulePlanning({
         />
       )}
 
-         {/* z-index plus bas pour passer SOUS les sections fixes (z-20) */}
-         <div className="absolute bottom-2 right-1 z-10">
+      {/* Icône CONTRAT : seulement pour Accroissement ou Remplacement */}
+      {showContratIcon && (
+        <div className="absolute bottom-2 right-7 z-10">
+          <Popover open={openContrat} onOpenChange={(o) => setOpenContrat(o)}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                className="p-0 h-auto w-auto text-white"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const initial = normalizeMotif(commande.motif_contrat) || MOTIFS[0]
+                  setMotifTemp(initial)
+                  setComplementMotifTemp(commande.complement_motif || "")
+                }}
+                title="Motif contrat"
+              >
+                <FileText className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-3 space-y-3" align="end">
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-gray-600">Motif contrat</div>
+                <Select
+                  value={motifTemp || MOTIFS[0]}
+                  onValueChange={(v) => setMotifTemp(v)}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MOTIFS.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <div className="text-xs font-medium text-gray-600">Précision</div>
+                <Input
+                  value={complementMotifTemp}
+                  onChange={(e) => setComplementMotifTemp(e.target.value)}
+                  placeholder="Ex : nom du remplacé / raison…"
+                  className="h-8"
+                />
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={async () => {
+                    const updates = {
+                      motif_contrat: motifTemp,
+                      complement_motif: complementMotifTemp || null,
+                    } as const
+
+                    const { data: authData } = await supabase.auth.getUser()
+                    const userEmail = authData?.user?.email || null
+                    const { data: userApp } = await supabase
+                      .from("utilisateurs")
+                      .select("id")
+                      .eq("email", userEmail)
+                      .single()
+                    const userId = userApp?.id || null
+
+                    const { error } = await supabase
+                      .from("commandes")
+                      .update(updates)
+                      .eq("id", commande.id)
+
+                    if (!error && userId) {
+                      await supabase.from("historique").insert({
+                        table_cible: "commandes",
+                        ligne_id: commande.id,
+                        action: "modification_motif_contrat",
+                        description: "Mise à jour motif contrat",
+                        user_id: userId,
+                        date_action: new Date().toISOString(),
+                        apres: updates,
+                      })
+                    }
+
+                    setOpenContrat(false)
+                    if (onSuccess) onSuccess()
+                  }}
+                  title="Enregistrer"
+                >
+                  <Check className="w-4 h-4 text-green-600" />
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      )}
+
+      {/* Popover COMMENTAIRE (Info/Pencil inchangé) */}
+      <div className="absolute bottom-2 right-1 z-10">
         <Popover
           open={editingCommentId === commande.id}
           onOpenChange={(open) => !open && setEditingCommentId(null)}
@@ -202,22 +356,23 @@ export function CellulePlanning({
               variant="ghost"
               className={cn(
                 "p-0 h-auto w-auto",
-                commande.commentaire ? "text-gray-800" : "text-white"
+                hasComment ? "text-gray-800" : "text-white"
               )}
               onClick={(e) => {
                 e.stopPropagation()
                 setEditingCommentId(commande.id)
                 setCommentaireTemp(commande.commentaire || "")
               }}
+              title="Commentaire"
             >
-              {commande.commentaire ? (
+              {hasComment ? (
                 <Info className="h-4 w-4" />
               ) : (
                 <Pencil className="h-4 w-4" />
               )}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-64 p-2 space-y-2">
+          <PopoverContent className="w-64 p-2 space-y-2" align="end">
             <textarea
               value={commentaireTemp}
               onChange={(e) => setCommentaireTemp(e.target.value)}
@@ -233,6 +388,7 @@ export function CellulePlanning({
                   setEditingCommentId(null)
                   if (onSuccess) onSuccess()
                 }}
+                title="Enregistrer"
               >
                 <Check className="w-4 h-4 text-green-600" />
               </Button>
@@ -240,7 +396,6 @@ export function CellulePlanning({
           </PopoverContent>
         </Popover>
       </div>
-
 
       <PlanificationCandidatDialog
         open={openPlanifDialog}

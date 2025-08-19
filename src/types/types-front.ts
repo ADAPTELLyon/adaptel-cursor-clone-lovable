@@ -94,12 +94,15 @@ export type Commande = {
   created_at: string;
   updated_at?: string; // ← optionnel
   mission_slot: number;
+  motif_contrat?: string | null;
+  complement_motif?: string | null;
 };
 
 export type CommandeWithCandidat = Commande & {
   candidat?: Pick<Candidat, "nom" | "prenom"> | null;
   client?: Pick<Client, "nom"> | null;
   motif_contrat?: string | null;
+  complement_motif?: string | null; 
 };
 
 export type CommandeFull = Commande & {
