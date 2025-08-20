@@ -50,6 +50,11 @@ type CandidatMini = {
   dejaTravaille?: boolean
 }
 
+function normalizeStatut(s?: string | null) {
+  if (!s) return ""
+  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim()
+}
+
 interface PlanificationCandidatDialogProps {
   open: boolean
   onClose: () => void
@@ -83,41 +88,47 @@ export function PlanificationCandidatDialog({
     const fetchDispoEtPlanif = async () => {
       const jour = date.slice(0, 10)
 
+      // Interdictions / priorités
       const { data: ipData } = await supabase
         .from("interdictions_priorites")
         .select("candidat_id, type")
         .eq("client_id", commande.client_id)
 
-      const interditSet = new Set(
-        ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id)
-      )
-      const prioritaireSet = new Set(
-        ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id)
-      )
+      const interditSet = new Set(ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id))
+      const prioritaireSet = new Set(ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id))
 
+      // Déjà travaillé
       const { data: dejaData } = await supabase
         .from("commandes")
         .select("candidat_id")
         .eq("client_id", commande.client_id)
 
-      const dejaTravailleSet = new Set(
-        (dejaData || []).map((c) => c.candidat_id).filter(Boolean)
-      )
+      const dejaTravailleSet = new Set((dejaData || []).map((c) => c.candidat_id).filter(Boolean))
 
       const candidatIds = candidats.map((c) => c.id)
 
+      // Disponibilités (avec flags par créneau)
       const { data: dispoData } = await supabase
         .from("disponibilites")
-        .select("candidat_id, statut")
+        .select("candidat_id, statut, dispo_matin, dispo_soir")
         .eq("secteur", secteur)
         .eq("date", jour)
         .in("candidat_id", candidatIds)
 
-      const dispoMap = new Map<string, string>()
-      for (const d of dispoData || []) {
-        dispoMap.set(d.candidat_id, d.statut)
-      }
+      type DispoRow = { candidat_id: string; statut: string | null; dispo_matin: boolean | null; dispo_soir: boolean | null }
+      const dispoMap = new Map<string, DispoRow>()
+      ;(dispoData || []).forEach((d: any) => dispoMap.set(d.candidat_id, d as DispoRow))
 
+      // Occupations via COMMANDES (source principale) — seulement Validé
+      const { data: cmdData } = await supabase
+        .from("commandes")
+        .select("candidat_id, statut, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+        .eq("secteur", secteur)
+        .eq("date", jour)
+        .in("candidat_id", candidatIds)
+        .in("statut", ["Validé"])
+
+      // Occupations via PLANIFICATION (compat)
       const { data: planifData } = await supabase
         .from("planification")
         .select("candidat_id, commande_id, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
@@ -125,14 +136,41 @@ export function PlanificationCandidatDialog({
         .eq("date", jour)
         .in("candidat_id", candidatIds)
 
+      // Agrégation des occupations + heures affichables
+      const occMap = new Map<string, { matin: boolean; soir: boolean }>()
       const detailsMap: Record<string, any> = {}
-      planifData?.forEach((p) => {
-        detailsMap[p.candidat_id] = p
+
+      const touch = (id: string, which: "matin" | "soir", hd?: string | null, hf?: string | null, prefer = false) => {
+        const prev = occMap.get(id) || { matin: false, soir: false }
+        prev[which] = true
+        occMap.set(id, prev)
+        const d = detailsMap[id] || {}
+        // on préfère les heures issues de commandes Validé si disponibles
+        if (which === "matin") {
+          if (prefer || !d.heure_debut_matin) {
+            d.heure_debut_matin = hd || null
+            d.heure_fin_matin = hf || null
+          }
+        } else {
+          if (prefer || !d.heure_debut_soir) {
+            d.heure_debut_soir = hd || null
+            d.heure_fin_soir = hf || null
+          }
+        }
+        detailsMap[id] = d
+      }
+
+      ;(cmdData || []).forEach((c: any) => {
+        if (c.heure_debut_matin && c.heure_fin_matin) touch(c.candidat_id, "matin", c.heure_debut_matin, c.heure_fin_matin, true)
+        if (c.heure_debut_soir && c.heure_fin_soir) touch(c.candidat_id, "soir", c.heure_debut_soir, c.heure_fin_soir, true)
+      })
+      ;(planifData || []).forEach((p: any) => {
+        if (p.heure_debut_matin && p.heure_fin_matin) touch(p.candidat_id, "matin", p.heure_debut_matin, p.heure_fin_matin)
+        if (p.heure_debut_soir && p.heure_fin_soir) touch(p.candidat_id, "soir", p.heure_debut_soir, p.heure_fin_soir)
       })
       setPlanificationDetails(detailsMap)
 
-      const planifieSet = new Set(planifData?.map((p) => p.candidat_id))
-      const isCoupure = commande.heure_debut_matin && commande.heure_fin_matin && commande.heure_debut_soir && commande.heure_fin_soir
+      const isCoupure = !!(commande.heure_debut_matin && commande.heure_fin_matin && commande.heure_debut_soir && commande.heure_fin_soir)
       const chercheMatin = !!commande.heure_debut_matin && !!commande.heure_fin_matin && !commande.heure_debut_soir
       const chercheSoir = !!commande.heure_debut_soir && !!commande.heure_fin_soir && !commande.heure_debut_matin
 
@@ -141,14 +179,27 @@ export function PlanificationCandidatDialog({
       const nonList: CandidatMini[] = []
 
       for (const c of candidats) {
-        const planif = detailsMap[c.id]
-        const statut = dispoMap.get(c.id)
+        const occ = occMap.get(c.id) || { matin: false, soir: false }
+        const dispoRow = dispoMap.get(c.id)
+        const statutNorm = normalizeStatut(dispoRow?.statut)
 
-        const excluMatin = chercheMatin && planif?.heure_debut_matin && planif?.heure_fin_matin
-        const excluSoir = chercheSoir && planif?.heure_debut_soir && planif?.heure_fin_soir
-        const excluCoupure = isCoupure && (planif?.heure_debut_matin || planif?.heure_debut_soir)
+        // Exclure seulement "Non Dispo"
+        if (statutNorm === "non dispo") continue
 
-        if (excluMatin || excluSoir || excluCoupure) continue
+        // Respect des flags créneau si présents
+        if (chercheMatin && dispoRow && dispoRow.dispo_matin === false) continue
+        if (chercheSoir && dispoRow && dispoRow.dispo_soir === false) continue
+        if (isCoupure && dispoRow && dispoRow.dispo_matin === false && dispoRow.dispo_soir === false) continue
+
+        // Conflits par besoin
+        if (isCoupure) {
+          // On exclut uniquement si les 2 créneaux sont occupés
+          if (occ.matin && occ.soir) continue
+        } else if (chercheMatin) {
+          if (occ.matin) continue
+        } else if (chercheSoir) {
+          if (occ.soir) continue
+        }
 
         const mini: CandidatMini = {
           id: c.id,
@@ -157,13 +208,13 @@ export function PlanificationCandidatDialog({
           vehicule: c.vehicule,
           interditClient: interditSet.has(c.id),
           prioritaire: prioritaireSet.has(c.id),
-          dejaPlanifie: planifieSet.has(c.id),
+          dejaPlanifie: (occ.matin || occ.soir),
           dejaTravaille: dejaTravailleSet.has(c.id),
         }
 
-        if (planifieSet.has(c.id)) planifieList.push(mini)
-        else if (statut === "Dispo") dispoList.push(mini)
-        else if (!dispoMap.has(c.id)) nonList.push(mini)
+        if (occ.matin || occ.soir) planifieList.push(mini)
+        else if (statutNorm === "dispo") dispoList.push(mini)
+        else nonList.push(mini) // "non renseigne" ou aucune ligne
       }
 
       setDispos(dispoList)
@@ -181,22 +232,37 @@ export function PlanificationCandidatDialog({
     const aMatin = !!(commande.heure_debut_matin && commande.heure_fin_matin)
     const aSoir = !!(commande.heure_debut_soir && commande.heure_fin_soir)
 
-    if (aMatin && aSoir) {
-      setSelectedCandidatId(candidatId)
-      setOpenCoupureDialog(true)
-      return
-    }
+    // Conflit via COMMANDES (Validé)
+    const { data: existingCmds } = await supabase
+      .from("commandes")
+      .select("heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+      .eq("candidat_id", candidatId)
+      .eq("date", jour)
+      .eq("secteur", secteur)
+      .eq("statut", "Validé")
 
+    // Conflit via PLANIFICATION (compat)
     const { data: existingPlanifs } = await supabase
       .from("planification")
       .select("heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
       .eq("candidat_id", candidatId)
       .eq("date", jour)
+      .eq("secteur", secteur)
 
-    const conflitMatin =
-      aMatin && existingPlanifs?.some((p) => p.heure_debut_matin && p.heure_fin_matin)
-    const conflitSoir =
-      aSoir && existingPlanifs?.some((p) => p.heure_debut_soir && p.heure_fin_soir)
+    const occMatin = (existingCmds?.some(p => p.heure_debut_matin && p.heure_fin_matin) ?? false) ||
+                     (existingPlanifs?.some(p => p.heure_debut_matin && p.heure_fin_matin) ?? false)
+
+    const occSoir  = (existingCmds?.some(p => p.heure_debut_soir && p.heure_fin_soir) ?? false) ||
+                     (existingPlanifs?.some(p => p.heure_debut_soir && p.heure_fin_soir) ?? false)
+
+    const conflitMatin = aMatin && occMatin
+    const conflitSoir  = aSoir && occSoir
+
+    if (aMatin && aSoir) {
+      setSelectedCandidatId(candidatId)
+      setOpenCoupureDialog(true)
+      return
+    }
 
     if (conflitMatin || conflitSoir) {
       toast({
@@ -210,7 +276,7 @@ export function PlanificationCandidatDialog({
     await supabase.from("planification").insert({
       commande_id: commande.id,
       candidat_id: candidatId,
-      date,
+      date: jour, // format AAAA-MM-JJ
       secteur,
       statut: "Validé",
       heure_debut_matin: commande.heure_debut_matin,
@@ -250,7 +316,7 @@ export function PlanificationCandidatDialog({
           user_id: userId,
           date_action: new Date().toISOString(),
           apres: {
-            date,
+            date: jour,
             candidat: {
               nom: candidat.nom,
               prenom: candidat.prenom,
@@ -266,8 +332,7 @@ export function PlanificationCandidatDialog({
 
     toast({ title: "Candidat planifié avec succès" })
     onClose()
-    // pas de onSuccess() / onRefresh() ici pour éviter le “saut” de vue.
-    // l’affichage Nom/Prénom sera instantané via la cellule.
+    // Pas de onSuccess() ici pour éviter l'effet "saut" ; la cellule se met à jour localement.
   }
 
   const dateFormatee = format(new Date(date), "eeee d MMMM", { locale: fr })
@@ -327,7 +392,11 @@ export function PlanificationCandidatDialog({
 
     return (
       <div
-        className={cn("flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer", "hover:bg-muted/50", status === "planifie" ? "cursor-default" : "")}
+        className={cn(
+          "flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer",
+          "hover:bg-muted/50",
+          status === "planifie" ? "cursor-default" : ""
+        )}
         onClick={() => status !== "planifie" && onSelect(candidat.id)}
       >
         <div className="flex-1">
@@ -352,7 +421,7 @@ export function PlanificationCandidatDialog({
                 </span>
               )}
               {candidat.dejaPlanifie && (
-                <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce client">
+                <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce jour">
                   <History className="w-4 h-4 text-amber-500" />
                 </span>
               )}
@@ -426,12 +495,11 @@ export function PlanificationCandidatDialog({
           commande={commande}
           candidatId={selectedCandidatId}
           candidatNomPrenom={
-            candidats.find((c) => c.id === selectedCandidatId)?.nom +
+            (candidats.find((c) => c.id === selectedCandidatId)?.nom || "") +
             " " +
-            candidats.find((c) => c.id === selectedCandidatId)?.prenom
+            (candidats.find((c) => c.id === selectedCandidatId)?.prenom || "")
           }
           onSuccess={() => {
-            // pas de refresh lourd pour ne pas bouleverser la vue
             setOpenCoupureDialog(false)
             onClose()
           }}

@@ -2,13 +2,12 @@ import { useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Button } from "@/components/ui/button"
-import { UsersIcon, Car, ArrowDownCircle } from "lucide-react"
+import { UsersIcon, Car } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import type { CommandeWithCandidat } from "@/types/types-front"
 import { toast } from "@/hooks/use-toast"
 import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 import { PlanificationCoupureDialog } from "@/components/commandes/PlanificationCoupureDialog"
-import { Icon } from "@iconify/react"
 
 type CandidatMini = {
   id: string
@@ -27,6 +26,15 @@ interface PopoverPlanificationRapideProps {
   onRefresh: () => void
   trigger: React.ReactNode
   onOpenListes: () => void
+}
+
+function normalizeStatut(s?: string | null) {
+  if (!s) return ""
+  return s
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim()
 }
 
 export function PopoverPlanificationRapide({
@@ -51,71 +59,111 @@ export function PopoverPlanificationRapide({
       const jour = date.slice(0, 10)
       const candidatIds = candidats.map((c) => c.id)
 
+      // 1) Disponibilités (avec drapeaux par créneau)
       const { data: dispoData } = await supabase
         .from("disponibilites")
-        .select("candidat_id, statut")
+        .select("candidat_id, statut, dispo_matin, dispo_soir")
         .eq("secteur", secteur)
         .eq("date", jour)
         .in("candidat_id", candidatIds)
 
-      const dispoMap = new Map<string, string>()
-      dispoData?.forEach((d) => dispoMap.set(d.candidat_id, d.statut))
+      type DispoRow = { candidat_id: string; statut: string | null; dispo_matin: boolean | null; dispo_soir: boolean | null }
+      const dispoMap = new Map<string, DispoRow>()
+      ;(dispoData || []).forEach((d: any) => dispoMap.set(d.candidat_id, d as DispoRow))
 
+      // 2) Occupations réelles via COMMANDES (source de vérité) – on ne retient que “Validé”
+      const { data: cmdData } = await supabase
+        .from("commandes")
+        .select("candidat_id, statut, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+        .eq("secteur", secteur)
+        .eq("date", jour)
+        .in("candidat_id", candidatIds)
+        .in("statut", ["Validé"])
+
+      // 3) Occupations via PLANIFICATION (compatibilité si certains flux y écrivent)
       const { data: planifData } = await supabase
         .from("planification")
-        .select("candidat_id, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+        .select("candidat_id, statut, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
         .eq("secteur", secteur)
         .eq("date", jour)
         .in("candidat_id", candidatIds)
 
+      // Fusion des occupations (matin/soir)
       const planifMap = new Map<string, { matin: boolean; soir: boolean }>()
-      planifData?.forEach((p) => {
-        planifMap.set(p.candidat_id, {
-          matin: !!p.heure_debut_matin && !!p.heure_fin_matin,
-          soir: !!p.heure_debut_soir && !!p.heure_fin_soir,
-        })
+      const touch = (id: string, which: "matin" | "soir") => {
+        const prev = planifMap.get(id) || { matin: false, soir: false }
+        prev[which] = true
+        planifMap.set(id, prev)
+      }
+
+      ;(cmdData || []).forEach((p: any) => {
+        if (p.heure_debut_matin && p.heure_fin_matin) touch(p.candidat_id, "matin")
+        if (p.heure_debut_soir && p.heure_fin_soir) touch(p.candidat_id, "soir")
+      })
+      ;(planifData || []).forEach((p: any) => {
+        // on ne dépend pas du statut ici : on se base sur la présence d’heures
+        if (p.heure_debut_matin && p.heure_fin_matin) touch(p.candidat_id, "matin")
+        if (p.heure_debut_soir && p.heure_fin_soir) touch(p.candidat_id, "soir")
       })
 
+      // Interdictions / Priorités (client-candidat)
       const { data: ipData } = await supabase
         .from("interdictions_priorites")
         .select("candidat_id, type")
         .eq("client_id", commande.client_id)
 
-      const interditSet = new Set(
-        ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id)
-      )
-      const prioritaireSet = new Set(
-        ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id)
-      )
+      const interditSet = new Set(ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id))
+      const prioritaireSet = new Set(ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id))
 
+      // A déjà travaillé pour ce client (historique commandes)
       const { data: dejaData } = await supabase
         .from("commandes")
         .select("candidat_id")
         .eq("client_id", commande.client_id)
 
-      const dejaTravailleSet = new Set(
-        (dejaData || []).map((c) => c.candidat_id).filter(Boolean)
-      )
+      const dejaTravailleSet = new Set((dejaData || []).map((c) => c.candidat_id).filter(Boolean))
 
-      const isCoupure = commande.heure_debut_matin && commande.heure_fin_matin && commande.heure_debut_soir && commande.heure_fin_soir
-      const chercheMatin = !!commande.heure_debut_matin && !!commande.heure_fin_matin && !commande.heure_debut_soir
-      const chercheSoir = !!commande.heure_debut_soir && !!commande.heure_fin_soir && !commande.heure_debut_matin
+      // Nature de la commande cible
+      const isCoupure =
+        !!commande.heure_debut_matin && !!commande.heure_fin_matin &&
+        !!commande.heure_debut_soir && !!commande.heure_fin_soir
+
+      const chercheMatin =
+        !!commande.heure_debut_matin && !!commande.heure_fin_matin && !commande.heure_debut_soir
+
+      const chercheSoir =
+        !!commande.heure_debut_soir && !!commande.heure_fin_soir && !commande.heure_debut_matin
 
       const resultats: CandidatMini[] = candidats
         .filter((c) => {
-          const planif = planifMap.get(c.id)
-          const dispo = dispoMap.get(c.id)
+          const occ = planifMap.get(c.id) || { matin: false, soir: false }
+          const dispoRow = dispoMap.get(c.id)
+          const statutNorm = normalizeStatut(dispoRow?.statut)
 
-          if (!planif && dispo !== "Dispo" && dispo !== undefined) return false
+          // 1) Statut jour : on EXCLUT seulement si "Non Dispo"
+          if (statutNorm === "non dispo") return false
+          // "dispo", "non renseigne" (ou aucune ligne) => autorisés
 
-          if (planif) {
-            if (isCoupure) {
-              if (planif.matin || planif.soir) return false
-            } else if (chercheMatin && planif.matin) {
-              return false
-            } else if (chercheSoir && planif.soir) {
-              return false
-            }
+          // 2) Respect des drapeaux créneau (si la ligne de dispo les précise)
+          //    Si on planifie le matin et que dispo_matin === false => exclu (idem pour le soir)
+          if (chercheMatin && dispoRow && dispoRow.dispo_matin === false) return false
+          if (chercheSoir && dispoRow && dispoRow.dispo_soir === false) return false
+          if (isCoupure && dispoRow) {
+            // si les deux drapeaux sont explicitement false => exclure
+            const dm = dispoRow.dispo_matin
+            const ds = dispoRow.dispo_soir
+            if (dm === false && ds === false) return false
+          }
+
+          // 3) Conflits créneaux existants
+          if (isCoupure) {
+            // Ancienne logique excluait si (matin || soir).
+            // Nouvelle logique : EXCLURE uniquement si les deux créneaux sont déjà pris.
+            if (occ.matin && occ.soir) return false
+          } else if (chercheMatin) {
+            if (occ.matin) return false
+          } else if (chercheSoir) {
+            if (occ.soir) return false
           }
 
           return true
@@ -141,8 +189,8 @@ export function PopoverPlanificationRapide({
   )
 
   const planifier = async (candidatId: string) => {
-    const matin = commande.heure_debut_matin && commande.heure_fin_matin
-    const soir = commande.heure_debut_soir && commande.heure_fin_soir
+    const matin = !!(commande.heure_debut_matin && commande.heure_fin_matin)
+    const soir = !!(commande.heure_debut_soir && commande.heure_fin_soir)
 
     if (matin && soir) {
       const candidat = filteredCandidats.find((c) => c.id === candidatId)
@@ -174,7 +222,7 @@ export function PopoverPlanificationRapide({
       .update({ candidat_id: candidatId, statut: "Validé" })
       .eq("id", commande.id)
 
-    // Historique (identique à avant)
+    // Historique (inchangé)
     const { data: authData } = await supabase.auth.getUser()
     const userEmail = authData?.user?.email || null
     if (userEmail) {
@@ -209,10 +257,8 @@ export function PopoverPlanificationRapide({
 
     toast({ title: "Candidat planifié avec succès" })
     setOpen(false)
-
-    // On évite les refetch lourds ici pour ne pas faire "sauter" la vue.
-    // Le nom/prénom s’affichera immédiatement via l’effet local dans CellulePlanning.
-    // (Si tu veux garder un mini-rappel: onRefresh?.())
+    // Pas de refetch lourd ici, on reste cohérent avec tes choix récents.
+    // onRefresh?.()
   }
 
   return (
@@ -244,13 +290,6 @@ export function PopoverPlanificationRapide({
                         <Car className="w-3 h-3 text-blue-500" />
                       </span>
                     )}
-                    {/** Interdit / Prioritaire / A déjà travaillé */}
-                    <span className="p-1 rounded-full bg-muted" title="Interdit client">
-                      {/* flag presenté seulement si applicable */}
-                      {/** on ne met l’icône que si interdit/prioritaire */}
-                      {/* Interdit */}
-                      {/** remplacé ci-dessous par rendu conditionnel */}
-                    </span>
                   </div>
                 </div>
               </Button>
@@ -258,7 +297,7 @@ export function PopoverPlanificationRapide({
 
             {candidatsVisibles.length === 0 && (
               <div className="text-xs text-gray-500 text-center">
-                {filteredCandidats.length === 0 ? "Chargement..." : "Aucun candidat trouvé"}
+                {filteredCandidats.length === 0 ? "Aucun candidat éligible" : "Aucun candidat trouvé"}
               </div>
             )}
           </div>
@@ -292,8 +331,6 @@ export function PopoverPlanificationRapide({
             setPopupCoupure(false)
             setCandidatChoisi(null)
             setOpen(false)
-            // idem, pas de refresh lourd ici
-            // onRefresh?.()
           }}
         />
       )}
