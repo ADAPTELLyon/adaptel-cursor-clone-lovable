@@ -21,6 +21,7 @@ interface Props {
   onSuccess: () => void
   candidatNomPrenom: string
   creneauVerrouille?: "matin" | "soir"
+  onSaved?: (d: { statut: "Dispo" | "Non Dispo" | "Non Renseigné"; matin: boolean; soir: boolean; commentaire?: string } | null) => void
 }
 
 export function CandidateJourneeDialog({
@@ -34,6 +35,7 @@ export function CandidateJourneeDialog({
   onSuccess,
   candidatNomPrenom,
   creneauVerrouille,
+  onSaved,
 }: Props) {
   const [statut, setStatut] = useState<"Dispo" | "Non Dispo" | "Non Renseigné">("Non Renseigné")
   const [matin, setMatin] = useState(false)
@@ -42,7 +44,8 @@ export function CandidateJourneeDialog({
 
   useEffect(() => {
     if (disponibilite) {
-      setStatut(disponibilite.statut || "Non Renseigné")
+      const s = (disponibilite.statut || "Non Renseigné") as "Dispo" | "Non Dispo" | "Non Renseigné"
+      setStatut(s)
       setMatin(disponibilite.matin ?? false)
       setSoir(disponibilite.soir ?? false)
       setCommentaire(disponibilite.commentaire || "")
@@ -56,16 +59,22 @@ export function CandidateJourneeDialog({
 
   useEffect(() => {
     if (statut === "Dispo" && !disponibilite) {
-      setMatin(creneauVerrouille === "matin" ? true : true)
-      setSoir(secteur !== "Étages" ? (creneauVerrouille === "soir" ? true : true) : false)
+      setMatin(true)
+      setSoir(secteur !== "Étages")
     }
-  }, [statut, secteur, disponibilite, creneauVerrouille])
+  }, [statut, secteur, disponibilite])
 
   const handleSave = async () => {
     if (!candidatId || !secteur || !date) {
       toast({ title: "Erreur", description: "Données manquantes", variant: "destructive" })
       return
     }
+
+    let finalMatin = creneauVerrouille === "matin" ? true : matin
+    let finalSoir = creneauVerrouille === "soir" ? true : soir
+    if (secteur === "Étages") finalSoir = false
+    if (statut === "Non Dispo") { finalMatin = false; finalSoir = false }
+    if (statut === "Dispo" && !finalMatin && !finalSoir) finalMatin = true
 
     const payload = {
       candidat_id: candidatId,
@@ -74,8 +83,8 @@ export function CandidateJourneeDialog({
       service: service || null,
       statut,
       commentaire: commentaire || null,
-      dispo_matin: creneauVerrouille === "matin" ? true : matin,
-      dispo_soir: creneauVerrouille === "soir" ? true : soir,
+      dispo_matin: finalMatin,
+      dispo_soir: finalSoir,
       dispo_nuit: false,
     }
 
@@ -83,19 +92,13 @@ export function CandidateJourneeDialog({
 
     if (statut === "Non Renseigné") {
       if (disponibilite?.id) {
-        const { error: err } = await supabase
-          .from("disponibilites")
-          .delete()
-          .eq("id", disponibilite.id)
+        const { error: err } = await supabase.from("disponibilites").delete().eq("id", disponibilite.id)
         error = err
         if (!error) toast({ title: "Disponibilité supprimée" })
       }
     } else {
       if (disponibilite?.id) {
-        const { error: err } = await supabase
-          .from("disponibilites")
-          .update(payload)
-          .eq("id", disponibilite.id)
+        const { error: err } = await supabase.from("disponibilites").update(payload).eq("id", disponibilite.id)
         error = err
       } else {
         const { error: err } = await supabase.from("disponibilites").insert([payload])
@@ -108,7 +111,11 @@ export function CandidateJourneeDialog({
       console.error("Erreur Supabase:", error)
       toast({ title: "Erreur", description: "Échec enregistrement", variant: "destructive" })
     } else {
-      onSuccess()
+      try {
+        window.dispatchEvent(new CustomEvent("adaptel:refresh-planning-candidat", { detail: { candidatId, date, secteur } }))
+      } catch {}
+      onSaved?.(statut === "Non Renseigné" ? null : { statut, matin: finalMatin, soir: finalSoir, commentaire: commentaire || undefined })
+      onSuccess?.()
       onClose()
     }
   }
@@ -119,20 +126,17 @@ export function CandidateJourneeDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>
-            Disponibilité – {candidatNomPrenom} – {dateAffichee}
-          </DialogTitle>
+          <DialogTitle>Disponibilité – {candidatNomPrenom} – {dateAffichee}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6 pt-2">
-          {/* Statut */}
           <div className="space-y-2">
             <Label className="text-sm font-medium">Statut</Label>
             <div className="grid grid-cols-3 gap-2">
               {["Dispo", "Non Dispo", "Non Renseigné"].map((val) => (
                 <Button
                   key={val}
-                  variant={statut === val ? "default" : "outline"}
+                  variant={statut === (val as any) ? "default" : "outline"}
                   onClick={() => setStatut(val as any)}
                   className="w-full py-2 text-sm"
                 >
@@ -142,10 +146,8 @@ export function CandidateJourneeDialog({
             </div>
           </div>
 
-          {/* Créneaux */}
           {statut === "Dispo" && (
             <div className="flex gap-6 items-center">
-              {/* Matin */}
               <div className="flex items-center gap-2">
                 <Switch
                   checked={creneauVerrouille === "matin" ? true : matin}
@@ -154,13 +156,10 @@ export function CandidateJourneeDialog({
                 />
                 <span className="text-sm">
                   Matin / Midi
-                  {creneauVerrouille === "matin" && (
-                    <span className="text-xs italic text-gray-500 ml-2">En mission</span>
-                  )}
+                  {creneauVerrouille === "matin" && <span className="text-xs italic text-gray-500 ml-2">En mission</span>}
                 </span>
               </div>
 
-              {/* Soir */}
               {secteur !== "Étages" && (
                 <div className="flex items-center gap-2">
                   <Switch
@@ -170,30 +169,20 @@ export function CandidateJourneeDialog({
                   />
                   <span className="text-sm">
                     Soir
-                    {creneauVerrouille === "soir" && (
-                      <span className="text-xs italic text-gray-500 ml-2">En mission</span>
-                    )}
+                    {creneauVerrouille === "soir" && <span className="text-xs italic text-gray-500 ml-2">En mission</span>}
                   </span>
                 </div>
               )}
             </div>
           )}
 
-          {/* Commentaire */}
           <div className="space-y-1">
             <Label>Commentaire</Label>
-            <Textarea
-              value={commentaire || ""}
-              onChange={(e) => setCommentaire(e.target.value)}
-              placeholder="Commentaire (optionnel)"
-            />
+            <Textarea value={commentaire || ""} onChange={(e) => setCommentaire(e.target.value)} placeholder="Commentaire (optionnel)" />
           </div>
 
-          {/* Bouton Enregistrer */}
           <div className="pt-4 flex justify-end">
-            <Button onClick={handleSave} className="bg-[#840404] text-white hover:bg-[#750303]">
-              Enregistrer
-            </Button>
+            <Button onClick={handleSave} className="bg-[#840404] text-white hover:bg-[#750303]">Enregistrer</Button>
           </div>
         </div>
       </DialogContent>

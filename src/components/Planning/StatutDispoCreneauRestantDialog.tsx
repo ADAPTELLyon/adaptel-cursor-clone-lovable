@@ -19,6 +19,7 @@ interface Props {
   onSuccess: () => void
   candidatNomPrenom: string
   commentaireActuel?: string
+  onSaved?: (d: { statut: "Dispo" | "Non Dispo" | "Non Renseigné"; matin: boolean | null; soir: boolean | null; commentaire?: string } | null) => void
 }
 
 export function StatutDispoCreneauRestantDialog({
@@ -33,35 +34,39 @@ export function StatutDispoCreneauRestantDialog({
   onSuccess,
   candidatNomPrenom,
   commentaireActuel = "",
+  onSaved,
 }: Props) {
-  const [statut, setStatut] = useState<"Dispo" | "Non Dispo" | "Non renseigné">("Non renseigné")
+  const [statut, setStatut] = useState<"Dispo" | "Non Dispo" | "Non Renseigné">("Non Renseigné")
   const [commentaire, setCommentaire] = useState(commentaireActuel || "")
 
   useEffect(() => {
     const s = (disponibilite?.statut || "").toLowerCase()
     if (s === "dispo") setStatut("Dispo")
     else if (s === "non dispo") setStatut("Non Dispo")
-    else setStatut("Non renseigné")
+    else setStatut("Non Renseigné")
     setCommentaire(disponibilite?.commentaire || "")
   }, [disponibilite, open])
 
   const handleSave = async () => {
-    const isMatin = creneau === "matin"
-    const dispo_matin = isMatin
-      ? statut === "Dispo"
-        ? true
-        : statut === "Non Dispo"
-        ? false
-        : null
-      : disponibilite?.matin ?? null
+    let dispo_matin: boolean | null
+    let dispo_soir: boolean | null
 
-    const dispo_soir = !isMatin
-      ? statut === "Dispo"
-        ? true
-        : statut === "Non Dispo"
-        ? false
-        : null
-      : disponibilite?.soir ?? null
+    if (statut === "Non Dispo") {
+      dispo_matin = false
+      dispo_soir = false
+    } else if (statut === "Dispo") {
+      const isMatin = creneau === "matin"
+      dispo_matin = isMatin ? true : (disponibilite?.matin ?? null)
+      dispo_soir = !isMatin ? true : (disponibilite?.soir ?? null)
+      if ((dispo_matin === null || dispo_matin === false) && (dispo_soir === null || dispo_soir === false)) {
+        if (isMatin) dispo_matin = true
+        else dispo_soir = true
+      }
+    } else {
+      const isMatin = creneau === "matin"
+      dispo_matin = isMatin ? null : (disponibilite?.matin ?? null)
+      dispo_soir = !isMatin ? null : (disponibilite?.soir ?? null)
+    }
 
     const payload = {
       candidat_id: candidatId,
@@ -78,8 +83,7 @@ export function StatutDispoCreneauRestantDialog({
     const table = supabase.from("disponibilites")
     let error = null
 
-    // Suppression si plus aucune dispo définie et statut = Non renseigné
-    const tousVides = statut === "Non renseigné" && dispo_matin === null && dispo_soir === null
+    const tousVides = (statut === "Non Renseigné") && (dispo_matin === null) && (dispo_soir === null)
     if (tousVides && disponibilite?.id) {
       const { error: err } = await table.delete().eq("id", disponibilite.id)
       error = err
@@ -99,7 +103,11 @@ export function StatutDispoCreneauRestantDialog({
       console.error("Erreur Supabase:", error)
       toast({ title: "Erreur", description: "Échec enregistrement", variant: "destructive" })
     } else {
-      onSuccess()
+      try {
+        window.dispatchEvent(new CustomEvent("adaptel:refresh-planning-candidat", { detail: { candidatId, date, secteur } }))
+      } catch {}
+      onSaved?.(statut === "Non Renseigné" ? null : { statut, matin: dispo_matin, soir: dispo_soir, commentaire: commentaire || undefined })
+      onSuccess?.()
       onClose()
     }
   }
@@ -117,7 +125,7 @@ export function StatutDispoCreneauRestantDialog({
 
         <div className="space-y-6 pt-2">
           <div className="grid grid-cols-3 gap-2">
-            {["Dispo", "Non Dispo", "Non renseigné"].map((val) => (
+            {["Dispo", "Non Dispo", "Non Renseigné"].map((val) => (
               <Button
                 key={val}
                 variant={statut === val ? "default" : "outline"}

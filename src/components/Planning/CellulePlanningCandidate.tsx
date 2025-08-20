@@ -50,19 +50,16 @@ export function CellulePlanningCandidate({
   })
 
   const isPlanifie = commande?.statut === "Validé"
-
-  // Statuts d'annexe (annulations/absence)
   const statutAnnexe = ["Annule Int", "Absence", "Annule Client", "Annule ADA"].includes(commande?.statut || "")
 
-  // Normalisation du statut de dispo pour éviter les incohérences "Non renseigné" vs "Non Renseigné"
+  // Dispo normalisée
   const statutDispo = normalizeStatutDispo(disponibilite?.statut)
   const dispoMatin = disponibilite?.matin ?? null
   const dispoSoir = disponibilite?.soir ?? null
   const isDispo = statutDispo === "Dispo" && (dispoMatin === true || dispoSoir === true)
   const isNonDispo = statutDispo === "Non Dispo"
 
-  // 🔧 Règle visuelle : si une dispo explicite existe (Dispo ou Non Dispo), elle PREND LE DESSUS.
-  // On n'applique les styles "Annule ..." que si la dispo est Non Renseigné.
+  // On n'affiche les annexes "au-dessus" de la dispo que si la dispo est Non Renseigné
   const annexeActive = statutAnnexe && statutDispo === "Non Renseigné"
 
   const couleur = isPlanifie && !annexeActive
@@ -71,9 +68,10 @@ export function CellulePlanningCandidate({
     ? (statutColors[commande!.statut!] ?? { bg: "#e5e7eb", text: "#000000" })
     : (disponibiliteColors[statutDispo] ?? { bg: "#e5e7eb", text: "#000000" })
 
-  const leftBorderColor = statutBorders[
-    (annexeActive ? (commande?.statut || "") : (isPlanifie ? commande?.statut || "" : statutDispo))
-  ] || "transparent"
+  const leftBorderColor =
+    (annexeActive ? (statutBorders[commande?.statut || ""] || "transparent")
+      : (isPlanifie ? (statutBorders[commande?.statut || ""] || "transparent")
+        : (statutBorders[statutDispo] || "transparent")))
 
   const openPopup = (creneau?: "matin" | "soir") => {
     setCreneauVerrouille(creneau)
@@ -81,8 +79,8 @@ export function CellulePlanningCandidate({
   }
 
   const handleClick = () => {
-    // On ouvre le popup de dispo seulement si pas mission validée ET pas d'annexe prioritaire
-    if (!isPlanifie && !annexeActive) {
+    // Autoriser le clic si PAS planifié (même si statut annexe)
+    if (!isPlanifie) {
       openPopup()
     }
   }
@@ -96,17 +94,18 @@ export function CellulePlanningCandidate({
   const isPlanifieMatin = !!commande?.heure_debut_matin && !!commande?.heure_fin_matin && commande?.statut === "Validé"
   const isPlanifieSoir = !!commande?.heure_debut_soir && !!commande?.heure_fin_soir && commande?.statut === "Validé"
 
-  const hasAutreCommandeMatin = autresCommandes?.some(
-    (cmd) => cmd.statut === "Validé" && !!cmd.heure_debut_matin && !!cmd.heure_fin_matin
-  )
-  const hasAutreCommandeSoir = autresCommandes?.some(
-    (cmd) => cmd.statut === "Validé" && !!cmd.heure_debut_soir && !!cmd.heure_fin_soir
-  )
+  // y a-t-il une autre commande (secondaire) le soir ?
+  const hasSecondarySoir =
+    (autresCommandes?.some((cmd) => !!cmd.heure_debut_soir && !!cmd.heure_fin_soir)) || false
 
-  const isDoublePlanifieDeuxClients = isPlanifieMatin && isPlanifieSoir && hasAutreCommandeSoir
+  const hasAutreCommandeMatin =
+    autresCommandes?.some((cmd) => !!cmd.heure_debut_matin && !!cmd.heure_fin_matin) || false
+
+  // Si une autre commande couvre le soir, on NE doit PAS montrer la ligne "Soir" (même sous forme de dispo)
+  const hideSoirRow = hasSecondarySoir
 
   const showDispoRestantMatin = isPlanifieSoir && !isPlanifieMatin && !hasAutreCommandeMatin
-  const showDispoRestantSoir = isPlanifieMatin && !isPlanifieSoir && !hasAutreCommandeSoir
+  const showDispoRestantSoir = !hideSoirRow && isPlanifieMatin && !isPlanifieSoir
 
   return (
     <>
@@ -123,9 +122,10 @@ export function CellulePlanningCandidate({
             }}
             onClick={handleClick}
           >
+            {/* En-tête */}
             <div className="font-semibold text-[13px] leading-tight min-h-[1.2rem]">
               {isPlanifie && !annexeActive
-                ? (commande?.client?.nom || "Mission validée")
+                ? (commande?.client?.nom || "")
                 : annexeActive
                 ? (commande?.statut || "")
                 : isNonDispo
@@ -135,10 +135,12 @@ export function CellulePlanningCandidate({
                 : ""}
             </div>
 
+            {/* Client en italique pour les annexes */}
             <div className="text-xs font-normal italic min-h-[1rem]">
               {annexeActive && commande?.client?.nom ? commande.client.nom : ""}
             </div>
 
+            {/* Créneau Matin */}
             <div className="text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center">
               {annexeActive ? null : isPlanifieMatin ? (
                 `${commande!.heure_debut_matin!.slice(0, 5)} - ${commande!.heure_fin_matin!.slice(0, 5)}`
@@ -160,7 +162,8 @@ export function CellulePlanningCandidate({
               ) : null}
             </div>
 
-            {secteur !== "Étages" && !isDoublePlanifieDeuxClients && (
+            {/* Créneau Soir (masqué s'il existe une planif soir en secondaire) */}
+            {secteur !== "Étages" && !hideSoirRow && (
               <div className="text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center">
                 {annexeActive ? null : isPlanifieSoir ? (
                   `${commande!.heure_debut_soir!.slice(0, 5)} - ${commande!.heure_fin_soir!.slice(0, 5)}`
@@ -177,12 +180,13 @@ export function CellulePlanningCandidate({
                       {renderIcon(dispoSoir)}
                     </span>
                   </>
-                ) : (statutDispo === "Dispo" && dispoSoir && !isPlanifieSoir && !hasAutreCommandeSoir) ? (
+                ) : (statutDispo === "Dispo" && dispoSoir && !isPlanifieSoir && !hasSecondarySoir) ? (
                   "Soir"
                 ) : null}
               </div>
             )}
 
+            {/* Commentaire */}
             {disponibilite?.commentaire && (
               <div
                 className="absolute bottom-1 right-1 z-20"
@@ -212,7 +216,7 @@ export function CellulePlanningCandidate({
                         onClick={() => {
                           toast({ title: "Commentaire mis à jour" })
                           setEditingComment(false)
-                          onSuccess() // déclenche refetch parent
+                          onSuccess()
                         }}
                       >
                         <Check className="w-4 h-4 text-green-600" />
@@ -223,6 +227,7 @@ export function CellulePlanningCandidate({
               </div>
             )}
 
+            {/* “+” quand vide */}
             {!commande && !disponibilite && (
               <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
                 <Plus className="w-4 h-4 text-gray-400" />

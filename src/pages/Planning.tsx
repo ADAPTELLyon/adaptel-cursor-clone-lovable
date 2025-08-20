@@ -398,6 +398,10 @@ export default function Planning() {
         ...((dispoData ?? []).map((d) => d.candidat_id) as string[]),
       ])
 
+      // utilitaire timestamp
+      const ts = (x?: { updated_at?: string | null; created_at?: string | null } | null) =>
+        (x?.updated_at ? Date.parse(x.updated_at) : 0) || (x?.created_at ? Date.parse(x.created_at!) : 0) || 0
+
       for (const candId of candidatsSet) {
         const label = nameCache[candId] ?? "Candidat inconnu"
         const jours: Record<string, JourPlanningCandidat> = {}
@@ -412,21 +416,14 @@ export default function Planning() {
 
         for (const dt of dates) {
           const cs = commandesCandidat.filter((c) => c.date === dt)
+
+          const valides = cs.filter((c) => c.statut === "Validé")
+          const annexes = cs.filter((c) =>
+            ["Annule Int", "Annule Client", "Annule ADA", "Absence"].includes(c.statut || "")
+          )
+
+          // disponibilité brute du jour (si existante)
           const dispoJour = dispoCandidat.find((d) => d.date === dt)
-
-          // Construire la principale + secondaires
-          let principale: CommandeFull | undefined
-          const secondaires: CommandeFull[] = []
-
-          cs.forEach((c) => {
-            const cFull: CommandeFull = buildCommandeFull(c)
-            if (!principale) {
-              principale = cFull
-            } else if (principale.client?.nom && cFull.client?.nom && principale.client.nom !== cFull.client.nom) {
-              secondaires.push(cFull)
-            }
-          })
-
           const dispoFull = dispoJour
             ? buildDispoFull({
                 id: dispoJour.id,
@@ -447,21 +444,63 @@ export default function Planning() {
               })
             : undefined
 
+          let principale: CommandeFull | undefined
+          let secondaires: CommandeFull[] = []
+          let secteur = dispoJour?.secteur || "Inconnu"
+          let service = (dispoJour?.service ?? null) as string | null
+
+          if (valides.length > 0) {
+            // ——— CAS 1 : on a au moins une planif Validé -> priorité absolue
+            // repérer matin & soir
+            const missionMatin = valides.find((c) => !!c.heure_debut_matin && !!c.heure_fin_matin)
+            const missionSoir  = valides.find((c) => !!c.heure_debut_soir  && !!c.heure_fin_soir)
+
+            if (missionMatin) {
+              principale = buildCommandeFull(missionMatin)
+              secteur = principale.secteur
+              service = (principale.service ?? service) ?? null
+              if (missionSoir) {
+                const soirFull = buildCommandeFull(missionSoir)
+                // alerte uniquement si clients différents
+                if (principale.client?.nom && soirFull.client?.nom && principale.client.nom !== soirFull.client.nom) {
+                  secondaires.push(soirFull)
+                }
+              }
+            } else if (missionSoir) {
+              // seulement le soir en validé
+              principale = buildCommandeFull(missionSoir)
+              secteur = principale.secteur
+              service = (principale.service ?? service) ?? null
+            } else {
+              // Validé sans heures (cas rarissime) -> on prend le + récent
+              const lastValide = [...valides].sort((a, b) => ts(b) - ts(a))[0]
+              principale = buildCommandeFull(lastValide)
+              secteur = principale.secteur
+              service = (principale.service ?? service) ?? null
+            }
+          } else {
+            // ——— CAS 2 : aucune planif Validé —> arbitrage Annexe vs Dispo au timestamp
+            const lastAnnexe = annexes.length > 0 ? [...annexes].sort((a, b) => ts(b) - ts(a))[0] : null
+
+            if (lastAnnexe && (!dispoFull || ts(lastAnnexe) >= ts(dispoFull))) {
+              // on affiche l’annexe (libellé + client en italique côté cellule)
+              principale = buildCommandeFull(lastAnnexe)
+              secteur = principale.secteur
+              service = (principale.service ?? service) ?? null
+            } else {
+              // sinon on n’affiche pas de commande, on laisse la dispo (ou rien si aucune info)
+              principale = undefined
+            }
+          }
+
           const semaine = getWeek(parseISO(dt), { weekStartsOn: 1 }).toString()
           semaines.add(semaine)
-
-          const isAnnexe =
-            !!principale &&
-            ["Annule Int", "Absence", "Annule Client", "Annule ADA"].includes(principale.statut)
-
-          const secteur = dispoJour?.secteur || principale?.secteur || "Inconnu"
-          const service = (dispoJour?.service ?? principale?.service) ?? null
 
           jours[dt] = {
             date: dt,
             secteur,
             service,
-            commande: principale && principale.statut === "Validé" ? principale : (isAnnexe ? principale : undefined),
+            commande: principale,
             autresCommandes: secondaires,
             disponibilite: dispoFull,
           }
@@ -497,8 +536,8 @@ export default function Planning() {
     }
   }, [
     applyFilters,
-    buildCommandeFull,
     buildDispoFull,
+    buildCommandeFull,
     selectedSecteurs,
     selectedSemaine,
     candidat,

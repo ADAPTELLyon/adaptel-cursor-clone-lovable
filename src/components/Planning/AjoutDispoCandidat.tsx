@@ -1,5 +1,5 @@
 // AjoutDispoCandidat.tsx
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 import {
   Dialog,
@@ -18,6 +18,16 @@ import { toast } from "@/hooks/use-toast"
 import DispoSemainePanel from "@/components/Planning/DispoSemainePanel"
 import { PieChart, Users, CalendarDays, MessageSquareText } from "lucide-react"
 
+type DispoState = Record<
+  string,
+  { statut: "dispo" | "absence" | "non"; matin: boolean; soir: boolean }
+>
+
+type JourPlanMap = Record<
+  string,
+  { client: string; horaire: string; statut?: string }[]
+>
+
 export default function AjoutDispoCandidat({
   open,
   onOpenChange,
@@ -32,21 +42,17 @@ export default function AjoutDispoCandidat({
   const [commentaire, setCommentaire] = useState("")
   const [search, setSearch] = useState("")
   const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
-  const [semaine, setSemaine] = useState(getWeek(lundi).toString())  
+  const [semaine, setSemaine] = useState(getWeek(lundi).toString())
   const [semainesDisponibles, setSemainesDisponibles] = useState<
     { value: string; label: string; startDate: Date }[]
   >([])
-  const [dispos, setDispos] = useState<
-    Record<string, { statut: "dispo" | "absence" | "non"; matin: boolean; soir: boolean }>
-  >({})
-  const [planningMap, setPlanningMap] = useState<
-  Record<string, { client: string; horaire: string; statut?: string }[]>
->({})
-  const [allMatin, setAllMatin] = useState(true)
-  const [allSoir, setAllSoir] = useState(true)
+  const [dispos, setDispos] = useState<DispoState>({})
+  const [planningMap, setPlanningMap] = useState<JourPlanMap>({})
+  const [existantesIndex, setExistantesIndex] = useState<Record<string, string>>({})
 
   const { data: candidatsSecteur = [] } = useCandidatsBySecteur(secteur)
 
+  // --- Génération des semaines sélectionnables
   useEffect(() => {
     const semaines: { value: string; label: string; startDate: Date }[] = []
     const today = new Date()
@@ -60,147 +66,203 @@ export default function AjoutDispoCandidat({
       })} au ${format(addDays(monday, 6), "dd MMM", { locale: fr })}`
       semaines.push({ value, label, startDate: monday })
     }
-
     setSemainesDisponibles(semaines)
   }, [])
 
-  const semaineObj = semainesDisponibles.find((s) => s.value === semaine)
-  const joursSemaine = semaineObj
-    ? Array.from({ length: 7 }, (_, i) => {
-        const date = addDays(semaineObj.startDate, i)
-        const now = new Date()
-        const key = format(date, "yyyy-MM-dd")
-        const isPast = date < startOfWeek(now, { weekStartsOn: 1 }) || key < format(now, "yyyy-MM-dd")
-        return {
-          key,
-          jour: format(date, "EEEE d MMM", { locale: fr }),
-          isPast,
-          planifies: planningMap[key] || [],
-        }
-      })
-    : []
+  const semaineObj = useMemo(
+    () => semainesDisponibles.find((s) => s.value === semaine),
+    [semainesDisponibles, semaine]
+  )
 
+  const joursSemaine = useMemo(() => {
+    if (!semaineObj) return []
+    const base = semaineObj.startDate
+    const now = new Date()
+    const nowKey = format(now, "yyyy-MM-dd")
+
+    return Array.from({ length: 7 }, (_, i) => {
+      const date = addDays(base, i)
+      const key = format(date, "yyyy-MM-dd")
+      const isPast =
+        date < startOfWeek(now, { weekStartsOn: 1 }) || key < nowKey
+      return {
+        key,
+        jour: format(date, "EEEE d MMM", { locale: fr }),
+        isPast,
+        planifies: planningMap[key] || [],
+      }
+    })
+  }, [semaineObj, planningMap])
+
+  // --- Reset complet à la fermeture du modal (y compris le champ de recherche)
   useEffect(() => {
     if (!open) {
       setSecteur("")
       setCandidat(null)
       setDispos({})
       setCommentaire("")
-      setAllMatin(true)
-      setAllSoir(true)
+      setSearch("")
       setPlanningMap({})
+      setExistantesIndex({})
     }
   }, [open])
 
+  // --- Chargement des dispos + commandes (pour la semaine)
   useEffect(() => {
     const fetchDispoAndPlanning = async () => {
-      if (!candidat || !secteur || !semaineObj) return
-      const dates = joursSemaine.map((j) => j.key)
+      if (!open || !candidat || !secteur || !semaineObj) return
+      const dates = Array.from({ length: 7 }, (_, i) =>
+        format(addDays(semaineObj.startDate, i), "yyyy-MM-dd")
+      )
 
       const [disposRes, planningRes] = await Promise.all([
         supabase
           .from("disponibilites")
-          .select("date, statut, dispo_matin, dispo_soir, updated_at")
+          .select("id, date, statut, dispo_matin, dispo_soir, updated_at")
           .eq("candidat_id", candidat.id)
           .eq("secteur", secteur)
           .in("date", dates),
         supabase
           .from("commandes")
-          .select("id, date, statut, updated_at, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, client:client_id(nom)")
+          .select(
+            "id, date, statut, updated_at, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, client:client_id(nom)"
+          )
           .eq("candidat_id", candidat.id)
           .eq("secteur", secteur)
           .in("date", dates),
+      ])
 
-      ])      
+      if (disposRes.error || planningRes.error) {
+        console.error("Erreur chargement dispos/commandes", {
+          dispoErr: disposRes.error,
+          cmdErr: planningRes.error,
+        })
+        return
+      }
 
-      if (disposRes.error || planningRes.error) return
+      // Index des dispos existantes => pour update/delete rapide
+      const existIndex: Record<string, string> = {}
+      const dispoMap: DispoState = {}
 
-      const dispoMap: typeof dispos = {}
-      for (const ligne of disposRes.data) {
-        dispoMap[ligne.date] = {
-          statut: ligne.statut === "Dispo" ? "dispo" : "absence",
-          matin: ligne.dispo_matin,
-          soir: ligne.dispo_soir,
+      for (const d of disposRes.data || []) {
+        existIndex[d.date] = d.id
+        let s: "dispo" | "absence" | "non" = "non"
+        if ((d.statut || "").toLowerCase() === "dispo") s = "dispo"
+        else if ((d.statut || "").toLowerCase() === "non dispo") s = "absence"
+        // si s === "non" on garde quand même les flags pour édition locale
+        dispoMap[d.date] = {
+          statut: s,
+          matin: !!d.dispo_matin,
+          soir: !!d.dispo_soir,
         }
       }
 
-      const finalMap: typeof planningMap = {}
+      // Construction planningMap avec priorité:
+      // 1) Commandes Validé (affiche matin et/ou soir, double planif gérée)
+      // 2) Sinon Annexe (Annule Int / Client / ADA / Absence)
+      // 3) Sinon Dispo (on laisse tableau vide => le panel colorera d'après dispos)
+      const finalMap: JourPlanMap = {}
 
       for (const date of dates) {
-        const commandes = planningRes.data.filter((p) => p.date === date)
-        const dispo = dispoMap[date]
-      
-        // On récupère la date de dernière mise à jour pour chaque source (approximatif ici)
-        const dateDispo = null
-        const cmdAnnexe = commandes.find((c) =>
-          ["Annule Int", "Annule Client", "Annule ADA", "Absence"].includes(c.statut)
+        const commandesDuJour = (planningRes.data || []).filter(
+          (c) => c.date === date
         )
-        const cmdValidee = commandes.find((c) => c.statut === "Validé")
-      
-        const dateAnnexe = cmdAnnexe ? new Date(cmdAnnexe.updated_at || cmdAnnexe.date) : null
-        const dateValidee = cmdValidee ? new Date(cmdValidee.updated_at || cmdValidee.date) : null
-      
-        // Choix prioritaire
-        if (cmdAnnexe && (!dateDispo || dateAnnexe >= dateDispo)) {
-          finalMap[date] = [{
-            client: (cmdAnnexe as any)?.client?.nom || "Client",
-            horaire: "",
-            statut: cmdAnnexe.statut
-          }]
+
+        const valides = commandesDuJour.filter((c) => c.statut === "Validé")
+        const annexes = commandesDuJour.filter((c) =>
+          ["Annule Int", "Annule Client", "Annule ADA", "Absence"].includes(
+            c.statut
+          )
+        )
+
+        if (valides.length > 0) {
+          // On liste séparément les créneaux validés (matin / soir), et on peut avoir 2 clients différents
+          const lignes: { client: string; horaire: string; statut?: string }[] =
+            []
+
+          for (const v of valides) {
+            const client = (v as any)?.client?.nom || "Client"
+            if (v.heure_debut_matin && v.heure_fin_matin) {
+              lignes.push({
+                client,
+                // heures sur une seule chaîne : le panel se charge de l’afficher sur 2 lignes (client puis heures)
+                horaire: `${v.heure_debut_matin.slice(0, 5)} → ${v.heure_fin_matin.slice(
+                  0,
+                  5
+                )}`,
+                statut: "Validé",
+              })
+            }
+            if (v.heure_debut_soir && v.heure_fin_soir) {
+              lignes.push({
+                client,
+                horaire: `${v.heure_debut_soir.slice(0, 5)} → ${v.heure_fin_soir.slice(
+                  0,
+                  5
+                )}`,
+                statut: "Validé",
+              })
+            }
+          }
+
+          // S’il n’y a aucun créneau renseigné (cas rarissime), on met au moins une ligne “Validé”
+          if (lignes.length === 0) {
+            const v = valides[0]
+            lignes.push({
+              client: (v as any)?.client?.nom || "Client",
+              horaire: "",
+              statut: "Validé",
+            })
+          }
+
+          finalMap[date] = lignes
           continue
         }
-      
-        if (cmdValidee && (!dateDispo || dateValidee >= dateDispo)) {
-          const client = (cmdValidee as any)?.client?.nom || "Client"
-          const horaires = []
-      
-          if (cmdValidee.heure_debut_matin) {
-            horaires.push({
-              client,
-              horaire: `${cmdValidee.heure_debut_matin.slice(0, 5)} → ${cmdValidee.heure_fin_matin?.slice(0, 5) || "--:--"}`
-            })
-          }
-      
-          if (cmdValidee.heure_debut_soir) {
-            horaires.push({
-              client,
-              horaire: `${cmdValidee.heure_debut_soir.slice(0, 5)} → ${cmdValidee.heure_fin_soir?.slice(0, 5) || "--:--"}`
-            })
-          }
-      
-          if (horaires.length) {
-            finalMap[date] = horaires.map((h) => ({
-              ...h,
-              statut: "Validé"
-            }))
-            continue
-          }         
+
+        if (annexes.length > 0) {
+          // On affiche l’annexe UNIQUEMENT si aucune "Validé" ce jour-là
+          // S’il y en a plusieurs, on prend la plus récente
+          const a = annexes.sort(
+            (a, b) =>
+              new Date(b.updated_at || b.date).getTime() -
+              new Date(a.updated_at || a.date).getTime()
+          )[0]
+          finalMap[date] = [
+            {
+              client: (a as any)?.client?.nom || "Client",
+              horaire: "",
+              statut: a.statut,
+            },
+          ]
+          continue
         }
-      
-        // Sinon on affiche dispo
-        if (dispo) {
+
+        // Sinon: la case sera affichée en fonction de la dispo (si présente)
+        if (dispoMap[date]) {
           finalMap[date] = []
-          continue
         }
       }
 
+      setExistantesIndex(existIndex)
       setDispos(dispoMap)
       setPlanningMap(finalMap)
     }
-    fetchDispoAndPlanning()
-  }, [candidat, secteur, semaineObj])
 
+    fetchDispoAndPlanning()
+  }, [open, candidat, secteur, semaineObj])
+
+  // --- Handlers UI (garde la même API que ton code)
   const toggleStatut = (key: string) => {
     setDispos((prev) => {
       const actuel = prev[key]?.statut || "non"
-      const suivant =
-        actuel === "non" ? "dispo" : actuel === "dispo" ? "absence" : "non"
+      const suivant = actuel === "non" ? "dispo" : actuel === "dispo" ? "absence" : "non"
       return {
         ...prev,
         [key]: {
           statut: suivant,
-          matin: prev[key]?.matin ?? true,
-          soir: prev[key]?.soir ?? true,
+          // par défaut, quand on passe à "dispo", on coche les 2 créneaux
+          matin: suivant === "dispo" ? (prev[key]?.matin ?? true) : (prev[key]?.matin ?? false),
+          soir: suivant === "dispo" ? (prev[key]?.soir ?? true) : (prev[key]?.soir ?? false),
         },
       }
     })
@@ -226,33 +288,41 @@ export default function AjoutDispoCandidat({
     }))
   }
 
-  const appliquerTous = (statut: "dispo" | "absence") => {
-    const updated: typeof dispos = {}
-    joursSemaine.forEach((j) => {
-      if (!j.isPast && !(planningMap[j.key]?.length)) {
-        updated[j.key] = {
-          statut,
-          matin: allMatin,
-          soir: allSoir,
-        }
-      }
-    })
-    setDispos(updated)
-  }
+  const [allMatin, setAllMatin] = useState(true)
+  const [allSoir, setAllSoir] = useState(true)
 
-  const appliquerMatinSoir = (creneau: "matin" | "soir", value: boolean) => {
-    const updated = { ...dispos }
-    for (const key in updated) {
-      if (updated[key].statut === "dispo") {
-        updated[key][creneau] = value
+  const appliquerTous = (newStatut: "dispo" | "absence") => {
+    const updated: DispoState = {}
+    for (const j of joursSemaine) {
+      // on ne touche pas aux jours où il y a déjà une planif
+      if (planningMap[j.key]?.length) continue
+      if (j.isPast) continue
+      updated[j.key] = {
+        statut: newStatut,
+        matin: allMatin,
+        soir: allSoir,
       }
     }
     setDispos(updated)
   }
 
+  const appliquerMatinSoir = (creneau: "matin" | "soir", value: boolean) => {
+    setDispos((prev) => {
+      const copy = { ...prev }
+      for (const k of Object.keys(copy)) {
+        if (copy[k].statut === "dispo") {
+          copy[k] = { ...copy[k], [creneau]: value }
+        }
+      }
+      return copy
+    })
+  }
+
+  // --- SAVE : insert / update / delete + rafraîchissement local immédiat
   const handleSave = async () => {
     if (!candidat || !secteur) return
 
+    // On récupère l’état existant complet pour cette semaine
     const { data: existantes, error: fetchErr } = await supabase
       .from("disponibilites")
       .select("id, date")
@@ -264,52 +334,94 @@ export default function AjoutDispoCandidat({
       return
     }
 
-    const update: any[] = []
-    const insert: any[] = []
+    const existingByDate: Record<string, string> = {}
+    for (const e of existantes || []) existingByDate[e.date] = e.id
 
-    for (const [date, d] of Object.entries(dispos)) {
-      if (!["dispo", "absence"].includes(d.statut)) continue
-      if (planningMap[date]?.length) continue
+    const toInsert: any[] = []
+    const toUpdate: any[] = []
+    const toDeleteIds: string[] = []
+
+    // On parcourt les 7 jours visibles — y compris ceux qui n’ont pas été touchés,
+    // pour gérer un éventuel retour à “non” => suppression
+    for (const j of joursSemaine) {
+      // ne pas écraser si commande (Validé/Annexe) visible ce jour
+      if (planningMap[j.key]?.length) continue
+
+      const d = dispos[j.key]
+      const existingId = existingByDate[j.key]
+
+      // si rien en mémoire pour ce jour et pas d’existant -> on ignore
+      if (!d && !existingId) continue
+
+      // Normalisation:
+      // - "dispo" => au moins un créneau doit être true, sinon on repasse à "non"
+      // - "absence" => forçons les deux créneaux à false
+      // - "non" => suppression si une ligne existe
+      if (!d || d.statut === "non" || (d.statut === "dispo" && !d.matin && !d.soir)) {
+        if (existingId) toDeleteIds.push(existingId)
+        continue
+      }
 
       const payload = {
         candidat_id: candidat.id,
-        date,
+        date: j.key,
         secteur,
         service: null,
         statut: d.statut === "dispo" ? "Dispo" : "Non Dispo",
         commentaire,
-        dispo_matin: d.matin,
-        dispo_soir: d.soir,
+        dispo_matin: d.statut === "dispo" ? !!d.matin : false,
+        dispo_soir: d.statut === "dispo" ? !!d.soir : false,
         dispo_nuit: false,
       }
 
-      const existe = existantes?.find((e) => e.date === date)
-      if (existe) {
-        update.push({ ...payload, id: existe.id })
+      if (existingId) {
+        toUpdate.push({ ...payload, id: existingId })
       } else {
-        insert.push(payload)
+        toInsert.push(payload)
       }
     }
 
-    const [{ error: errInsert }, { error: errUpdate }] = await Promise.all([
-      insert.length > 0
-        ? supabase.from("disponibilites").insert(insert)
-        : Promise.resolve({ error: null }),
-      update.length > 0
-        ? Promise.all(
-            update.map((u) =>
-              supabase.from("disponibilites").update(u).eq("id", u.id)
-            )
-          ).then(() => ({ error: null }))
-        : Promise.resolve({ error: null }),
-    ])
+    // Exécutions
+    const execInserts = toInsert.length
+      ? supabase.from("disponibilites").insert(toInsert)
+      : Promise.resolve({ error: null })
 
-    if (errInsert || errUpdate) {
+    const execUpdates = toUpdate.length
+      ? Promise.all(
+          toUpdate.map((u) => supabase.from("disponibilites").update(u).eq("id", u.id))
+        ).then(() => ({ error: null as any }))
+      : Promise.resolve({ error: null })
+
+    const execDeletes = toDeleteIds.length
+      ? supabase.from("disponibilites").delete().in("id", toDeleteIds)
+      : Promise.resolve({ error: null })
+
+    const [{ error: errInsert }, { error: errUpdate }, { error: errDelete }] =
+      await Promise.all([execInserts, execUpdates, execDeletes])
+
+    if (errInsert || errUpdate || errDelete) {
+      console.error("Erreur sauvegarde dispos", { errInsert, errUpdate, errDelete })
       toast({ title: "Erreur", description: "Échec d'enregistrement", variant: "destructive" })
       return
     }
 
     toast({ title: "Disponibilités enregistrées" })
+
+    // ✅ Rafraîchissement local immédiat (sans impacter les autres users)
+    try {
+      const updatedDates = Object.keys(dispos)
+      window.dispatchEvent(
+        new CustomEvent("dispos:updated", {
+          detail: {
+            candidatId: candidat.id,
+            secteur,
+            dates: updatedDates,
+          },
+        })
+      )
+    } catch {}
+
+    // on ferme proprement et on notifie le parent (qui peut faire un refetch soft si nécessaire)
     onOpenChange(false)
     onSuccess()
   }
@@ -332,9 +444,9 @@ export default function AjoutDispoCandidat({
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-6 mt-4">
-          {/* Partie gauche en sections claires */}
+          {/* Partie gauche */}
           <div className="space-y-6">
-            {/* Section Secteur */}
+            {/* Secteur */}
             <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <PieChart className="w-4 h-4 text-muted-foreground" />
@@ -351,6 +463,8 @@ export default function AjoutDispoCandidat({
                     onClick={() => {
                       setSecteur(label)
                       setCandidat(null)
+                      setDispos({})
+                      setPlanningMap({})
                     }}
                   >
                     <Icon className="h-5 w-5" />
@@ -360,46 +474,51 @@ export default function AjoutDispoCandidat({
               </div>
             </div>
 
-          {/* Section Candidats */}
-<div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
-  <div className="flex items-center gap-2 mb-2">
-    <Users className="w-4 h-4 text-muted-foreground" />
-    <h3 className="font-medium text-sm">Candidats</h3>
-  </div>
+            {/* Candidats */}
+            <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <Users className="w-4 h-4 text-muted-foreground" />
+                <h3 className="font-medium text-sm">Candidats</h3>
+              </div>
 
-  <input
-    type="text"
-    placeholder="Rechercher un candidat"
-    value={search}
-    onChange={(e) => setSearch(e.target.value)}
-    className="w-full px-2 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-[#840404]"
-  />
+              <input
+                type="text"
+                placeholder="Rechercher un candidat"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full px-2 py-2 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-[#840404]"
+              />
 
-  <div className="border p-2 h-[240px] overflow-y-auto rounded bg-white shadow-sm">
-    {secteur && candidatsSecteur.length > 0 ? (
-      candidatsSecteur
-        .filter((c) =>
-          `${c.nom} ${c.prenom}`.toLowerCase().includes(search.toLowerCase())
-        )
-        .map((c) => (
-          <Button
-            key={c.id}
-            variant={candidat?.id === c.id ? "default" : "outline"}
-            className="w-full justify-start text-left mb-1"
-            onClick={() => setCandidat(c)}
-          >
-            {c.nom} {c.prenom}
-          </Button>
-        ))
-    ) : (
-      <div className="text-sm text-muted-foreground italic">
-        Aucun secteur sélectionné
-      </div>
-    )}
-  </div>
-</div>
+              <div className="border p-2 h-[240px] overflow-y-auto rounded bg-white shadow-sm">
+                {secteur && candidatsSecteur.length > 0 ? (
+                  candidatsSecteur
+                    .filter((c) =>
+                      `${c.nom} ${c.prenom}`.toLowerCase().includes(search.toLowerCase())
+                    )
+                    .map((c) => (
+                      <Button
+                        key={c.id}
+                        variant={candidat?.id === c.id ? "default" : "outline"}
+                        className="w-full justify-start text-left mb-1"
+                        onClick={() => {
+                          setCandidat(c)
+                          // on vide les états pour éviter les artefacts de la sélection précédente
+                          setDispos({})
+                          setPlanningMap({})
+                        }}
+                      >
+                        {c.nom} {c.prenom}
+                      </Button>
+                    ))
+                ) : (
+                  <div className="text-sm text-muted-foreground italic">
+                    Aucun secteur sélectionné
+                  </div>
+                )}
+              </div>
+            </div>
 
-            {/* Section Semaine */}
+            {/* Semaine */}
             <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <CalendarDays className="w-4 h-4 text-muted-foreground" />
@@ -418,7 +537,7 @@ export default function AjoutDispoCandidat({
               </select>
             </div>
 
-            {/* Section Commentaire */}
+            {/* Commentaire (appliqué aux enregistrements créés/mis à jour) */}
             <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <MessageSquareText className="w-4 h-4 text-muted-foreground" />
@@ -433,7 +552,7 @@ export default function AjoutDispoCandidat({
             </div>
           </div>
 
-          {/* Partie droite identique */}
+          {/* Partie droite (panel 7 jours) */}
           <DispoSemainePanel
             joursSemaine={joursSemaine}
             dispos={dispos}

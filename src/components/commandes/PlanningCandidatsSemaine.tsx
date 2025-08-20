@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase"
 import { addDays, format, startOfWeek, getISOWeek } from "date-fns"
 import { fr } from "date-fns/locale"
 import { disponibiliteColors, statutColors } from "@/lib/colors"
-import { Calendar, CheckCircle2, Filter } from "lucide-react"
+import { Calendar, CheckCircle2, Filter, FileText } from "lucide-react"
 import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 import { secteursList } from "@/lib/secteurs"
 import FicheMemoCandidat from "@/components/commandes/Fiche-Memo-Candidat"
@@ -72,7 +72,9 @@ export function PlanningCandidatsSemaine({
 
       const { data: planifData } = await supabase
         .from("commandes")
-        .select("candidat_id, date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, statut, client:client_id (nom)")
+        .select(
+          "candidat_id, date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, statut, client:client_id (nom)"
+        )
         .in("date", dates)
         .in("candidat_id", ids)
 
@@ -109,20 +111,37 @@ export function PlanningCandidatsSemaine({
         />
       )
     }
-    const color = statutColors[statut as keyof typeof statutColors]?.bg || "#d1d5db"
-    return <div className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: color }} />
+    const color =
+      statutColors[statut as keyof typeof statutColors]?.bg || "#d1d5db"
+    return (
+      <div
+        className="w-3.5 h-3.5 rounded-full"
+        style={{ backgroundColor: color }}
+      />
+    )
   }
 
   const DispoDot = ({ type }: { type: "Dispo" | "Non Dispo" }) => {
     const color = disponibiliteColors[type]?.bg || "#d1d5db"
-    return <div className="w-3.5 h-3.5 rounded-full" style={{ backgroundColor: color }} />
+    return (
+      <div
+        className="w-3.5 h-3.5 rounded-full"
+        style={{ backgroundColor: color }}
+      />
+    )
   }
 
   // Corps de cellule (harmonisé)
   const renderInfosSousIcone = (p?: PlanifData, d?: DispoData) => {
     if (p) {
-      const matin = p.heure_debut_matin && p.heure_fin_matin ? `${H(p.heure_debut_matin)}–${H(p.heure_fin_matin)}` : ""
-      const soir  = p.heure_debut_soir  && p.heure_fin_soir  ? `${H(p.heure_debut_soir)}–${H(p.heure_fin_soir)}`   : ""
+      const matin =
+        p.heure_debut_matin && p.heure_fin_matin
+          ? `${H(p.heure_debut_matin)}–${H(p.heure_fin_matin)}`
+          : ""
+      const soir =
+        p.heure_debut_soir && p.heure_fin_soir
+          ? `${H(p.heure_debut_soir)}–${H(p.heure_fin_soir)}`
+          : ""
       return (
         <div className="mt-1 text-[11px] leading-tight text-gray-700">
           <div className="px-1 font-bold break-words">{p.client?.nom || " "}</div>
@@ -174,7 +193,8 @@ export function PlanningCandidatsSemaine({
       const p = planifIndex.get(k(candidatId, dateStr))
       if (p) return true
       const dispo = dispoIndex.get(k(candidatId, dateStr))
-      if (dispo && (dispo.statut === "Dispo" || dispo.statut === "Non Dispo")) return true
+      if (dispo && (dispo.statut === "Dispo" || dispo.statut === "Non Dispo"))
+        return true
     }
     return false
   }
@@ -198,7 +218,7 @@ export function PlanningCandidatsSemaine({
     return secteursList.find((s) => s.label === secteur)
   }, [secteur])
 
-  // Ouvrir la fiche mémo
+  // Ouvre la fiche mémo
   const openMemoFor = (candidatId: string) => {
     setMemoCandidatId(candidatId)
     setMemoOpen(true)
@@ -276,18 +296,24 @@ export function PlanningCandidatsSemaine({
                   className="grid grid-cols-[140px_repeat(7,1fr)] border-b"
                   style={{ minHeight: "96px" }}
                 >
-                  {/* Colonne candidat : clique = ouvre la fiche mémo */}
-                  <div className="px-3 py-2 flex">
-                    <button
-                      className="text-left my-auto"
-                      onClick={() => openMemoFor(c.id)}
-                      title="Ouvrir la fiche mémo"
-                    >
-                      <div className="text-sm font-semibold text-blue-600 hover:underline">
-                        {c.nom}
+                  {/* Colonne candidat : nom/prénom normaux + icône d’ouverture mémo */}
+                  <div className="px-3 py-2 flex items-center">
+                    <div className="my-auto flex items-center gap-2">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          {c.nom}
+                        </div>
+                        <div className="text-xs text-gray-700">{c.prenom}</div>
                       </div>
-                      <div className="text-xs text-gray-700">{c.prenom}</div>
-                    </button>
+                      <button
+                        onClick={() => openMemoFor(c.id)}
+                        title="Ouvrir la fiche mémo candidat"
+                        className="p-1 rounded hover:bg-gray-100 text-gray-500 hover:text-[#840404] transition"
+                        aria-label={`Ouvrir la fiche mémo de ${c.prenom} ${c.nom}`}
+                      >
+                        <FileText className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* 7 jours */}
@@ -302,8 +328,10 @@ export function PlanningCandidatsSemaine({
                       if (p) {
                         topIcon = <CellIcon statut={p.statut || ""} />
                       } else if (d) {
-                        if (d.statut === "Dispo") topIcon = <DispoDot type="Dispo" />
-                        else if (d.statut === "Non Dispo") topIcon = <DispoDot type="Non Dispo" />
+                        if (d.statut === "Dispo")
+                          topIcon = <DispoDot type="Dispo" />
+                        else if (d.statut === "Non Dispo")
+                          topIcon = <DispoDot type="Non Dispo" />
                       }
                     }
 
@@ -314,7 +342,9 @@ export function PlanningCandidatsSemaine({
                       >
                         {!noData && (
                           <>
-                            <div className="h-5 flex items-center justify-center">{topIcon}</div>
+                            <div className="h-5 flex items-center justify-center">
+                              {topIcon}
+                            </div>
                             {renderInfosSousIcone(p, d)}
                           </>
                         )}

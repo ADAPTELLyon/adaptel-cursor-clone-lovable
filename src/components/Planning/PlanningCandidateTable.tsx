@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react"
-import { Check, AlertCircle, Clock, Plus } from "lucide-react"
+import { AlertCircle, Clock, Plus } from "lucide-react"
 import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns"
-import { fr } from "date-fns/locale"
-import { indicateurColors, statutColors } from "@/lib/colors"
+import { statutColors } from "@/lib/colors"
 import { supabase } from "@/lib/supabase"
-import type { JourPlanningCandidat } from "@/types/types-front"
+import type { JourPlanningCandidat, CommandeFull } from "@/types/types-front"
 import { ColonneCandidate } from "@/components/Planning/ColonneCandidate"
 import { CellulePlanningCandidate } from "@/components/Planning/CellulePlanningCandidate"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import { TooltipProvider } from "@/components/ui/tooltip"
-
 
 export function PlanningCandidateTable({
   planning,
@@ -23,6 +21,17 @@ export function PlanningCandidateTable({
   onRefresh: () => void
 }) {
   const [heuresParCandidat, setHeuresParCandidat] = useState<Record<string, string>>({})
+
+  // rafraîchissement local quand les dispos/planifs changent (sans impacter les autres users)
+  useEffect(() => {
+    const handler = () => onRefresh()
+    window.addEventListener("dispos:updated", handler as EventListener)
+    window.addEventListener("planif:updated", handler as EventListener)
+    return () => {
+      window.removeEventListener("dispos:updated", handler as EventListener)
+      window.removeEventListener("planif:updated", handler as EventListener)
+    }
+  }, [onRefresh])
 
   useEffect(() => {
     const fetchHeures = async () => {
@@ -38,7 +47,6 @@ export function PlanningCandidateTable({
       }
 
       const dimancheTarget = endOfWeek(lundiTarget, { weekStartsOn: 1 })
-
       const heures: Record<string, string> = {}
 
       for (const candidatNom of Object.keys(planning)) {
@@ -47,7 +55,6 @@ export function PlanningCandidateTable({
           candidatId = jour.disponibilite?.candidat_id || jour.commande?.candidat_id
           if (candidatId) break
         }
-
         if (!candidatId) {
           heures[candidatNom] = "00:00"
           continue
@@ -74,13 +81,11 @@ export function PlanningCandidateTable({
             const [h2, m2] = cmd.heure_fin_matin.split(":").map(Number)
             totalMinutes += (h2 * 60 + m2) - (h1 * 60 + m1)
           }
-
           if (cmd.heure_debut_soir && cmd.heure_fin_soir) {
             const [h1, m1] = cmd.heure_debut_soir.split(":").map(Number)
             const [h2, m2] = cmd.heure_fin_soir.split(":").map(Number)
             totalMinutes += (h2 * 60 + m2) - (h1 * 60 + m1)
           }
-
           if (cmd.heure_debut_nuit && cmd.heure_fin_nuit) {
             const [h1, m1] = cmd.heure_debut_nuit.split(":").map(Number)
             const [h2, m2] = cmd.heure_fin_nuit.split(":").map(Number)
@@ -90,9 +95,7 @@ export function PlanningCandidateTable({
 
         const heuresTotal = Math.floor(totalMinutes / 60)
         const minutesTotal = totalMinutes % 60
-        heures[candidatNom] = `${heuresTotal.toString().padStart(2, "0")}:${minutesTotal
-          .toString()
-          .padStart(2, "0")}`
+        heures[candidatNom] = `${heuresTotal.toString().padStart(2, "0")}:${minutesTotal.toString().padStart(2, "0")}`
       }
 
       setHeuresParCandidat(heures)
@@ -108,18 +111,13 @@ export function PlanningCandidateTable({
       const dateObj = new Date(jour.date)
       const lundiSemaine = startOfWeek(dateObj, { weekStartsOn: 1 })
       const numeroSemaine = format(lundiSemaine, "I")
-
       const secteur = jour.secteur || "Inconnu"
-
-      const keySemaineSecteur =
-        selectedSecteurs.length === 5 ? `${numeroSemaine}_${secteur}` : numeroSemaine
+      const keySemaineSecteur = selectedSecteurs.length === 5 ? `${numeroSemaine}_${secteur}` : numeroSemaine
 
       if (!groupesParSemaine[keySemaineSecteur]) groupesParSemaine[keySemaineSecteur] = {}
-      if (!groupesParSemaine[keySemaineSecteur][candidat])
-        groupesParSemaine[keySemaineSecteur][candidat] = {}
+      if (!groupesParSemaine[keySemaineSecteur][candidat]) groupesParSemaine[keySemaineSecteur][candidat] = {}
 
       const dateKey = dateObj.toISOString().slice(0, 10)
-
       if (!groupesParSemaine[keySemaineSecteur][candidat][dateKey]) {
         groupesParSemaine[keySemaineSecteur][candidat][dateKey] = []
       }
@@ -141,7 +139,7 @@ export function PlanningCandidateTable({
             const dateStr = jour.toISOString().slice(0, 10)
             return {
               date: jour,
-              dateStr: format(jour, 'yyyy-MM-dd'), // Utilisez format au lieu de toISOString
+              dateStr: format(jour, "yyyy-MM-dd"),
               label: jour.toLocaleDateString("fr-FR", {
                 weekday: "long",
                 day: "numeric",
@@ -149,7 +147,7 @@ export function PlanningCandidateTable({
                 timeZone: "Europe/Paris",
               }),
             }
-          })         
+          })
 
           return (
             <div key={keySemaineSecteur} className="border rounded-lg overflow-hidden shadow-sm">
@@ -175,10 +173,7 @@ export function PlanningCandidateTable({
                       {nbValide > 0 && (
                         <div
                           className="absolute top-1 right-1 h-5 w-5 rounded-full text-xs flex items-center justify-center"
-                          style={{
-                            backgroundColor: statutColors["Validé"].bg,
-                            color: "white",
-                          }}
+                          style={{ backgroundColor: statutColors["Validé"].bg, color: "white" }}
                         >
                           {nbValide}
                         </div>
@@ -224,25 +219,57 @@ export function PlanningCandidateTable({
                       {jours.map((jour, index) => {
                         const jourCells = jourMap[jour.dateStr] || []
 
-                        const missionMatin = jourCells.find(
-                          (j) => j.commande?.heure_debut_matin && j.commande?.heure_fin_matin
-                        )
-                        const missionSoir = jourCells.find(
-                          (j) => j.commande?.heure_debut_soir && j.commande?.heure_fin_soir
-                        )
+                        // 1) Construit la liste de commandes DU JOUR (commande + autresCommandes)
+                        const rawCmds: CommandeFull[] = [
+                          ...jourCells.map((j) => j.commande).filter((c): c is CommandeFull => !!c),
+                          ...jourCells.flatMap((j) => (j.autresCommandes || []) as CommandeFull[]).filter(Boolean),
+                        ]
 
-                        const commandePrincipale = missionMatin || missionSoir
-                        const commandeSecondaire = jourCells[0]?.autresCommandes?.[0] || null
+                        // dédup par id
+                        const byId = new Map<string, CommandeFull>()
+                        for (const c of rawCmds) {
+                          if (c?.id) byId.set(c.id, c)
+                        }
+                        const commandes: CommandeFull[] = Array.from(byId.values())
+
+                        // 2) Priorité aux Validé
+                        const valides = commandes.filter((c) => c.statut === "Validé")
+
+                        // repère matin/soir validés
+                        let missionMatin: CommandeFull | undefined
+                        let missionSoir:  CommandeFull | undefined
+                        for (const cmd of valides) {
+                          if (!missionMatin && cmd.heure_debut_matin && cmd.heure_fin_matin) missionMatin = cmd
+                          if (!missionSoir  && cmd.heure_debut_soir && cmd.heure_fin_soir)  missionSoir  = cmd
+                          if (missionMatin && missionSoir) break
+                        }
+
+                        // Commande principale
+                        const commandePrincipale: CommandeFull | undefined = missionMatin || missionSoir
+
+                        // Seconde (pour l'alerte) seulement si 2 clients différents
+                        let commandeSecondaire: CommandeFull | undefined
+                        if (missionMatin && missionSoir && missionMatin.id !== missionSoir.id) {
+                          commandeSecondaire = missionMatin === commandePrincipale ? missionSoir : missionMatin
+                        }
+
+                        // 3) Si aucune Validé → on regarde les annexes
+                        const annexe = (!commandePrincipale)
+                          ? commandes.find((c) =>
+                              ["Annule Int", "Annule Client", "Annule ADA", "Absence"].includes(c.statut || "")
+                            )
+                          : undefined
+
+                        const disponibilite = jourCells[0]?.disponibilite
+                        const autres: CommandeFull[] = []
+                        if (commandeSecondaire) autres.push(commandeSecondaire)
 
                         return (
-                          <div
-                            key={`${jour.dateStr}-${index}`}
-                            className="border-r p-2 h-28 relative"
-                          >
+                          <div key={`${jour.dateStr}-${index}`} className="border-r p-2 h-28 relative">
                             <CellulePlanningCandidate
-                              disponibilite={jourCells[0]?.disponibilite}
-                              commande={commandePrincipale?.commande}
-                              autresCommandes={commandeSecondaire ? [commandeSecondaire] : []}
+                              disponibilite={disponibilite}
+                              commande={commandePrincipale ?? (annexe || undefined)}
+                              autresCommandes={autres}
                               secteur={secteur}
                               date={jour.dateStr}
                               candidatId={candidatId}
@@ -251,13 +278,14 @@ export function PlanningCandidateTable({
                               service={jourCells[0]?.commande?.service || ""}
                             />
 
-                            {!commandePrincipale?.commande &&
-                              !jourCells[0]?.disponibilite?.statut && (
-                                <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
-                                  <Plus className="w-4 h-4 text-gray-400" />
-                                </div>
-                              )}
+                            {/* Plus si rien du tout */}
+                            {!commandePrincipale && !annexe && !disponibilite?.statut && (
+                              <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
+                                <Plus className="w-4 h-4 text-gray-400" />
+                              </div>
+                            )}
 
+                            {/* Alerte (mission du 2e créneau sur autre client) */}
                             {commandeSecondaire && (
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -276,15 +304,9 @@ export function PlanningCandidateTable({
                                     <Clock className="w-4 h-4" />
                                     <span>
                                       {commandeSecondaire.heure_debut_matin
-                                        ? `${commandeSecondaire.heure_debut_matin.slice(
-                                            0,
-                                            5
-                                          )} - ${commandeSecondaire.heure_fin_matin?.slice(0, 5)}`
+                                        ? `${commandeSecondaire.heure_debut_matin.slice(0,5)} - ${commandeSecondaire.heure_fin_matin?.slice(0,5)}`
                                         : commandeSecondaire.heure_debut_soir
-                                        ? `${commandeSecondaire.heure_debut_soir.slice(
-                                            0,
-                                            5
-                                          )} - ${commandeSecondaire.heure_fin_soir?.slice(0, 5)}`
+                                        ? `${commandeSecondaire.heure_debut_soir.slice(0,5)} - ${commandeSecondaire.heure_fin_soir?.slice(0,5)}`
                                         : "Non renseigné"}
                                     </span>
                                   </div>

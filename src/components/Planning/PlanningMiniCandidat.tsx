@@ -2,25 +2,68 @@ import { useEffect, useState } from "react"
 import { format, startOfWeek, addDays, getWeek, subWeeks, addWeeks } from "date-fns"
 import { fr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
-import { ColonneCandidate } from "@/components/Planning/ColonneCandidate"
 import { CellulePlanningCandidate } from "@/components/Planning/CellulePlanningCandidate"
-import type { JourPlanningCandidat, StatutCommande } from "@/types/types-front"
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
+import type {
+  JourPlanningCandidat,
+  StatutCommande,
+  CommandeFull,
+  CandidatDispoWithNom,
+} from "@/types/types-front"
 import { Button } from "@/components/ui/button"
-import { Info, Check, ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, AlertCircle, Clock } from "lucide-react"
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 
 export default function PlanningMiniCandidat({ candidatId }: { candidatId: string }) {
   const [planning, setPlanning] = useState<JourPlanningCandidat[]>([])
   const [candidatNomPrenom, setCandidatNomPrenom] = useState("")
-  const [editingCommentDate, setEditingCommentDate] = useState<string | null>(null)
-  const [commentaireTemp, setCommentaireTemp] = useState("")
   const [currentStartDate, setCurrentStartDate] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }))
 
   const dates = Array.from({ length: 7 }).map((_, i) =>
     format(addDays(currentStartDate, i), "yyyy-MM-dd")
   )
-
   const numeroSemaine = getWeek(currentStartDate, { weekStartsOn: 1 })
+
+  const ts = (x?: { updated_at?: string | null; created_at?: string | null } | null) =>
+    (x?.updated_at ? Date.parse(x.updated_at) : 0) || (x?.created_at ? Date.parse(x.created_at!) : 0) || 0
+
+  const toCommandeFull = (cmd: any): CommandeFull => ({
+    id: cmd.id,
+    date: cmd.date,
+    secteur: cmd.secteur,
+    service: cmd.service ?? null,
+    statut: cmd.statut as StatutCommande,
+    client_id: cmd.client_id,
+    candidat_id: cmd.candidat_id,
+    heure_debut_matin: cmd.heure_debut_matin,
+    heure_fin_matin: cmd.heure_fin_matin,
+    heure_debut_soir: cmd.heure_debut_soir,
+    heure_fin_soir: cmd.heure_fin_soir,
+    heure_debut_nuit: cmd.heure_debut_nuit,
+    heure_fin_nuit: cmd.heure_fin_nuit,
+    commentaire: cmd.commentaire ?? null,
+    created_at: cmd.created_at,
+    updated_at: cmd.updated_at ?? undefined,
+    mission_slot: cmd.mission_slot ?? 0,
+    candidat: cmd.candidat ?? null,
+    client: cmd.client ? { nom: cmd.client.nom } : undefined,
+    motif_contrat: null,
+  })
+
+  const toDispoFull = (d: any): CandidatDispoWithNom => ({
+    id: d.id,
+    date: d.date,
+    secteur: d.secteur,
+    service: d.service ?? null,
+    statut: (d.statut || "Non Renseigné") as "Dispo" | "Non Dispo" | "Non Renseigné",
+    matin: !!d.dispo_matin,
+    soir: !!d.dispo_soir,
+    nuit: !!d.dispo_nuit,
+    commentaire: d.commentaire || "",
+    candidat_id: d.candidat_id,
+    created_at: d.created_at,
+    updated_at: d.updated_at ?? null,
+    candidat: d.candidat ? { nom: d.candidat.nom, prenom: d.candidat.prenom } : undefined,
+  })
 
   const fetchPlanning = async () => {
     const { data: disponibilites } = await supabase
@@ -41,57 +84,67 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
       .eq("id", candidatId)
       .single()
 
-    if (candidatData) {
-      setCandidatNomPrenom(`${candidatData.prenom} ${candidatData.nom}`)
-    }
+    if (candidatData) setCandidatNomPrenom(`${candidatData.prenom} ${candidatData.nom}`)
 
     const result: JourPlanningCandidat[] = dates.map((date) => {
-      const dispo = disponibilites?.find((d) => d.date === date)
-      const cmd = commandes?.find((c) => c.date === date)
+      const dispoRow = (disponibilites ?? []).find((d) => d.date === date)
+      const dispoFull = dispoRow ? toDispoFull(dispoRow) : undefined
+
+      const cs = (commandes ?? []).filter((c) => c.date === date)
+      const valides = cs.filter((c) => c.statut === "Validé")
+      const annexes = cs.filter((c) =>
+        ["Annule Int", "Annule Client", "Annule ADA", "Absence"].includes(c.statut || "")
+      )
+
+      let principale: CommandeFull | undefined
+      let autres: CommandeFull[] = []
+      let secteur = dispoFull?.secteur || cs[0]?.secteur || "Étages"
+      let service = (dispoFull?.service ?? cs[0]?.service) ?? null
+
+      if (valides.length > 0) {
+        const missionMatin = valides.find((c) => !!c.heure_debut_matin && !!c.heure_fin_matin)
+        const missionSoir  = valides.find((c) => !!c.heure_debut_soir  && !!c.heure_fin_soir)
+
+        if (missionMatin) {
+          const m = toCommandeFull(missionMatin)
+          principale = m
+          secteur = m.secteur
+          service = (m.service ?? service) ?? null
+          if (missionSoir) {
+            const s = toCommandeFull(missionSoir)
+            if (m.client?.nom && s.client?.nom && m.client.nom !== s.client.nom) {
+              autres.push(s) // affiché via alert circle ci-dessous
+            }
+          }
+        } else if (missionSoir) {
+          const s = toCommandeFull(missionSoir)
+          principale = s
+          secteur = s.secteur
+          service = (s.service ?? service) ?? null
+        } else {
+          const lastValide = [...valides].sort((a, b) => ts(b) - ts(a))[0]
+          const v = toCommandeFull(lastValide)
+          principale = v
+          secteur = v.secteur
+          service = (v.service ?? service) ?? null
+        }
+      } else {
+        const lastAnnexe = annexes.length > 0 ? [...annexes].sort((a, b) => ts(b) - ts(a))[0] : null
+        if (lastAnnexe && (!dispoFull || ts(lastAnnexe) >= ts(dispoFull))) {
+          const a = toCommandeFull(lastAnnexe)
+          principale = a
+          secteur = a.secteur
+          service = (a.service ?? service) ?? null
+        }
+      }
 
       return {
         date,
-        secteur: dispo?.secteur || cmd?.secteur || "Étages",
-        service: dispo?.service || cmd?.service || null,
-        disponibilite: dispo
-          ? {
-              id: dispo.id,
-              date: dispo.date,
-              secteur: dispo.secteur,
-              service: dispo.service,
-              statut: (dispo.statut || "Non Renseigné") as "Dispo" | "Non Dispo" | "Non Renseigné",
-              matin: dispo.dispo_matin || false,
-              soir: dispo.dispo_soir || false,
-              nuit: dispo.dispo_nuit || false,
-              commentaire: dispo.commentaire || "",
-              candidat_id: dispo.candidat_id,
-              created_at: dispo.created_at,
-              updated_at: dispo.updated_at,
-              candidat: dispo.candidat,
-            }
-          : undefined,
-        commande: cmd
-          ? {
-              id: cmd.id,
-              date: cmd.date,
-              secteur: cmd.secteur,
-              service: cmd.service,
-              statut: cmd.statut as StatutCommande,
-              client_id: cmd.client_id,
-              candidat_id: cmd.candidat_id,
-              heure_debut_matin: cmd.heure_debut_matin,
-              heure_fin_matin: cmd.heure_fin_matin,
-              heure_debut_soir: cmd.heure_debut_soir,
-              heure_fin_soir: cmd.heure_fin_soir,
-              heure_debut_nuit: cmd.heure_debut_nuit,
-              heure_fin_nuit: cmd.heure_fin_nuit,
-              commentaire: cmd.commentaire,
-              created_at: cmd.created_at,
-              mission_slot: cmd.mission_slot,
-              candidat: cmd.candidat,
-              client: cmd.client,
-            }
-          : undefined,
+        secteur,
+        service,
+        commande: principale,
+        autresCommandes: autres,
+        disponibilite: dispoFull,
       }
     })
 
@@ -100,35 +153,13 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
 
   useEffect(() => {
     if (candidatId) fetchPlanning()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candidatId, currentStartDate])
 
-  const groupedByDate: Record<string, JourPlanningCandidat[]> = {}
+  const byDate: Record<string, JourPlanningCandidat> = {}
   planning.forEach((entry) => {
-    const date = format(new Date(entry.date), "yyyy-MM-dd")
-    if (!groupedByDate[date]) groupedByDate[date] = []
-    groupedByDate[date].push(entry)
+    byDate[entry.date] = entry
   })
-
-  const saveComment = async (jour: JourPlanningCandidat) => {
-    const trimmed = commentaireTemp.trim()
-    if (!trimmed) return
-
-    if (jour.commande) {
-      await supabase
-        .from("commandes")
-        .update({ commentaire: trimmed })
-        .eq("id", jour.commande.id)
-    } else if (jour.disponibilite) {
-      await supabase
-        .from("disponibilites")
-        .update({ commentaire: trimmed })
-        .eq("id", jour.disponibilite.id)
-    }
-
-    setEditingCommentDate(null)
-    setCommentaireTemp("")
-    fetchPlanning()
-  }
 
   return (
     <div className="border rounded-lg overflow-hidden shadow-sm mt-8">
@@ -159,7 +190,7 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
         })}
       </div>
 
-      {/* Lignes planning */}
+      {/* Ligne du candidat */}
       <div className="grid grid-cols-[180px_repeat(7,minmax(0,1fr))] border-t text-sm">
         <div className="p-3 border-r bg-white text-gray-800 text-sm leading-tight">
           <div className="font-semibold">{candidatNomPrenom}</div>
@@ -167,16 +198,19 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
         </div>
 
         {dates.map((dateStr, i) => {
-          const jourCells = groupedByDate[dateStr] || []
-          const jourCell = jourCells[0]
-          const commentaire =
-            jourCell?.commande?.commentaire || jourCell?.disponibilite?.commentaire || ""
+          const jourCell = byDate[dateStr]
+
+          // commande secondaire (pour l’alert circle)
+          const secondaire = jourCell?.autresCommandes && jourCell.autresCommandes.length > 0
+            ? jourCell.autresCommandes[0]
+            : undefined
 
           return (
             <div key={i} className="border-r p-2 h-28 relative">
               <CellulePlanningCandidate
-                disponibilite={jourCell?.disponibilite || null}
-                commande={jourCell?.commande || null}
+                disponibilite={jourCell?.disponibilite}
+                commande={jourCell?.commande}
+                autresCommandes={jourCell?.autresCommandes || []}
                 secteur={jourCell?.secteur || "Étages"}
                 date={dateStr}
                 candidatId={candidatId}
@@ -184,6 +218,35 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
                 onSuccess={() => fetchPlanning()}
                 nomPrenom={candidatNomPrenom}
               />
+
+              {secondaire && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <div
+                      className="absolute top-2 right-2 bg-white rounded-full p-1 shadow z-20 translate-x-1/4 -translate-y-1/4 cursor-pointer"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <AlertCircle className="w-5 h-5 text-[#840404]" />
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" className="text-sm max-w-xs space-y-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="font-semibold">
+                      {secondaire.client?.nom || "?"}
+                    </div>
+                    {secondaire.service && <div>{secondaire.service}</div>}
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-4 h-4" />
+                      <span>
+                        {secondaire.heure_debut_matin
+                          ? `${secondaire.heure_debut_matin.slice(0,5)} - ${secondaire.heure_fin_matin?.slice(0,5)}`
+                          : secondaire.heure_debut_soir
+                          ? `${secondaire.heure_debut_soir.slice(0,5)} - ${secondaire.heure_fin_soir?.slice(0,5)}`
+                          : "Non renseigné"}
+                      </span>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
             </div>
           )
         })}
