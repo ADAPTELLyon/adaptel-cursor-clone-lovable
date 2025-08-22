@@ -161,6 +161,11 @@ export default function Planning() {
     }
   }, [])
 
+  // utilitaire timestamp
+  const ts = useCallback((x?: { updated_at?: string | null; created_at?: string | null } | null) => {
+    return (x?.updated_at ? Date.parse(x.updated_at) : 0) || (x?.created_at ? Date.parse(x.created_at!) : 0) || 0
+  }, [])
+
   // Supprime une commande (par id) partout, et nettoie les jours vides
   const removeCommandeEverywhere = useCallback((base: Record<string, JourPlanningCandidat[]>, id: string) => {
     const next: Record<string, JourPlanningCandidat[]> = {}
@@ -376,6 +381,71 @@ export default function Planning() {
     })
   }, [])
 
+  // ——————————————— compose un JourPlanningCandidat (logique unique) ———————————————
+  const composeJour = useCallback((
+    dateISO: string,
+    dispoRow: DispoRow | null,
+    commandesRows: CommandeRow[]
+  ): { secteur: string; service: string | null; commande?: CommandeFull; autresCommandes: CommandeFull[]; disponibilite?: CandidatDispoWithNom } => {
+    const dispoFull = dispoRow ? buildDispoFull(dispoRow) : undefined
+
+    const valides = commandesRows.filter((c) => c.statut === "Validé")
+    const annexes = commandesRows.filter((c) =>
+      ["Annule Int", "Annule Client", "Annule ADA", "Absence"].includes(c.statut || "")
+    )
+
+    let principale: CommandeFull | undefined
+    let secondaires: CommandeFull[] = []
+    let secteur = dispoRow?.secteur || "Inconnu"
+    let service = (dispoRow?.service ?? null) as string | null
+
+    if (valides.length > 0) {
+      // priorité absolue -> matin/soir
+      const missionMatin = valides.find((c) => !!c.heure_debut_matin && !!c.heure_fin_matin)
+      const missionSoir  = valides.find((c) => !!c.heure_debut_soir  && !!c.heure_fin_soir)
+
+      if (missionMatin) {
+        principale = buildCommandeFull(missionMatin)
+        secteur = principale.secteur
+        service = (principale.service ?? service) ?? null
+        if (missionSoir) {
+          const soirFull = buildCommandeFull(missionSoir)
+          if (principale.client?.nom && soirFull.client?.nom && principale.client.nom !== soirFull.client.nom) {
+            secondaires.push(soirFull)
+          }
+        }
+      } else if (missionSoir) {
+        principale = buildCommandeFull(missionSoir)
+        secteur = principale.secteur
+        service = (principale.service ?? service) ?? null
+      } else {
+        // Validé sans heures (cas rare)
+        const lastValide = [...valides].sort((a, b) => ts(b) - ts(a))[0]
+        principale = buildCommandeFull(lastValide)
+        secteur = principale.secteur
+        service = (principale.service ?? service) ?? null
+      }
+    } else {
+      // arbitrage Annexe vs Dispo au timestamp
+      const lastAnnexe = annexes.length > 0 ? [...annexes].sort((a, b) => ts(b) - ts(a))[0] : null
+      if (lastAnnexe && (!dispoFull || ts(lastAnnexe) >= ts(dispoFull))) {
+        principale = buildCommandeFull(lastAnnexe)
+        secteur = principale.secteur
+        service = (principale.service ?? service) ?? null
+      } else {
+        principale = undefined
+      }
+    }
+
+    return {
+      secteur,
+      service,
+      commande: principale,
+      autresCommandes: secondaires,
+      disponibilite: dispoFull,
+    }
+  }, [buildCommandeFull, buildDispoFull, ts])
+
   // ————————————————— Fetch initial —————————————————
   const fetchPlanning = useCallback(async () => {
     try {
@@ -421,17 +491,12 @@ export default function Planning() {
 
       const map: Record<string, JourPlanningCandidat[]> = {}
       const semaines = new Set<string>()
-      const currentWeek = getWeek(new Date(), { weekStartsOn: 1 }).toString()
 
       // Regrouper par candidat + date
       const candidatsSet = new Set<string>([
         ...((commandesData ?? []).map((c) => c.candidat_id).filter(Boolean) as string[]),
         ...((dispoData ?? []).map((d) => d.candidat_id) as string[]),
       ])
-
-      // utilitaire timestamp
-      const ts = (x?: { updated_at?: string | null; created_at?: string | null } | null) =>
-        (x?.updated_at ? Date.parse(x.updated_at) : 0) || (x?.created_at ? Date.parse(x.created_at!) : 0) || 0
 
       for (const candId of candidatsSet) {
         const label = nameCache[candId] ?? "Candidat inconnu"
@@ -447,93 +512,20 @@ export default function Planning() {
 
         for (const dt of dates) {
           const cs = commandesCandidat.filter((c) => c.date === dt)
+          const dispoJour = dispoCandidat.find((d) => d.date === dt) ?? null
 
-          const valides = cs.filter((c) => c.statut === "Validé")
-          const annexes = cs.filter((c) =>
-            ["Annule Int", "Annule Client", "Annule ADA", "Absence"].includes(c.statut || "")
-          )
-
-          // disponibilité brute du jour (si existante)
-          const dispoJour = dispoCandidat.find((d) => d.date === dt)
-          const dispoFull = dispoJour
-            ? buildDispoFull({
-                id: dispoJour.id,
-                date: dispoJour.date,
-                secteur: dispoJour.secteur,
-                service: dispoJour.service,
-                statut: dispoJour.statut as "Dispo" | "Non Dispo" | "Non Renseigné",
-                candidat_id: dispoJour.candidat_id,
-                commentaire: dispoJour.commentaire,
-                dispo_matin: dispoJour.dispo_matin,
-                dispo_soir: dispoJour.dispo_soir,
-                dispo_nuit: dispoJour.dispo_nuit,
-                created_at: dispoJour.created_at,
-                updated_at: dispoJour.updated_at,
-                candidats: dispoJour.candidats
-                  ? { nom: dispoJour.candidats.nom, prenom: dispoJour.candidats.prenom }
-                  : null,
-              })
-            : undefined
-
-          let principale: CommandeFull | undefined
-          let secondaires: CommandeFull[] = []
-          let secteur = dispoJour?.secteur || "Inconnu"
-          let service = (dispoJour?.service ?? null) as string | null
-
-          if (valides.length > 0) {
-            // ——— CAS 1 : on a au moins une planif Validé -> priorité absolue
-            // repérer matin & soir
-            const missionMatin = valides.find((c) => !!c.heure_debut_matin && !!c.heure_fin_matin)
-            const missionSoir  = valides.find((c) => !!c.heure_debut_soir  && !!c.heure_fin_soir)
-
-            if (missionMatin) {
-              principale = buildCommandeFull(missionMatin)
-              secteur = principale.secteur
-              service = (principale.service ?? service) ?? null
-              if (missionSoir) {
-                const soirFull = buildCommandeFull(missionSoir)
-                // alerte uniquement si clients différents
-                if (principale.client?.nom && soirFull.client?.nom && principale.client.nom !== soirFull.client.nom) {
-                  secondaires.push(soirFull)
-                }
-              }
-            } else if (missionSoir) {
-              // seulement le soir en validé
-              principale = buildCommandeFull(missionSoir)
-              secteur = principale.secteur
-              service = (principale.service ?? service) ?? null
-            } else {
-              // Validé sans heures (cas rarissime) -> on prend le + récent
-              const lastValide = [...valides].sort((a, b) => ts(b) - ts(a))[0]
-              principale = buildCommandeFull(lastValide)
-              secteur = principale.secteur
-              service = (principale.service ?? service) ?? null
-            }
-          } else {
-            // ——— CAS 2 : aucune planif Validé —> arbitrage Annexe vs Dispo au timestamp
-            const lastAnnexe = annexes.length > 0 ? [...annexes].sort((a, b) => ts(b) - ts(a))[0] : null
-
-            if (lastAnnexe && (!dispoFull || ts(lastAnnexe) >= ts(dispoFull))) {
-              // on affiche l’annexe (libellé + client en italique côté cellule)
-              principale = buildCommandeFull(lastAnnexe)
-              secteur = principale.secteur
-              service = (principale.service ?? service) ?? null
-            } else {
-              // sinon on n’affiche pas de commande, on laisse la dispo (ou rien si aucune info)
-              principale = undefined
-            }
-          }
+          const composed = composeJour(dt, dispoJour as any, cs as any)
 
           const semaine = getWeek(parseISO(dt), { weekStartsOn: 1 }).toString()
           semaines.add(semaine)
 
           jours[dt] = {
             date: dt,
-            secteur,
-            service,
-            commande: principale,
-            autresCommandes: secondaires,
-            disponibilite: dispoFull,
+            secteur: composed.secteur,
+            service: composed.service,
+            commande: composed.commande,
+            autresCommandes: composed.autresCommandes,
+            disponibilite: composed.disponibilite,
           }
         }
 
@@ -546,9 +538,7 @@ export default function Planning() {
       const semainesTriees = Array.from(semaines).sort((a, b) => parseInt(b) - parseInt(a))
       setSemainesDisponibles(semainesTriees)
 
-      // ⚠️ Conserver la vue de l'utilisateur :
-      // - Si "semaineEnCours" (persistée) est true → on force la semaine courante
-      // - Sinon : on respecte "selectedSemaine" déjà initialisée depuis localStorage
+      // ⚠️ Conserver la vue utilisateur
       if (semaineEnCours) {
         const currentWeek = getWeek(new Date(), { weekStartsOn: 1 }).toString()
         setSelectedSemaine(currentWeek)
@@ -571,8 +561,7 @@ export default function Planning() {
     }
   }, [
     applyFilters,
-    buildDispoFull,
-    buildCommandeFull,
+    composeJour,
     selectedSecteurs,
     selectedSemaine,
     candidat,
@@ -581,6 +570,86 @@ export default function Planning() {
     toutAfficher,
     semaineEnCours,
   ])
+
+  // ———————————————— Refresh ciblé (1 candidat / 1 jour) ————————————————
+  const refreshOne = useCallback(async (candidatId: string, dateISO: string) => {
+    try {
+      const jour = dateISO.slice(0, 10)
+
+      const [{ data: dispoData, error: dErr }, { data: cmdData, error: cErr }, { data: candRow }] =
+        await Promise.all([
+          supabase
+            .from("disponibilites")
+            .select(`
+              id, date, secteur, service, statut, commentaire, candidat_id,
+              dispo_matin, dispo_soir, dispo_nuit, created_at, updated_at,
+              candidats:candidat_id ( nom, prenom )
+            `)
+            .eq("candidat_id", candidatId)
+            .eq("date", jour)
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from("commandes")
+            .select(`
+              id, date, statut, secteur, service, client_id, candidat_id,
+              heure_debut_matin, heure_fin_matin,
+              heure_debut_soir, heure_fin_soir,
+              heure_debut_nuit, heure_fin_nuit,
+              commentaire, created_at, updated_at, mission_slot,
+              client:client_id ( nom ),
+              candidat:candidat_id ( nom, prenom )
+            `)
+            .eq("candidat_id", candidatId)
+            .eq("date", jour),
+          supabase
+            .from("candidats")
+            .select("nom, prenom")
+            .eq("id", candidatId)
+            .maybeSingle(),
+        ])
+
+      if (dErr || cErr) {
+        console.error("RefreshOne errors:", dErr || cErr)
+        return
+      }
+
+      // nom complet pour la clé
+      const label =
+        candidateNames[candidatId] ||
+        (candRow ? `${candRow.nom ?? ""} ${candRow.prenom ?? ""}`.trim() : "Candidat inconnu")
+
+      // compose l’entrée du jour
+      const composed = composeJour(jour, dispoData as any, (cmdData ?? []) as any)
+
+      setCandidateNames((prev) => ({ ...prev, [candidatId]: label }))
+
+      setPlanning((prev) => {
+        const next = { ...prev }
+        const line = next[label] ? [...next[label]] : []
+        const idx = line.findIndex((j) => j.date === jour)
+
+        const newJour: JourPlanningCandidat = {
+          date: jour,
+          secteur: composed.secteur,
+          service: composed.service,
+          commande: composed.commande,
+          autresCommandes: composed.autresCommandes,
+          disponibilite: composed.disponibilite,
+        }
+
+        if (idx >= 0) {
+          line[idx] = newJour
+        } else {
+          line.push(newJour)
+        }
+        next[label] = line
+        return next
+      })
+    } catch (e) {
+      console.error("refreshOne exception:", e)
+    }
+  }, [candidateNames, composeJour])
 
   // ————————————————— Effets —————————————————
   useEffect(() => {
@@ -642,6 +711,36 @@ export default function Planning() {
     },
   })
 
+  // ———————————————— Écoute les événements locaux pour actualiser 1 journée ————————————————
+  useEffect(() => {
+    const onDispoUpdated = (e: Event) => {
+      const ce = e as CustomEvent<{ candidatId?: string; date?: string }>
+      const { candidatId, date } = ce.detail || {}
+      if (candidatId && date) {
+        refreshOne(candidatId, date)
+      } else {
+        // fallback si pas de detail (sécurité)
+        fetchPlanning()
+      }
+    }
+    const onPlanifUpdated = (e: Event) => {
+      const ce = e as CustomEvent<{ candidatId?: string; date?: string }>
+      const { candidatId, date } = ce.detail || {}
+      if (candidatId && date) {
+        refreshOne(candidatId, date)
+      } else {
+        fetchPlanning()
+      }
+    }
+
+    window.addEventListener("dispos:updated", onDispoUpdated as EventListener)
+    window.addEventListener("planif:updated", onPlanifUpdated as EventListener)
+    return () => {
+      window.removeEventListener("dispos:updated", onDispoUpdated as EventListener)
+      window.removeEventListener("planif:updated", onPlanifUpdated as EventListener)
+    }
+  }, [refreshOne, fetchPlanning])
+
   // ————————————————— Rendu —————————————————
   const candidatsDisponibles = useMemo(() => Object.keys(planning), [planning])
 
@@ -675,7 +774,7 @@ export default function Planning() {
         planning={filteredPlanning}
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
-        onRefresh={() => {}} // plus de refetch, tout passe par Realtime
+        onRefresh={() => {}} // tout passe par Realtime + refreshOne()
       />
     </MainLayout>
   )

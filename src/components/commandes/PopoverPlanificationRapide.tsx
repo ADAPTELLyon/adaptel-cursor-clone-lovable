@@ -59,7 +59,7 @@ export function PopoverPlanificationRapide({
       const jour = date.slice(0, 10)
       const candidatIds = candidats.map((c) => c.id)
 
-      // 1) Disponibilités (avec drapeaux par créneau)
+      // 1) Disponibilités (jour, secteur)
       const { data: dispoData } = await supabase
         .from("disponibilites")
         .select("candidat_id, statut, dispo_matin, dispo_soir")
@@ -67,11 +67,16 @@ export function PopoverPlanificationRapide({
         .eq("date", jour)
         .in("candidat_id", candidatIds)
 
-      type DispoRow = { candidat_id: string; statut: string | null; dispo_matin: boolean | null; dispo_soir: boolean | null }
+      type DispoRow = {
+        candidat_id: string
+        statut: string | null
+        dispo_matin: boolean | null
+        dispo_soir: boolean | null
+      }
       const dispoMap = new Map<string, DispoRow>()
       ;(dispoData || []).forEach((d: any) => dispoMap.set(d.candidat_id, d as DispoRow))
 
-      // 2) Occupations réelles via COMMANDES (source de vérité) – on ne retient que “Validé”
+      // 2) Occupations réelles via COMMANDES (source de vérité) – seulement “Validé”
       const { data: cmdData } = await supabase
         .from("commandes")
         .select("candidat_id, statut, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
@@ -80,33 +85,20 @@ export function PopoverPlanificationRapide({
         .in("candidat_id", candidatIds)
         .in("statut", ["Validé"])
 
-      // 3) Occupations via PLANIFICATION (compatibilité si certains flux y écrivent)
-      const { data: planifData } = await supabase
-        .from("planification")
-        .select("candidat_id, statut, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
-        .eq("secteur", secteur)
-        .eq("date", jour)
-        .in("candidat_id", candidatIds)
-
-      // Fusion des occupations (matin/soir)
-      const planifMap = new Map<string, { matin: boolean; soir: boolean }>()
+      // 👉 3) On NE PREND PLUS EN COMPTE la table planification pour bloquer un créneau.
+      //     (Elle a pu laisser des “fantômes” et n’est pas la source de vérité.)
+      const occMap = new Map<string, { matin: boolean; soir: boolean }>()
       const touch = (id: string, which: "matin" | "soir") => {
-        const prev = planifMap.get(id) || { matin: false, soir: false }
+        const prev = occMap.get(id) || { matin: false, soir: false }
         prev[which] = true
-        planifMap.set(id, prev)
+        occMap.set(id, prev)
       }
-
       ;(cmdData || []).forEach((p: any) => {
         if (p.heure_debut_matin && p.heure_fin_matin) touch(p.candidat_id, "matin")
         if (p.heure_debut_soir && p.heure_fin_soir) touch(p.candidat_id, "soir")
       })
-      ;(planifData || []).forEach((p: any) => {
-        // on ne dépend pas du statut ici : on se base sur la présence d’heures
-        if (p.heure_debut_matin && p.heure_fin_matin) touch(p.candidat_id, "matin")
-        if (p.heure_debut_soir && p.heure_fin_soir) touch(p.candidat_id, "soir")
-      })
 
-      // Interdictions / Priorités (client-candidat)
+      // Interdictions / Priorités (client-candidat) — purement informatif
       const { data: ipData } = await supabase
         .from("interdictions_priorites")
         .select("candidat_id, type")
@@ -115,7 +107,7 @@ export function PopoverPlanificationRapide({
       const interditSet = new Set(ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id))
       const prioritaireSet = new Set(ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id))
 
-      // A déjà travaillé pour ce client (historique commandes)
+      // A déjà travaillé pour ce client (historique commandes) — informatif
       const { data: dejaData } = await supabase
         .from("commandes")
         .select("candidat_id")
@@ -136,29 +128,25 @@ export function PopoverPlanificationRapide({
 
       const resultats: CandidatMini[] = candidats
         .filter((c) => {
-          const occ = planifMap.get(c.id) || { matin: false, soir: false }
+          const occ = occMap.get(c.id) || { matin: false, soir: false }
           const dispoRow = dispoMap.get(c.id)
           const statutNorm = normalizeStatut(dispoRow?.statut)
 
           // 1) Statut jour : on EXCLUT seulement si "Non Dispo"
           if (statutNorm === "non dispo") return false
-          // "dispo", "non renseigne" (ou aucune ligne) => autorisés
+          // “dispo”, “non renseigne”, “annule int”, etc. => autorisés ici
 
-          // 2) Respect des drapeaux créneau (si la ligne de dispo les précise)
-          //    Si on planifie le matin et que dispo_matin === false => exclu (idem pour le soir)
+          // 2) Respect des drapeaux créneau si présents
           if (chercheMatin && dispoRow && dispoRow.dispo_matin === false) return false
           if (chercheSoir && dispoRow && dispoRow.dispo_soir === false) return false
           if (isCoupure && dispoRow) {
-            // si les deux drapeaux sont explicitement false => exclure
             const dm = dispoRow.dispo_matin
             const ds = dispoRow.dispo_soir
             if (dm === false && ds === false) return false
           }
 
-          // 3) Conflits créneaux existants
+          // 3) Conflits créneaux existants (basés UNIQUEMENT sur COMMANDES Validé)
           if (isCoupure) {
-            // Ancienne logique excluait si (matin || soir).
-            // Nouvelle logique : EXCLURE uniquement si les deux créneaux sont déjà pris.
             if (occ.matin && occ.soir) return false
           } else if (chercheMatin) {
             if (occ.matin) return false
@@ -257,8 +245,7 @@ export function PopoverPlanificationRapide({
 
     toast({ title: "Candidat planifié avec succès" })
     setOpen(false)
-    // Pas de refetch lourd ici, on reste cohérent avec tes choix récents.
-    // onRefresh?.()
+    onRefresh?.() // rafraîchit la cellule/table immédiatement
   }
 
   return (
@@ -331,6 +318,7 @@ export function PopoverPlanificationRapide({
             setPopupCoupure(false)
             setCandidatChoisi(null)
             setOpen(false)
+            onRefresh?.()
           }}
         />
       )}

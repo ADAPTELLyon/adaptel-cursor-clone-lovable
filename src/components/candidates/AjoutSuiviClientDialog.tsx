@@ -1,219 +1,241 @@
-import { useState, useEffect } from "react"
+// 📁 src/components/candidates/AjoutSuiviClientDialog.tsx
+import { useEffect, useMemo, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { useToast } from "@/hooks/use-toast"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
+import { toast } from "@/hooks/use-toast"
 import { supabase } from "@/lib/supabase"
-import { Plus } from "lucide-react"
+import { useUser } from "@/lib/useUser"
+
+import { secteursList } from "@/lib/secteurs"
 import { useClientsBySecteur } from "@/hooks/useClientsBySecteur"
-import { Client } from "@/types/types-front"
 
 type Props = {
   open: boolean
+  type: "priorite" | "interdiction"
   onClose: () => void
-  type: "interdiction" | "priorite"
   candidatId: string
-  secteurs: string[]
-  onSaved: () => void
+  secteurs: string[]            // secteurs associés au candidat (peut être vide)
+  onSaved?: () => void
 }
 
+/**
+ * Dialog d'ajout d'un suivi côté CANDIDAT (on choisit un CLIENT).
+ * Anti-crash Radix:
+ *  - Aucun <SelectItem> avec value=""
+ *  - States Select initialisés à undefined (pas "")
+ *  - Filtre des options sans id valide
+ *  - Reset du client/service quand le secteur change
+ * UX:
+ *  - Si props.secteurs est vide → afficher TOUTE la liste secteursList
+ *  - Si props.secteurs a des valeurs → intersection secteursList × props.secteurs
+ */
 export function AjoutSuiviClientDialog({
   open,
-  onClose,
   type,
+  onClose,
   candidatId,
   secteurs,
   onSaved,
 }: Props) {
-  const { toast } = useToast()
-  const hasOneSecteur = secteurs.length === 1
+  const { user } = useUser()
 
-  const [secteur, setSecteur] = useState(hasOneSecteur ? secteurs[0] : "")
-  const [selectedClient, setSelectedClient] = useState("")
-  const [availableClients, setAvailableClients] = useState<Client[]>([])
-  const [selectedClientServices, setSelectedClientServices] = useState<string[]>([])
-  const [service, setService] = useState("")
+  // Secteur sélectionné
+  const [secteur, setSecteur] = useState<string | undefined>(undefined)
+
+  // Liste des secteurs disponibles : fallback sur tous si props.secteurs est vide
+  const secteursDisponibles = useMemo(() => {
+    if (!secteurs || secteurs.length === 0) return secteursList
+    const values = new Set(secteurs.map((s) => s.toLowerCase()))
+    return secteursList.filter(
+      (s) => values.has(s.value.toLowerCase()) || values.has(s.label.toLowerCase())
+    )
+  }, [secteurs])
+
+  // Clients dépendants du secteur
+  const { clients, loading: clientsLoading } = useClientsBySecteur(secteur || "")
+  const safeClients = useMemo(
+    () => (clients || []).filter((c: any) => c && typeof c.id === "string" && c.id.trim() !== ""),
+    [clients]
+  )
+  const [clientId, setClientId] = useState<string | undefined>(undefined)
+
+  // Service (optionnel) : ici champ libre (tu pourras le relier plus tard aux services client si besoin)
+  const [service, setService] = useState<string | undefined>(undefined)
+
   const [commentaire, setCommentaire] = useState("")
+  const [confirm, setConfirm] = useState(false)
 
+  // Reset complet à la fermeture
   useEffect(() => {
-    if (hasOneSecteur) {
-      setSecteur(secteurs[0])
+    if (!open) {
+      setSecteur(undefined)
+      setClientId(undefined)
+      setService(undefined)
+      setCommentaire("")
+      setConfirm(false)
     }
-  }, [hasOneSecteur, secteurs])
+  }, [open])
 
-  const { clients } = useClientsBySecteur(secteur)
-
+  // Quand le secteur change, on réinitialise le client + service
   useEffect(() => {
-    setAvailableClients(clients)
-    setSelectedClient("")
-    setSelectedClientServices([])
-    setService("")
-  }, [secteur, clients])
+    setClientId(undefined)
+    setService(undefined)
+  }, [secteur])
 
-  useEffect(() => {
-    const fetchServices = async () => {
-      if (!selectedClient) return
-      const { data, error } = await supabase
-        .from("clients")
-        .select("services")
-        .eq("id", selectedClient)
-        .single()
-      if (!error && Array.isArray(data?.services)) {
-        setSelectedClientServices(data.services)
-      } else {
-        setSelectedClientServices([])
-      }
-    }
-    fetchServices()
-  }, [selectedClient])
+  const titre =
+    type === "interdiction" ? "Ajouter une interdiction client" : "Ajouter un client prioritaire"
 
   const handleSave = async () => {
-    if (!secteur || !selectedClient) {
-      toast({
-        title: "Champs requis",
-        description: "Sélectionnez un secteur et un client",
-        variant: "destructive",
-      })
+    if (!user?.id) {
+      toast({ title: "Non connecté", description: "Veuillez vous reconnecter.", variant: "destructive" })
+      return
+    }
+    if (!secteur || !clientId) {
+      toast({ title: "Champs requis", description: "Sélectionnez un secteur et un client.", variant: "destructive" })
+      return
+    }
+    if (type === "interdiction" && !confirm) {
+      toast({ title: "Confirmation requise", description: "Cochez la case de confirmation d'interdiction.", variant: "destructive" })
       return
     }
 
-    const { data: existants, error: checkError } = await supabase
+    // Doublon actif ?
+    const { data: existing, error: fetchError } = await supabase
       .from("interdictions_priorites")
-      .select("id, type")
+      .select("id")
       .eq("candidat_id", candidatId)
-      .eq("client_id", selectedClient)
+      .eq("client_id", clientId)
+      .eq("type", type)
       .eq("actif", true)
 
-    if (checkError) {
-      toast({ title: "Erreur", description: "Vérification échouée", variant: "destructive" })
+    if (fetchError) {
+      toast({ title: "Erreur", description: fetchError.message, variant: "destructive" })
       return
     }
-
-    const dejaInterdit = existants?.some((e) => e.type === "interdiction")
-    const dejaPrioritaire = existants?.some((e) => e.type === "priorite")
-
-    if (type === "interdiction" && dejaInterdit) {
-      toast({ title: "Erreur", description: "Ce candidat est déjà interdit pour ce client." })
-      return
-    }
-
-    if (type === "priorite" && dejaPrioritaire) {
-      toast({ title: "Erreur", description: "Ce candidat est déjà prioritaire pour ce client." })
-      return
-    }
-
-    if ((type === "interdiction" && dejaPrioritaire) || (type === "priorite" && dejaInterdit)) {
+    if ((existing || []).length > 0) {
       toast({
-        title: "Incohérence",
-        description: `Ce candidat est déjà ${type === "interdiction" ? "prioritaire" : "interdit"} pour ce client. Supprimez ce statut avant de le modifier.`,
+        title: "Déjà présent",
+        description:
+          type === "interdiction"
+            ? "Ce candidat a déjà une interdiction active pour ce client."
+            : "Ce candidat est déjà prioritaire sur ce client.",
         variant: "destructive",
       })
       return
     }
 
-    const { error } = await supabase.from("interdictions_priorites").insert([
-      {
-        type,
-        candidat_id: candidatId,
-        client_id: selectedClient,
-        secteur,
-        service: selectedClientServices.length > 0 ? service || null : null,
-        commentaire,
-      },
-    ])
-
-    if (error) {
-      toast({ title: "Erreur", description: "Enregistrement échoué", variant: "destructive" })
-    } else {
-      toast({ title: "Ajouté avec succès" })
-      onSaved()
-      onClose()
-      setSecteur(hasOneSecteur ? secteurs[0] : "")
-      setSelectedClient("")
-      setService("")
-      setCommentaire("")
+    const payload = {
+      client_id: clientId,
+      candidat_id: candidatId,
+      secteur,
+      service: service ?? null,
+      type, // "interdiction" | "priorite"
+      commentaire: commentaire || null,
+      created_by: user.id,
+      actif: true,
     }
+
+    const { error: insertError } = await supabase
+      .from("interdictions_priorites")
+      .insert([payload as never])
+
+    if (insertError) {
+      toast({ title: "Erreur", description: insertError.message, variant: "destructive" })
+      return
+    }
+
+    toast({
+      title: type === "interdiction" ? "Interdiction ajoutée" : "Priorité ajoutée",
+    })
+    onClose()
+    onSaved?.()
   }
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+    <Dialog open={open} onOpenChange={(o) => (!o ? onClose() : null)}>
+      <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>
-            Ajouter un client {type === "interdiction" ? "interdit" : "prioritaire"}
-          </DialogTitle>
+          <DialogTitle>{titre}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3">
-          {!hasOneSecteur && (
-            <div>
-              <label className="text-sm font-medium">Secteur</label>
-              <Select value={secteur} onValueChange={(val) => setSecteur(val)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionnez un secteur" />
-                </SelectTrigger>
-                <SelectContent>
-                  {secteurs.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+        <div className="space-y-4">
+          {/* Secteur */}
+          <Select value={secteur} onValueChange={setSecteur}>
+            <SelectTrigger>
+              <SelectValue placeholder="Secteur" />
+            </SelectTrigger>
+            <SelectContent>
+              {secteursDisponibles.map((s) => (
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          <div>
-            <label className="text-sm font-medium">Client</label>
-            <Select
-              value={selectedClient}
-              onValueChange={setSelectedClient}
-              disabled={!secteur}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Sélectionnez un client" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableClients.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.nom}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Client (dépend du secteur) */}
+          <Select
+            value={clientId}
+            onValueChange={setClientId}
+            disabled={!secteur || clientsLoading}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={clientsLoading ? "Chargement..." : "Client"} />
+            </SelectTrigger>
+            <SelectContent>
+              {safeClients.map((c: any) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.nom}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-          {selectedClientServices.length > 0 && (
-            <div>
-              <label className="text-sm font-medium">Service (facultatif)</label>
-              <Select value={service} onValueChange={setService}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Aucun service" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Aucun</SelectItem>
-                  {selectedClientServices.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
+          {/* Service optionnel (champ libre pour l’instant) */}
           <Input
-            placeholder="Commentaire"
+            placeholder="Service (optionnel)"
+            value={service ?? ""}
+            onChange={(e) => {
+              const v = e.target.value
+              setService(v.trim() === "" ? undefined : v)
+            }}
+          />
+
+          <Textarea
+            placeholder="Commentaire (optionnel)"
             value={commentaire}
             onChange={(e) => setCommentaire(e.target.value)}
           />
 
-          <Button onClick={handleSave} className="w-full">
-            <Plus className="h-4 w-4 mr-2" /> Ajouter
-          </Button>
+          {type === "interdiction" && (
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="confirm"
+                checked={confirm}
+                onCheckedChange={(v) => setConfirm(v === true)}
+              />
+              <label htmlFor="confirm" className="text-sm">
+                Confirmer l’interdiction de ce candidat sur ce client
+              </label>
+            </div>
+          )}
+
+          <div className="pt-2">
+            <Button
+              onClick={handleSave}
+              className="w-full bg-[#840404] text-white hover:bg-[#750303]"
+            >
+              Enregistrer
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
   )
 }
+
+export default AjoutSuiviClientDialog

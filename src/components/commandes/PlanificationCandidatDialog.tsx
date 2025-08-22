@@ -119,7 +119,7 @@ export function PlanificationCandidatDialog({
       const dispoMap = new Map<string, DispoRow>()
       ;(dispoData || []).forEach((d: any) => dispoMap.set(d.candidat_id, d as DispoRow))
 
-      // Occupations via COMMANDES (source principale) — seulement Validé
+      // Occupations via COMMANDES — Validé uniquement
       const { data: cmdData } = await supabase
         .from("commandes")
         .select("candidat_id, statut, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
@@ -128,31 +128,22 @@ export function PlanificationCandidatDialog({
         .in("candidat_id", candidatIds)
         .in("statut", ["Validé"])
 
-      // Occupations via PLANIFICATION (compat)
-      const { data: planifData } = await supabase
-        .from("planification")
-        .select("candidat_id, commande_id, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
-        .eq("secteur", secteur)
-        .eq("date", jour)
-        .in("candidat_id", candidatIds)
-
-      // Agrégation des occupations + heures affichables
+      // Détails pour affichage (heures)
       const occMap = new Map<string, { matin: boolean; soir: boolean }>()
       const detailsMap: Record<string, any> = {}
 
-      const touch = (id: string, which: "matin" | "soir", hd?: string | null, hf?: string | null, prefer = false) => {
+      const touch = (id: string, which: "matin" | "soir", hd?: string | null, hf?: string | null) => {
         const prev = occMap.get(id) || { matin: false, soir: false }
         prev[which] = true
         occMap.set(id, prev)
         const d = detailsMap[id] || {}
-        // on préfère les heures issues de commandes Validé si disponibles
         if (which === "matin") {
-          if (prefer || !d.heure_debut_matin) {
+          if (!d.heure_debut_matin) {
             d.heure_debut_matin = hd || null
             d.heure_fin_matin = hf || null
           }
         } else {
-          if (prefer || !d.heure_debut_soir) {
+          if (!d.heure_debut_soir) {
             d.heure_debut_soir = hd || null
             d.heure_fin_soir = hf || null
           }
@@ -161,12 +152,8 @@ export function PlanificationCandidatDialog({
       }
 
       ;(cmdData || []).forEach((c: any) => {
-        if (c.heure_debut_matin && c.heure_fin_matin) touch(c.candidat_id, "matin", c.heure_debut_matin, c.heure_fin_matin, true)
-        if (c.heure_debut_soir && c.heure_fin_soir) touch(c.candidat_id, "soir", c.heure_debut_soir, c.heure_fin_soir, true)
-      })
-      ;(planifData || []).forEach((p: any) => {
-        if (p.heure_debut_matin && p.heure_fin_matin) touch(p.candidat_id, "matin", p.heure_debut_matin, p.heure_fin_matin)
-        if (p.heure_debut_soir && p.heure_fin_soir) touch(p.candidat_id, "soir", p.heure_debut_soir, p.heure_fin_soir)
+        if (c.heure_debut_matin && c.heure_fin_matin) touch(c.candidat_id, "matin", c.heure_debut_matin, c.heure_fin_matin)
+        if (c.heure_debut_soir && c.heure_fin_soir) touch(c.candidat_id, "soir", c.heure_debut_soir, c.heure_fin_soir)
       })
       setPlanificationDetails(detailsMap)
 
@@ -186,14 +173,13 @@ export function PlanificationCandidatDialog({
         // Exclure seulement "Non Dispo"
         if (statutNorm === "non dispo") continue
 
-        // Respect des flags créneau si présents
+        // Respect flags créneau si présents
         if (chercheMatin && dispoRow && dispoRow.dispo_matin === false) continue
         if (chercheSoir && dispoRow && dispoRow.dispo_soir === false) continue
         if (isCoupure && dispoRow && dispoRow.dispo_matin === false && dispoRow.dispo_soir === false) continue
 
-        // Conflits par besoin
+        // Conflits par besoin (basés uniquement sur COMMANDES Validé)
         if (isCoupure) {
-          // On exclut uniquement si les 2 créneaux sont occupés
           if (occ.matin && occ.soir) continue
         } else if (chercheMatin) {
           if (occ.matin) continue
@@ -214,7 +200,7 @@ export function PlanificationCandidatDialog({
 
         if (occ.matin || occ.soir) planifieList.push(mini)
         else if (statutNorm === "dispo") dispoList.push(mini)
-        else nonList.push(mini) // "non renseigne" ou aucune ligne
+        else nonList.push(mini) // "non renseigné" ou pas de ligne
       }
 
       setDispos(dispoList)
@@ -241,19 +227,8 @@ export function PlanificationCandidatDialog({
       .eq("secteur", secteur)
       .eq("statut", "Validé")
 
-    // Conflit via PLANIFICATION (compat)
-    const { data: existingPlanifs } = await supabase
-      .from("planification")
-      .select("heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
-      .eq("candidat_id", candidatId)
-      .eq("date", jour)
-      .eq("secteur", secteur)
-
-    const occMatin = (existingCmds?.some(p => p.heure_debut_matin && p.heure_fin_matin) ?? false) ||
-                     (existingPlanifs?.some(p => p.heure_debut_matin && p.heure_fin_matin) ?? false)
-
-    const occSoir  = (existingCmds?.some(p => p.heure_debut_soir && p.heure_fin_soir) ?? false) ||
-                     (existingPlanifs?.some(p => p.heure_debut_soir && p.heure_fin_soir) ?? false)
+    const occMatin = existingCmds?.some(p => p.heure_debut_matin && p.heure_fin_matin) ?? false
+    const occSoir  = existingCmds?.some(p => p.heure_debut_soir && p.heure_fin_soir) ?? false
 
     const conflitMatin = aMatin && occMatin
     const conflitSoir  = aSoir && occSoir
@@ -276,7 +251,7 @@ export function PlanificationCandidatDialog({
     await supabase.from("planification").insert({
       commande_id: commande.id,
       candidat_id: candidatId,
-      date: jour, // format AAAA-MM-JJ
+      date: jour,
       secteur,
       statut: "Validé",
       heure_debut_matin: commande.heure_debut_matin,
@@ -332,7 +307,7 @@ export function PlanificationCandidatDialog({
 
     toast({ title: "Candidat planifié avec succès" })
     onClose()
-    // Pas de onSuccess() ici pour éviter l'effet "saut" ; la cellule se met à jour localement.
+    onSuccess?.()
   }
 
   const dateFormatee = format(new Date(date), "eeee d MMMM", { locale: fr })
@@ -501,6 +476,8 @@ export function PlanificationCandidatDialog({
           }
           onSuccess={() => {
             setOpenCoupureDialog(false)
+            setSelectedCandidatId(null)
+            onSuccess?.()
             onClose()
           }}
         />
