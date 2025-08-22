@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase"
 import { addDays, format, startOfWeek, getISOWeek } from "date-fns"
 import { fr } from "date-fns/locale"
 import { disponibiliteColors, statutColors } from "@/lib/colors"
-import { Calendar, CheckCircle2, Filter, FileText } from "lucide-react"
+import { Calendar, CheckCircle2, Filter, FileText, AlertCircle, Clock } from "lucide-react"
 import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 import { secteursList } from "@/lib/secteurs"
 import FicheMemoCandidat from "@/components/commandes/Fiche-Memo-Candidat"
@@ -47,6 +47,9 @@ export function PlanningCandidatsSemaine({
   const [memoOpen, setMemoOpen] = useState(false)
   const [memoCandidatId, setMemoCandidatId] = useState<string>("")
 
+  // Bulle d’info mission secondaire (par cellule)
+  const [openAlertKey, setOpenAlertKey] = useState<string | null>(null)
+
   useEffect(() => {
     const fetchData = async () => {
       const baseDate = semaineDate ? new Date(semaineDate) : new Date()
@@ -84,21 +87,76 @@ export function PlanningCandidatsSemaine({
     fetchData()
   }, [semaineDate, secteur, candidats])
 
-  // Index rapides
+  // Helpers
+  const k = (candidatId: string, dateStr: string) => `${candidatId}|${dateStr}`
+  const H = (h?: string | null) => (h && h.length >= 5 ? h.slice(0, 5) : "")
+
+  // ————————— Sélection principale/secondaire (mimique du planning candidat) —————————
+  type Pair = { main?: PlanifData; second?: PlanifData }
+
+  const planifPairs = useMemo(() => {
+    // on ne travaille QUE sur les missions Validé pour choisir main/second
+    const valides = planifs.filter((p) => (p.statut || "").toLowerCase() === "validé")
+
+    // regrouper par (candidat, date)
+    const groups = new Map<string, PlanifData[]>()
+    for (const p of valides) {
+      const key = k(p.candidat_id, p.date)
+      const arr = groups.get(key)
+      if (arr) arr.push(p)
+      else groups.set(key, [p])
+    }
+
+    const result = new Map<string, Pair>()
+    for (const [key, arr] of groups) {
+      // repérer une mission “matin” et une mission “soir”
+      const missionMatin = arr.find((p) => p.heure_debut_matin && p.heure_fin_matin)
+      const missionSoir  = arr.find((p) => p.heure_debut_soir  && p.heure_fin_soir)
+
+      let main: PlanifData | undefined
+      let second: PlanifData | undefined
+
+      if (missionMatin) {
+        main = missionMatin // priorité à la mission du matin/midi
+        if (missionSoir && (missionSoir.client?.nom || "") !== (missionMatin.client?.nom || "")) {
+          second = missionSoir
+        }
+      } else if (missionSoir) {
+        // seulement une mission soir validée
+        main = missionSoir
+      } else {
+        // Validé sans heures -> on prend la première pour ne pas afficher d’annexe ici
+        main = arr[0]
+      }
+
+      result.set(key, { main, second })
+    }
+
+    return result
+  }, [planifs])
+
+  // Index principal + secondaire
   const planifIndex = useMemo(() => {
     const idx = new Map<string, PlanifData>()
-    for (const p of planifs) idx.set(`${p.candidat_id}|${p.date}`, p)
+    for (const [key, pair] of planifPairs) {
+      if (pair.main) idx.set(key, pair.main)
+    }
     return idx
-  }, [planifs])
+  }, [planifPairs])
+
+  const planifSecondIndex = useMemo(() => {
+    const idx = new Map<string, PlanifData>()
+    for (const [key, pair] of planifPairs) {
+      if (pair.second) idx.set(key, pair.second)
+    }
+    return idx
+  }, [planifPairs])
 
   const dispoIndex = useMemo(() => {
     const idx = new Map<string, DispoData>()
     for (const d of dispos) idx.set(`${d.candidat_id}|${d.date}`, d)
     return idx
   }, [dispos])
-
-  const k = (candidatId: string, dateStr: string) => `${candidatId}|${dateStr}`
-  const H = (h?: string | null) => (h && h.length >= 5 ? h.slice(0, 5) : "")
 
   // Icônes
   const CellIcon = ({ statut }: { statut: string }) => {
@@ -131,7 +189,7 @@ export function PlanningCandidatsSemaine({
     )
   }
 
-  // Corps de cellule (harmonisé)
+  // Corps de cellule
   const renderInfosSousIcone = (p?: PlanifData, d?: DispoData) => {
     if (p) {
       const matin =
@@ -164,7 +222,6 @@ export function PlanningCandidatsSemaine({
       )
     }
 
-    // Non Dispo : pastille seule
     return null
   }
 
@@ -296,7 +353,7 @@ export function PlanningCandidatsSemaine({
                   className="grid grid-cols-[140px_repeat(7,1fr)] border-b"
                   style={{ minHeight: "96px" }}
                 >
-                  {/* Colonne candidat : nom/prénom normaux + icône d’ouverture mémo */}
+                  {/* Colonne candidat */}
                   <div className="px-3 py-2 flex items-center">
                     <div className="my-auto flex items-center gap-2">
                       <div>
@@ -319,14 +376,22 @@ export function PlanningCandidatsSemaine({
                   {/* 7 jours */}
                   {jours.map((j, i) => {
                     const dateStr = format(j, "yyyy-MM-dd")
-                    const p = planifIndex.get(k(c.id, dateStr))
-                    const d = p ? undefined : dispoIndex.get(k(c.id, dateStr))
-                    const noData = !p && (!d || d.statut === "Non Renseigné")
+                    const key = k(c.id, dateStr)
+
+                    const main = planifIndex.get(key) // mission principale (matin si possible)
+                    const second = planifSecondIndex.get(key) // mission du second créneau (soir)
+                    const d = main ? undefined : dispoIndex.get(key)
+                    const noData = !main && (!d || d.statut === "Non Renseigné")
+
+                    // Alerte seulement si seconde mission et client différent
+                    const showAlert =
+                      !!second &&
+                      (second.client?.nom || "") !== (main?.client?.nom || "")
 
                     let topIcon: JSX.Element | null = null
                     if (!noData) {
-                      if (p) {
-                        topIcon = <CellIcon statut={p.statut || ""} />
+                      if (main) {
+                        topIcon = <CellIcon statut={main.statut || ""} />
                       } else if (d) {
                         if (d.statut === "Dispo")
                           topIcon = <DispoDot type="Dispo" />
@@ -335,17 +400,74 @@ export function PlanningCandidatsSemaine({
                       }
                     }
 
+                    const secondMatin =
+                      second?.heure_debut_matin && second?.heure_fin_matin
+                        ? `${H(second.heure_debut_matin)}–${H(second.heure_fin_matin)}`
+                        : ""
+                    const secondSoir =
+                      second?.heure_debut_soir && second?.heure_fin_soir
+                        ? `${H(second.heure_debut_soir)}–${H(second.heure_fin_soir)}`
+                        : ""
+
                     return (
                       <div
                         key={i}
-                        className="px-1 py-2 flex flex-col items-center justify-center text-center"
+                        className="px-1 py-2 flex flex-col items-center justify-center text-center relative"
                       >
                         {!noData && (
                           <>
-                            <div className="h-5 flex items-center justify-center">
+                            <div className="h-5 flex items-center justify-center gap-1">
                               {topIcon}
+
+                              {showAlert && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setOpenAlertKey((prev) =>
+                                      prev === key ? null : key
+                                    )
+                                  }
+                                  className="ml-1 inline-flex items-center justify-center"
+                                  title="Autre mission planifiée ce jour (deuxième créneau)"
+                                  aria-label="Autre mission planifiée ce jour"
+                                >
+                                  <AlertCircle className="w-4 h-4 text-[#840404]" />
+                                </button>
+                              )}
                             </div>
-                            {renderInfosSousIcone(p, d)}
+
+                            {renderInfosSousIcone(main, d)}
+
+                            {/* Bulle d’info seconde mission (soir) */}
+                            {showAlert && openAlertKey === key && (
+                              <div
+                                className="absolute top-7 right-2 z-30 w-56 rounded-md border bg-white shadow-lg p-2 text-left"
+                                role="dialog"
+                                aria-label="Détails de la seconde mission"
+                                onMouseLeave={() => setOpenAlertKey(null)}
+                              >
+                                <div className="text-[11px] text-gray-900 font-semibold break-words">
+                                  {second?.client?.nom || "Autre mission"}
+                                </div>
+                                <div className="mt-1 text-[11px] text-gray-700 space-y-0.5">
+                                  {secondMatin && (
+                                    <div className="flex items-center gap-1">
+                                      <Clock className="w-3.5 h-3.5" />
+                                      <span>Matin : {secondMatin}</span>
+                                    </div>
+                                  )}
+                                  {secondSoir && (
+                                    <div className="flex items-center gap-1">
+                                      <Clock className="w-3.5 h-3.5" />
+                                      <span>Soir : {secondSoir}</span>
+                                    </div>
+                                  )}
+                                  {!secondMatin && !secondSoir && (
+                                    <div>Horaires non renseignés</div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </>
                         )}
                       </div>

@@ -20,6 +20,8 @@ interface CellulePlanningCandidateProps {
   service: string;
   nomPrenom: string;
   onSuccess: () => void;
+  /** NEW: active la mise en page compacte du mini-planning uniquement */
+  mini?: boolean;
 }
 
 function normalizeStatutDispo(s?: string | null): "Dispo" | "Non Dispo" | "Non Renseigné" {
@@ -39,6 +41,7 @@ export function CellulePlanningCandidate({
   service,
   nomPrenom,
   onSuccess,
+  mini = false, // NEW
 }: CellulePlanningCandidateProps) {
   const [open, setOpen] = useState(false)
   const [creneauVerrouille, setCreneauVerrouille] = useState<"matin" | "soir" | undefined>()
@@ -52,14 +55,12 @@ export function CellulePlanningCandidate({
   const isPlanifie = commande?.statut === "Validé"
   const statutAnnexe = ["Annule Int", "Absence", "Annule Client", "Annule ADA"].includes(commande?.statut || "")
 
-  // Dispo normalisée
   const statutDispo = normalizeStatutDispo(disponibilite?.statut)
   const dispoMatin = disponibilite?.matin ?? null
   const dispoSoir = disponibilite?.soir ?? null
   const isDispo = statutDispo === "Dispo" && (dispoMatin === true || dispoSoir === true)
   const isNonDispo = statutDispo === "Non Dispo"
 
-  // On n'affiche les annexes "au-dessus" de la dispo que si la dispo est Non Renseigné
   const annexeActive = statutAnnexe && statutDispo === "Non Renseigné"
 
   const couleur = isPlanifie && !annexeActive
@@ -79,7 +80,6 @@ export function CellulePlanningCandidate({
   }
 
   const handleClick = () => {
-    // Autoriser le clic si PAS planifié (même si statut annexe)
     if (!isPlanifie) {
       openPopup()
     }
@@ -94,19 +94,20 @@ export function CellulePlanningCandidate({
   const isPlanifieMatin = !!commande?.heure_debut_matin && !!commande?.heure_fin_matin && commande?.statut === "Validé"
   const isPlanifieSoir = !!commande?.heure_debut_soir && !!commande?.heure_fin_soir && commande?.statut === "Validé"
 
-  // y a-t-il une autre commande (secondaire) le soir ?
   const hasSecondarySoir =
     (autresCommandes?.some((cmd) => !!cmd.heure_debut_soir && !!cmd.heure_fin_soir)) || false
 
   const hasAutreCommandeMatin =
     autresCommandes?.some((cmd) => !!cmd.heure_debut_matin && !!cmd.heure_fin_matin) || false
 
-  // Si une autre commande couvre le soir, on NE doit PAS montrer la ligne "Soir" (même sous forme de dispo)
   const hideSoirRow = hasSecondarySoir
 
   const showDispoRestantMatin = isPlanifieSoir && !isPlanifieMatin && !hasAutreCommandeMatin
   const showDispoRestantSoir = !hideSoirRow && isPlanifieMatin && !isPlanifieSoir
 
+  // ————————————————————
+  // Rendu
+  // ————————————————————
   return (
     <>
       <Tooltip>
@@ -122,26 +123,60 @@ export function CellulePlanningCandidate({
             }}
             onClick={handleClick}
           >
-            {/* En-tête */}
-            <div className="font-semibold text-[13px] leading-tight min-h-[1.2rem]">
-              {isPlanifie && !annexeActive
-                ? (commande?.client?.nom || "")
-                : annexeActive
-                ? (commande?.statut || "")
-                : isNonDispo
-                ? "Non Dispo"
-                : isDispo
-                ? "Dispo"
-                : ""}
-            </div>
+            {/* ——— ENTÊTE : 2 lignes max en mode mini, sinon comportement initial ——— */}
+            {mini ? (
+              annexeActive ? (
+                // Cas ANNEXE (ligne1: statut, ligne2: client en italique)
+                <div className="min-h-[2.2rem]">
+                  <div className="font-semibold text-[11px] leading-[1.1rem] truncate">
+                    {commande?.statut || ""}
+                  </div>
+                  <div className="text-[11px] leading-[1.1rem] italic truncate">
+                    {commande?.client?.nom || ""}
+                  </div>
+                </div>
+              ) : (
+                // Cas normal : client OU libellé dispo/non dispo — clamp sur 2 lignes
+                <div
+                  className={cn(
+                    "font-semibold",
+                    "text-[11px] leading-[1.1rem] min-h-[2.2rem]",
+                    "break-words overflow-hidden",
+                    "[display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]"
+                  )}
+                >
+                  {isPlanifie
+                    ? (commande?.client?.nom || "")
+                    : isNonDispo
+                    ? "Non Dispo"
+                    : isDispo
+                    ? "Dispo"
+                    : ""}
+                </div>
+              )
+            ) : (
+              <>
+                {/* Comportement original pour le planning principal */}
+                <div className="font-semibold text-[13px] leading-tight min-h-[1.2rem]">
+                  {isPlanifie && !annexeActive
+                    ? (commande?.client?.nom || "")
+                    : annexeActive
+                    ? (commande?.statut || "")
+                    : isNonDispo
+                    ? "Non Dispo"
+                    : isDispo
+                    ? "Dispo"
+                    : ""}
+                </div>
+                <div className="text-xs font-normal italic min-h-[1rem]">
+                  {annexeActive && commande?.client?.nom ? commande.client.nom : ""}
+                </div>
+              </>
+            )}
 
-            {/* Client en italique pour les annexes */}
-            <div className="text-xs font-normal italic min-h-[1rem]">
-              {annexeActive && commande?.client?.nom ? commande.client.nom : ""}
-            </div>
-
-            {/* Créneau Matin */}
-            <div className="text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center">
+            {/* ——— Créneau Matin ——— */}
+            <div className={mini ? "text-[11px] font-bold min-h-[1.2rem] mt-0.5 flex items-center"
+                                  : "text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center"}>
               {annexeActive ? null : isPlanifieMatin ? (
                 `${commande!.heure_debut_matin!.slice(0, 5)} - ${commande!.heure_fin_matin!.slice(0, 5)}`
               ) : showDispoRestantMatin ? (
@@ -162,9 +197,10 @@ export function CellulePlanningCandidate({
               ) : null}
             </div>
 
-            {/* Créneau Soir (masqué s'il existe une planif soir en secondaire) */}
+            {/* ——— Créneau Soir (masqué si secondaire soir) ——— */}
             {secteur !== "Étages" && !hideSoirRow && (
-              <div className="text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center">
+              <div className={mini ? "text-[11px] font-bold min-h-[1.2rem] mt-0.5 flex items-center"
+                                    : "text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center"}>
                 {annexeActive ? null : isPlanifieSoir ? (
                   `${commande!.heure_debut_soir!.slice(0, 5)} - ${commande!.heure_fin_soir!.slice(0, 5)}`
                 ) : showDispoRestantSoir ? (
@@ -186,7 +222,7 @@ export function CellulePlanningCandidate({
               </div>
             )}
 
-            {/* Commentaire */}
+            {/* ——— Commentaire ——— */}
             {disponibilite?.commentaire && (
               <div
                 className="absolute bottom-1 right-1 z-20"
@@ -227,7 +263,7 @@ export function CellulePlanningCandidate({
               </div>
             )}
 
-            {/* “+” quand vide */}
+            {/* ——— “+” quand vide ——— */}
             {!commande && !disponibilite && (
               <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
                 <Plus className="w-4 h-4 text-gray-400" />

@@ -36,6 +36,9 @@ type CommandeRow = {
   complement_motif?: string | null      
 }
 
+// ✅ Seuls ces statuts sont comptabilisés dans les indicateurs
+const COUNTABLE = new Set(["Validé", "En recherche", "Non pourvue"])
+
 export default function Commandes() {
   // Filtres & états d’UI
   const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(() => {
@@ -226,17 +229,16 @@ export default function Commandes() {
       }
     })
 
-    // Stats
+    // ✅ Stats basées uniquement sur les statuts COUNTABLE
     let d = 0, v = 0, r = 0, np = 0
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) =>
         j.commandes.forEach((cmd) => {
-          if (cmd.statut !== "Annule Client" && cmd.statut !== "Annule ADA") {
-            d++
-            if (cmd.statut === "Validé") v++
-            if (cmd.statut === "En recherche") r++
-            if (cmd.statut === "Non pourvue") np++
-          }
+          if (!COUNTABLE.has(cmd.statut)) return
+          d++
+          if (cmd.statut === "Validé") v++
+          else if (cmd.statut === "En recherche") r++
+          else if (cmd.statut === "Non pourvue") np++
         })
       )
     )
@@ -389,12 +391,11 @@ export default function Commandes() {
         const week = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
         if (week === semaineCourante) {
           j.commandes.forEach((cmd) => {
-            if (cmd.statut !== "Annule Client" && cmd.statut !== "Annule ADA") {
-              res.demandées++
-              if (cmd.statut === "Validé") res.validées++
-              if (cmd.statut === "En recherche") res.enRecherche++
-              if (cmd.statut === "Non pourvue") res.nonPourvue++
-            }
+            if (!COUNTABLE.has(cmd.statut)) return
+            res.demandées++
+            if (cmd.statut === "Validé") res.validées++
+            else if (cmd.statut === "En recherche") res.enRecherche++
+            else if (cmd.statut === "Non pourvue") res.nonPourvue++
           })
         }
       })

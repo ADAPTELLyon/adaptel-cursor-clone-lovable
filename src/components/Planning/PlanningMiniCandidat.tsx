@@ -113,7 +113,7 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
           if (missionSoir) {
             const s = toCommandeFull(missionSoir)
             if (m.client?.nom && s.client?.nom && m.client.nom !== s.client.nom) {
-              autres.push(s) // affiché via alert circle ci-dessous
+              autres.push(s)
             }
           }
         } else if (missionSoir) {
@@ -199,8 +199,6 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
 
         {dates.map((dateStr, i) => {
           const jourCell = byDate[dateStr]
-
-          // commande secondaire (pour l’alert circle)
           const secondaire = jourCell?.autresCommandes && jourCell.autresCommandes.length > 0
             ? jourCell.autresCommandes[0]
             : undefined
@@ -217,6 +215,8 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
                 service={jourCell?.service || ""}
                 onSuccess={() => fetchPlanning()}
                 nomPrenom={candidatNomPrenom}
+                /* >>> MINI uniquement ici <<< */
+                mini
               />
 
               {secondaire && (

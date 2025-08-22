@@ -8,7 +8,9 @@ import {
   parseISO,
   differenceInMinutes,
   addDays,
+  format,
 } from "date-fns"
+import { fr } from "date-fns/locale"
 
 // ===== Borne de bascule : avant S33-2025 -> archives ; à partir de S33-2025 -> live (commandes / historique)
 const SWITCH_WEEK = { year: 2025, week: 33 } as const
@@ -34,21 +36,20 @@ function canonSecteurKey(raw?: string | null): CanonSecteur | string {
   if (n === "salle") return "salle"
   if (n === "plonge") return "plonge"
   if (n === "reception") return "réception"
-  // inconnu: on renvoie la version normalisée brute (affiché à 0 si non mappé)
   return raw ?? "inconnu"
 }
 
 /** Mappe un libellé de statut archive vers nos clés internes */
 function canonStatut(raw?: string | null): string {
   const n = norm(raw)
-  if (n.startsWith("valide")) return "Validé"                // "Validé", "Validées"
+  if (n.startsWith("valide")) return "Validé"
   if (n === "en recherche") return "En recherche"
-  if (n.startsWith("non pourvue")) return "Non pourvue"      // "Non pourvue", "Non pourvues"
+  if (n.startsWith("non pourvue")) return "Non pourvue"
   if (n === "annule client") return "Annule Client"
   if (n === "annule int") return "Annule Int"
   if (n === "annule ada") return "Annule ADA"
   if (n === "absence") return "Absence"
-  if (n.startsWith("demande")) return "Demandées"            // "Demandée(s)"
+  if (n.startsWith("demande")) return "Demandées"
   return raw ?? ""
 }
 
@@ -60,15 +61,30 @@ function isLegacyWeek(year: number, week: number) {
   )
 }
 
+/** Jour (texte FR) stable depuis une date YYYY-MM-DD sans effet fuseau */
+function dayKeyFromDate(dateStr: string) {
+  // on colle T12:00:00 pour éviter tout décalage UTC/local
+  const d = parseISO(`${dateStr}T12:00:00`)
+  return norm(format(d, "eeee", { locale: fr })) // "lundi", "mardi", ...
+}
+
 type StatsState = {
+  // Cartes statuts
   statsByStatus: Record<string, number>
+  // Cartes “Total missions semaine” (N et N-1)
   missionsSemaine: number
   missionsSemaineN1: number
+  // Graph “validées par jour” (N et N-1)
   missionsByDay: { day: string; missions: number; missionsN1: number }[]
+  // Comparatif secteur (N et N-1)
   repartitionSecteurs: { secteur: string; missions: number; missionsN1: number }[]
+  // Rang sur l’année (facultatif, inchangé)
   positionSemaine: number
+  // Top clients (inchangé)
   topClients: { name: string; missions: number }[]
+  // Temps de traitement (inchangé)
   tempsTraitementMoyen: string
+  // Métriques mois (inchangées pour l’instant)
   missionsMois: number
   missionsMoisN1: number
   positionMois: number
@@ -77,10 +93,16 @@ type StatsState = {
 
 /**
  * Hook des stats “semaine”.
- * - `selectedWeek` : numéro de semaine à afficher (sinon semaine courante).
- * - N-1 = même numéro de semaine sur l’année précédente.
- * - Avant S33/2025 => tables d’archives (donnees_*_semaine).
- * - À partir de S33/2025 => live (commandes + historique) pour l’année en cours.
+ * - selectedWeek : numéro de SEMAINE ISO (sinon semaine courante).
+ * - Avant S33/2025 => toutes les données via tables d’archives.
+ * - À partir de S33/2025 => N via “commandes” ; N-1 via tables d’archives.
+ * - Règles demandées :
+ *   • Demandées = Validé + En recherche + Non pourvue
+ *   • Comparatif secteur = nombre de Validé par secteur (N) et via donnees_secteur_semaine (N-1)
+ *   • Répartition secteur = même base que comparatif (le composant peut faire le %)
+ *   • Total missions semaine = Validé (N) ; N-1 = somme des total_valides des archives
+ *   • Statuts annexes (Annule*, Absence) = compte direct sur “commandes” (N)
+ *   • Graph jours = Validé par jour (N) ; N-1 via donnees_jour_semaine
  */
 export function useStatsDashboard(selectedWeek?: number) {
   const [stats, setStats] = useState<StatsState>({
@@ -105,15 +127,14 @@ export function useStatsDashboard(selectedWeek?: number) {
         const today = new Date()
         const currentYear = getYear(today)
 
-        // Semaine cible (sélectionnée ou semaine courante)
         const weekNumber = selectedWeek ?? getWeek(today, { weekStartsOn: 1 })
         const legacy = isLegacyWeek(currentYear, weekNumber)
 
         // ==========================
-        // ====== MODE ARCHIVES =====
+        // ========= ARCHIVES =======
         // ==========================
         if (legacy) {
-          // 1) Stats par statut
+          // Stats par statut (Demandées/Validé/En recherche/Non pourvue/Annule*/Absence)
           const { data: statRows } = await supabase
             .from("donnees_statut_semaine")
             .select("statut,total")
@@ -127,7 +148,7 @@ export function useStatsDashboard(selectedWeek?: number) {
             statsMap[k] = (statsMap[k] ?? 0) + (Number(r?.total) || 0)
           })
 
-          // 2) Répartition secteurs (courant & N-1)
+          // Comparatif secteurs (N et N-1) → total_valides
           const { data: secteursCur } = await supabase
             .from("donnees_secteur_semaine")
             .select("secteur,total_valides")
@@ -158,7 +179,7 @@ export function useStatsDashboard(selectedWeek?: number) {
             missionsN1: n1Map[secteur] ?? 0,
           }))
 
-          // 3) Missions par jour (courant & N-1)
+          // Jours (N et N-1) via archives : total_valides
           const { data: joursCur } = await supabase
             .from("donnees_jour_semaine")
             .select("jour,total_valides")
@@ -173,7 +194,7 @@ export function useStatsDashboard(selectedWeek?: number) {
 
           const curDays: Record<string, number> = {}
           ;(joursCur ?? []).forEach((j: any) => {
-            const k = norm(j?.jour) // “Lundi”/“lundi” → “lundi”
+            const k = norm(j?.jour)
             curDays[k] = (curDays[k] ?? 0) + (Number(j?.total_valides) || 0)
           })
 
@@ -190,7 +211,7 @@ export function useStatsDashboard(selectedWeek?: number) {
             missionsN1: n1Days[day] ?? 0,
           }))
 
-          // 4) Position (rang) parmi les semaines Validé de l’année courante
+          // Position (rang) parmi les semaines Validé de l’année courante (archives)
           const { data: posData } = await supabase
             .from("donnees_statut_semaine")
             .select("semaine,total,statut")
@@ -202,16 +223,18 @@ export function useStatsDashboard(selectedWeek?: number) {
           const sorted = [...allWeeksValid, totalValidArchive].sort((a, b) => b - a)
           const positionSemaine = sorted.findIndex((v) => v === totalValidArchive) + 1
 
-          // 5) Fallback si “Validé” manquant ou mal libellé dans les stats:
-          // on prend la somme des secteurs comme total validé.
-          const sumSecteurs = repartitionSecteursArray.reduce((acc, s) => acc + s.missions, 0)
-          const missionsSemaine = totalValidArchive > 0 ? totalValidArchive : sumSecteurs
+          const missionsSemaine = totalValidArchive
           const missionsSemaineN1 = repartitionSecteursArray.reduce((acc, s) => acc + s.missionsN1, 0)
 
           setStats({
             statsByStatus: {
-              Demandées: statsMap["Demandées"] ?? (missionsSemaine + (statsMap["En recherche"] ?? 0) + (statsMap["Non pourvue"] ?? 0)),
-              Validé: missionsSemaine, // valeur robuste
+              // Demandées “archives” si fournie, sinon fallback = Validé + En recherche + Non pourvue
+              Demandées:
+                statsMap["Demandées"] ??
+                ((statsMap["Validé"] ?? 0) +
+                  (statsMap["En recherche"] ?? 0) +
+                  (statsMap["Non pourvue"] ?? 0)),
+              Validé: statsMap["Validé"] ?? 0,
               "En recherche": statsMap["En recherche"] ?? 0,
               "Non pourvue": statsMap["Non pourvue"] ?? 0,
               "Annule Client": statsMap["Annule Client"] ?? 0,
@@ -235,20 +258,27 @@ export function useStatsDashboard(selectedWeek?: number) {
         }
 
         // ======================
-        // ====== MODE LIVE =====
+        // ========= LIVE =======
         // ======================
 
         // Lundi ISO de la semaine 1 (semaine du 4 janv)
-        const week1Monday = startOfWeek(new Date(currentYear, 0, 4), { weekStartsOn: 1 })
+        const yearN = currentYear
+        const week1Monday = startOfWeek(new Date(yearN, 0, 4), { weekStartsOn: 1 })
         const weekStartDate = addDays(week1Monday, (weekNumber - 1) * 7)
         const weekEndDate = endOfWeek(weekStartDate, { weekStartsOn: 1 })
 
+        // bornes “date” en YYYY-MM-DD (la colonne est typée date)
+        const weekStartStr = format(weekStartDate, "yyyy-MM-dd")
+        const weekEndStr = format(weekEndDate, "yyyy-MM-dd")
+
+        // Commandes de la semaine sélectionnée (N)
         const { data: commandes } = await supabase
           .from("commandes")
           .select("id, statut, secteur, date, clients (nom)")
-          .gte("date", weekStartDate.toISOString())
-          .lte("date", weekEndDate.toISOString())
+          .gte("date", weekStartStr)
+          .lte("date", weekEndStr)
 
+        // Compteurs
         let totalValid = 0
         let totalRecherche = 0
         let totalNonPourvue = 0
@@ -265,52 +295,41 @@ export function useStatsDashboard(selectedWeek?: number) {
         const commandeIdsValid =
           commandes?.filter((c) => c.statut === "Validé").map((c) => c.id) ?? []
 
-          commandes?.forEach((cmd) => {
-            const st = (cmd.statut || "").trim()
-          
-            // Compteurs par statut — on borne explicitement chaque cas
-            if (st === "Validé") {
-              totalValid++
-            } else if (st === "En recherche") {
-              totalRecherche++
-            } else if (st === "Non pourvue") {
-              totalNonPourvue++
-            } else if (st === "Annule Client") {
-              annuleClient++
-            } else if (st === "Annule Int") {
-              annuleInt++
-            } else if (st === "Annule ADA") {
-              annuleAda++
-            } else if (st === "Absence") {
-              absence++
-            }
-          
-            // "Demandées" = Validé + En recherche + Non pourvue (exclusion explicite de toute annulation/absence)
-            if (st === "Validé" || st === "En recherche" || st === "Non pourvue") {
-              totalDemandees++
-            }
-          
-            // Répartition secteurs + par jour uniquement pour les missions réellement "Validé"
-            if (st === "Validé") {
-              const day = norm(
-                new Date(cmd.date).toLocaleDateString("fr-FR", { weekday: "long" })
-              )
-              missionsByDay[day] = (missionsByDay[day] ?? 0) + 1
-          
-              const clientName = cmd.clients?.nom ?? "Inconnu"
-              topClientsCount[clientName] = (topClientsCount[clientName] ?? 0) + 1
-          
-              const key = canonSecteurKey(cmd.secteur)
-              repartitionSecteursCount[key] = (repartitionSecteursCount[key] ?? 0) + 1
-            }
-          })
-          
+        commandes?.forEach((cmd) => {
+          const st = (cmd.statut || "").trim()
 
-        // N-1 (même semaine) via archives
+          // Compteurs statut
+          if (st === "Validé") totalValid++
+          else if (st === "En recherche") totalRecherche++
+          else if (st === "Non pourvue") totalNonPourvue++
+          else if (st === "Annule Client") annuleClient++
+          else if (st === "Annule Int") annuleInt++
+          else if (st === "Annule ADA") annuleAda++
+          else if (st === "Absence") absence++
+
+          // Demandées = Validé + En recherche + Non pourvue
+          if (st === "Validé" || st === "En recherche" || st === "Non pourvue") {
+            totalDemandees++
+          }
+
+          // Par jour / par secteur / top clients : uniquement “Validé”
+          if (st === "Validé") {
+            const dayKey = dayKeyFromDate(String(cmd.date))
+            missionsByDay[dayKey] = (missionsByDay[dayKey] ?? 0) + 1
+
+            const clientName = cmd.clients?.nom ?? "Inconnu"
+            topClientsCount[clientName] = (topClientsCount[clientName] ?? 0) + 1
+
+            const key = canonSecteurKey(cmd.secteur)
+            repartitionSecteursCount[key] = (repartitionSecteursCount[key] ?? 0) + 1
+          }
+        })
+
+        // N-1 (même semaine) via archives (donnees_secteur_semaine)
         const { data: secteursN1 } = await supabase
           .from("donnees_secteur_semaine")
           .select("secteur,total_valides")
-          .eq("annee", currentYear - 1)
+          .eq("annee", yearN - 1)
           .eq("semaine", weekNumber)
 
         const n1Map: Record<string, number> = {}
@@ -321,8 +340,8 @@ export function useStatsDashboard(selectedWeek?: number) {
 
         const repartitionSecteursArray = CANON_SECTEURS.map((secteur) => ({
           secteur,
-          missions: repartitionSecteursCount[secteur] ?? 0,
-          missionsN1: n1Map[secteur] ?? 0,
+          missions: repartitionSecteursCount[secteur] ?? 0, // N (live)
+          missionsN1: n1Map[secteur] ?? 0,                  // N-1 (archives)
         }))
 
         const missionsSemaineN1 = repartitionSecteursArray.reduce(
@@ -330,11 +349,11 @@ export function useStatsDashboard(selectedWeek?: number) {
           0
         )
 
-        // Position (rang) parmi les semaines de l’année courante
+        // Position (rang) parmi les semaines de l’année courante (archives, colonne "Validé")
         const { data: posData } = await supabase
           .from("donnees_statut_semaine")
           .select("semaine,total,statut")
-          .eq("annee", currentYear)
+          .eq("annee", yearN)
 
         const allWeeksValid = (posData ?? [])
           .filter((r: any) => canonStatut(r?.statut) === "Validé")
@@ -343,11 +362,11 @@ export function useStatsDashboard(selectedWeek?: number) {
         const sorted = [...allWeeksValid, totalValid].sort((a, b) => b - a)
         const positionSemaine = sorted.findIndex((v) => v === totalValid) + 1
 
-        // Jours N-1
+        // Jours N-1 (archives)
         const { data: joursN1 } = await supabase
           .from("donnees_jour_semaine")
           .select("jour,total_valides")
-          .eq("annee", currentYear - 1)
+          .eq("annee", yearN - 1)
           .eq("semaine", weekNumber)
 
         const n1Days: Record<string, number> = {}
@@ -359,8 +378,8 @@ export function useStatsDashboard(selectedWeek?: number) {
         const orderedDays = ["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"]
         const missionsByDayArray = orderedDays.map((day) => ({
           day,
-          missions: missionsByDay[day] ?? 0,
-          missionsN1: n1Days[day] ?? 0,
+          missions: missionsByDay[day] ?? 0, // N (live)
+          missionsN1: n1Days[day] ?? 0,      // N-1 (archives)
         }))
 
         // Temps de traitement (creation -> planification) sur les validées
@@ -408,9 +427,10 @@ export function useStatsDashboard(selectedWeek?: number) {
           .slice(0, 5)
           .map(([name, missions]) => ({ name, missions }))
 
+        // Sortie finale alignée avec tes règles
         setStats({
           statsByStatus: {
-            Demandées: totalDemandees,
+            Demandées: totalDemandees,      // = Validé + En recherche + Non pourvue
             Validé: totalValid,
             "En recherche": totalRecherche,
             "Non pourvue": totalNonPourvue,
@@ -419,10 +439,10 @@ export function useStatsDashboard(selectedWeek?: number) {
             "Annule ADA": annuleAda,
             Absence: absence,
           },
-          missionsSemaine: totalValid,
-          missionsSemaineN1,
-          missionsByDay: missionsByDayArray,
-          repartitionSecteurs: repartitionSecteursArray,
+          missionsSemaine: totalValid,       // = card “Total missions semaine”
+          missionsSemaineN1,                 // somme secteurs N-1 (archives)
+          missionsByDay: missionsByDayArray, // graph jours (N live / N-1 archives)
+          repartitionSecteurs: repartitionSecteursArray, // comparatif secteurs (N / N-1)
           positionSemaine,
           topClients,
           tempsTraitementMoyen: tempsMoyen,

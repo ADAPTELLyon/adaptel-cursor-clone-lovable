@@ -12,6 +12,24 @@ import type {
 } from "@/types/types-front"
 import { useLiveRows } from "@/hooks/useLiveRows"
 
+/** -----------------------------------------
+ *  Helpers de persistance (localStorage)
+ *  ----------------------------------------- */
+const lsGet = <T,>(key: string, fallback: T): T => {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return fallback
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+const lsSet = (key: string, value: unknown) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {}
+}
+
 type CommandeRow = {
   id: string
   date: string
@@ -56,14 +74,27 @@ export default function Planning() {
   const [planning, setPlanning] = useState<Record<string, JourPlanningCandidat[]>>({})
   const [filteredPlanning, setFilteredPlanning] = useState<Record<string, JourPlanningCandidat[]>>({})
 
-  const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(["Étages"])
-  const [semaineEnCours, setSemaineEnCours] = useState(true)
-  const [semaine, setSemaine] = useState(format(new Date(), "yyyy-MM-dd"))
-  const [selectedSemaine, setSelectedSemaine] = useState("Toutes")
-  const [candidat, setCandidat] = useState("")
-  const [search, setSearch] = useState("")
-  const [toutAfficher, setToutAfficher] = useState(false)
-  const [dispo, setDispo] = useState(false)
+  // --------- États avec initialisation depuis localStorage ---------
+  const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(
+    () => lsGet<string[]>("planning.selectedSecteurs", ["Étages"])
+  )
+  const [semaineEnCours, setSemaineEnCours] = useState<boolean>(
+    () => lsGet<boolean>("planning.semaineEnCours", true)
+  )
+  const [semaine, setSemaine] = useState<string>(
+    () => lsGet<string>("planning.semaine", format(new Date(), "yyyy-MM-dd"))
+  )
+  const [selectedSemaine, setSelectedSemaine] = useState<string>(
+    () => lsGet<string>("planning.selectedSemaine", "Toutes")
+  )
+  const [candidat, setCandidat] = useState<string>(() => lsGet<string>("planning.candidat", ""))
+  const [search, setSearch] = useState<string>(() => lsGet<string>("planning.search", ""))
+  const [toutAfficher, setToutAfficher] = useState<boolean>(
+    () => lsGet<boolean>("planning.toutAfficher", false)
+  )
+  const [dispo, setDispo] = useState<boolean>(() => lsGet<boolean>("planning.dispo", false))
+  // ---------------------------------------------------------------
+
   const [semainesDisponibles, setSemainesDisponibles] = useState<string[]>([])
 
   const [stats, setStats] = useState({
@@ -515,7 +546,11 @@ export default function Planning() {
       const semainesTriees = Array.from(semaines).sort((a, b) => parseInt(b) - parseInt(a))
       setSemainesDisponibles(semainesTriees)
 
+      // ⚠️ Conserver la vue de l'utilisateur :
+      // - Si "semaineEnCours" (persistée) est true → on force la semaine courante
+      // - Sinon : on respecte "selectedSemaine" déjà initialisée depuis localStorage
       if (semaineEnCours) {
+        const currentWeek = getWeek(new Date(), { weekStartsOn: 1 }).toString()
         setSelectedSemaine(currentWeek)
       } else if (!semainesTriees.includes(selectedSemaine) && selectedSemaine !== "Toutes") {
         setSelectedSemaine("Toutes")
@@ -525,7 +560,7 @@ export default function Planning() {
       applyFilters(
         map,
         selectedSecteurs,
-        semaineEnCours ? currentWeek : selectedSemaine,
+        semaineEnCours ? getWeek(new Date(), { weekStartsOn: 1 }).toString() : selectedSemaine,
         candidat,
         dispo,
         search,
@@ -555,6 +590,17 @@ export default function Planning() {
   useEffect(() => {
     applyFilters(planning, selectedSecteurs, selectedSemaine, candidat, dispo, search, toutAfficher)
   }, [planning, selectedSecteurs, selectedSemaine, candidat, search, dispo, toutAfficher, applyFilters])
+
+  // ————————————————— Persistance LS (sauvegarde) —————————————————
+  useEffect(() => { lsSet("planning.selectedSecteurs", selectedSecteurs) }, [selectedSecteurs])
+  useEffect(() => { lsSet("planning.semaineEnCours", semaineEnCours) }, [semaineEnCours])
+  useEffect(() => { lsSet("planning.semaine", semaine) }, [semaine])
+  useEffect(() => { lsSet("planning.selectedSemaine", selectedSemaine) }, [selectedSemaine])
+  useEffect(() => { lsSet("planning.candidat", candidat) }, [candidat])
+  useEffect(() => { lsSet("planning.search", search) }, [search])
+  useEffect(() => { lsSet("planning.toutAfficher", toutAfficher) }, [toutAfficher])
+  useEffect(() => { lsSet("planning.dispo", dispo) }, [dispo])
+  // ------------------------------------------------------------------------------------------------
 
   const resetFiltres = () => {
     setSelectedSecteurs(["Étages"])
