@@ -41,7 +41,7 @@ export function CellulePlanningCandidate({
   service,
   nomPrenom,
   onSuccess,
-  mini = false, // NEW
+  mini = false,
 }: CellulePlanningCandidateProps) {
   const [open, setOpen] = useState(false)
   const [creneauVerrouille, setCreneauVerrouille] = useState<"matin" | "soir" | undefined>()
@@ -105,9 +105,19 @@ export function CellulePlanningCandidate({
   const showDispoRestantMatin = isPlanifieSoir && !isPlanifieMatin && !hasAutreCommandeMatin
   const showDispoRestantSoir = !hideSoirRow && isPlanifieMatin && !isPlanifieSoir
 
-  // ————————————————————
-  // Rendu
-  // ————————————————————
+  // wrapper qui déclenche l’event local + ton onSuccess existant
+  const emitLocalRefresh = () => {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("dispos:updated", { detail: { candidatId, date } })
+      )
+    } catch {}
+  }
+  const handleSuccess = () => {
+    emitLocalRefresh()
+    onSuccess()
+  }
+
   return (
     <>
       <Tooltip>
@@ -123,10 +133,8 @@ export function CellulePlanningCandidate({
             }}
             onClick={handleClick}
           >
-            {/* ——— ENTÊTE : 2 lignes max en mode mini, sinon comportement initial ——— */}
             {mini ? (
               annexeActive ? (
-                // Cas ANNEXE (ligne1: statut, ligne2: client en italique)
                 <div className="min-h-[2.2rem]">
                   <div className="font-semibold text-[11px] leading-[1.1rem] truncate">
                     {commande?.statut || ""}
@@ -136,7 +144,6 @@ export function CellulePlanningCandidate({
                   </div>
                 </div>
               ) : (
-                // Cas normal : client OU libellé dispo/non dispo — clamp sur 2 lignes
                 <div
                   className={cn(
                     "font-semibold",
@@ -156,7 +163,6 @@ export function CellulePlanningCandidate({
               )
             ) : (
               <>
-                {/* Comportement original pour le planning principal */}
                 <div className="font-semibold text-[13px] leading-tight min-h-[1.2rem]">
                   {isPlanifie && !annexeActive
                     ? (commande?.client?.nom || "")
@@ -174,7 +180,7 @@ export function CellulePlanningCandidate({
               </>
             )}
 
-            {/* ——— Créneau Matin ——— */}
+            {/* Créneau Matin */}
             <div className={mini ? "text-[11px] font-bold min-h-[1.2rem] mt-0.5 flex items-center"
                                   : "text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center"}>
               {annexeActive ? null : isPlanifieMatin ? (
@@ -197,7 +203,7 @@ export function CellulePlanningCandidate({
               ) : null}
             </div>
 
-            {/* ——— Créneau Soir (masqué si secondaire soir) ——— */}
+            {/* Créneau Soir (masqué si secondaire soir) */}
             {secteur !== "Étages" && !hideSoirRow && (
               <div className={mini ? "text-[11px] font-bold min-h-[1.2rem] mt-0.5 flex items-center"
                                     : "text-[13px] font-bold min-h-[1.2rem] mt-0.5 flex items-center"}>
@@ -222,7 +228,7 @@ export function CellulePlanningCandidate({
               </div>
             )}
 
-            {/* ——— Commentaire ——— */}
+            {/* Commentaire */}
             {disponibilite?.commentaire && (
               <div
                 className="absolute bottom-1 right-1 z-20"
@@ -251,8 +257,8 @@ export function CellulePlanningCandidate({
                         size="icon"
                         onClick={() => {
                           toast({ title: "Commentaire mis à jour" })
+                          handleSuccess()
                           setEditingComment(false)
-                          onSuccess()
                         }}
                       >
                         <Check className="w-4 h-4 text-green-600" />
@@ -263,7 +269,7 @@ export function CellulePlanningCandidate({
               </div>
             )}
 
-            {/* ——— “+” quand vide ——— */}
+            {/* “+” quand vide */}
             {!commande && !disponibilite && (
               <div className="absolute inset-0 flex justify-center items-center pointer-events-none">
                 <Plus className="w-4 h-4 text-gray-400" />
@@ -290,7 +296,7 @@ export function CellulePlanningCandidate({
         candidatId={candidatId}
         service={service}
         disponibilite={disponibilite}
-        onSuccess={onSuccess}
+        onSuccess={handleSuccess}
         candidatNomPrenom={nomPrenom}
         creneauVerrouille={creneauVerrouille}
       />
@@ -304,7 +310,7 @@ export function CellulePlanningCandidate({
         creneau={popupDispoRestant.creneau}
         disponibilite={disponibilite}
         service={service}
-        onSuccess={onSuccess}
+        onSuccess={handleSuccess}
         candidatNomPrenom={nomPrenom}
         commentaireActuel={disponibilite?.commentaire || ""}
       />

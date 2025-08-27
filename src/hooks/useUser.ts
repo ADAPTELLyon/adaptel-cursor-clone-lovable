@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
-import { Utilisateur } from "@/types"
+
+type Utilisateur = {
+  id: string
+  prenom: string
+  nom: string
+  email: string
+  actif: boolean
+  created_at?: string
+  updated_at?: string
+}
 
 export function useUser() {
   const [userData, setUserData] = useState<Utilisateur | null>(null)
@@ -20,7 +29,7 @@ export function useUser() {
         .single()
 
       if (data && !error) {
-        setUserData(data)
+        setUserData(data as Utilisateur)
       }
     }
 

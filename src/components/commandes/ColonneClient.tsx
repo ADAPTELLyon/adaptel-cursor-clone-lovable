@@ -20,19 +20,47 @@ interface ColonneClientProps {
   onOpenCommandeEdit?: (commande: CommandeWithCandidat) => void;
 }
 
+/**
+ * Calcule la durée (en minutes) entre deux heures "HH:MM".
+ * Gère les créneaux qui passent minuit (ex: 18:00 -> 02:00).
+ */
+function diffMinutes(start?: string | null, end?: string | null): number {
+  if (!start || !end) return 0
+  const [sh, sm] = start.split(":").map(Number)
+  const [eh, em] = end.split(":").map(Number)
+  if (Number.isNaN(sh) || Number.isNaN(sm) || Number.isNaN(eh) || Number.isNaN(em)) return 0
+
+  const s = sh * 60 + sm
+  let e = eh * 60 + em
+
+  // Si la fin est inférieure ou égale au début, on considère que ça passe minuit
+  if (e <= s) e += 24 * 60
+
+  return Math.max(0, e - s)
+}
+
 function calculerHeuresTotales(commandes: CommandeWithCandidat[]) {
   let totalMinutes = 0
 
-  const toMinutes = (heure?: string | null) => {
-    if (!heure) return 0
-    const [h, m] = heure.split(":").map(Number)
-    return h * 60 + m
-  }
-
   for (const cmd of commandes) {
     if (cmd.statut === "Validé" || cmd.statut === "En recherche") {
-      totalMinutes += toMinutes(cmd.heure_fin_matin) - toMinutes(cmd.heure_debut_matin)
-      totalMinutes += toMinutes(cmd.heure_fin_soir) - toMinutes(cmd.heure_debut_soir)
+      // Matin/Midi
+      totalMinutes += diffMinutes(
+        (cmd as any).heure_debut_matin,
+        (cmd as any).heure_fin_matin
+      )
+      // Soir
+      totalMinutes += diffMinutes(
+        (cmd as any).heure_debut_soir,
+        (cmd as any).heure_fin_soir
+      )
+      // Nuit (si présent dans la table / le type)
+      if ("heure_debut_nuit" in (cmd as any) || "heure_fin_nuit" in (cmd as any)) {
+        totalMinutes += diffMinutes(
+          (cmd as any).heure_debut_nuit,
+          (cmd as any).heure_fin_nuit
+        )
+      }
     }
   }
 
@@ -125,8 +153,8 @@ export function ColonneClient({
           style={{ marginLeft: -2 }}
         >
           <Icon
-    icon="fluent:add-square-20-regular"
-    width={25}
+            icon="fluent:add-square-20-regular"
+            width={25}
             height={25}
             className="text-gray-700"
           />

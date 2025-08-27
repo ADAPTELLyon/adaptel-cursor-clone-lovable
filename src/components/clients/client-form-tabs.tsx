@@ -79,23 +79,7 @@ export function ClientFormTabs({
             onSecteursChange={setSecteurs}
             onServicesChange={setServices}
           />
-          {/* BOUTONS ANNULER & ENREGISTRER UNIQUEMENT */}
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
-              type="button"
-            >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              form="client-form"
-              className="px-4 py-2 rounded bg-[#840404] text-white hover:bg-[#750303]"
-            >
-              Enregistrer
-            </button>
-          </div>
+          {/* ✅ Aucun bouton ici : on garde UNIQUEMENT les boutons natifs du ClientForm (couleur ADAPTEL). */}
         </TabsContent>
 
         <TabsContent

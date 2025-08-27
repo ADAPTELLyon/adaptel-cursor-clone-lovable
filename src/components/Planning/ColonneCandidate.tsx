@@ -15,6 +15,73 @@ export interface ColonneCandidateProps {
   totalHeures: string
 }
 
+/** ----------------------------------------------------------------
+ *  Helpers pour corriger/normaliser le total d'heures affiché
+ *  - Gère les créneaux qui passent minuit (ex: 18:00 -> 02:00)
+ *  - Si totalHeures est déjà un "HH:MM", on le laisse tel quel
+ *  - Si totalHeures contient une liste de créneaux (ex: "lun 10:00 18:00 - mar 18:00 02:00"),
+ *    on recalcule le total en minutes puis on retourne "HH:MM"
+ * ----------------------------------------------------------------*/
+function toMinutes(hhmm?: string | null) {
+  if (!hhmm) return 0
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm.trim())
+  if (!m) return 0
+  const h = Number(m[1])
+  const mi = Number(m[2])
+  if (Number.isNaN(h) || Number.isNaN(mi)) return 0
+  return h * 60 + mi
+}
+
+function diffMinutes(start?: string | null, end?: string | null) {
+  if (!start || !end) return 0
+  const s = toMinutes(start)
+  let e = toMinutes(end)
+  if (e <= s) e += 24 * 60 // passe minuit
+  return Math.max(0, e - s)
+}
+
+function formatHM(totalMin: number) {
+  const h = Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+}
+
+/**
+ * Normalise/Calcule le total à afficher :
+ * - Si `val` ressemble déjà à "HH:MM" (positif), on renvoie tel quel.
+ * - Si `val` contient plusieurs créneaux "HH:MM HH:MM", on les additionne avec gestion minuit.
+ * - Si `val` est un "HH:MM" mais négatif (ex: "-16:00"), on convertit en positif modulo 24h * nombre de créneaux détectables.
+ *   -> Par défaut, on le remet en positif simple (valeur absolue) pour éviter l'affichage négatif.
+ */
+function normalizeTotalHeures(val: string): string {
+  const clean = (val || "").trim()
+
+  // 1) Cas simple : "HH:MM"
+  const single = /^-?\d{1,2}:\d{2}$/.exec(clean)
+  if (single) {
+    // Si négatif (ex: "-16:00"), on affiche l'absolu pour éviter "-HH:MM"
+    const negative = clean.startsWith("-")
+    const [H, M] = clean.replace("-", "").split(":").map(Number)
+    if (!negative) return `${String(H).padStart(2, "0")}:${String(M).padStart(2, "0")}`
+    const min = Math.max(0, H * 60 + M)
+    return formatHM(min)
+  }
+
+  // 2) Cas "liste de créneaux" -> on récupère toutes les paires HH:MM HH:MM
+  //    Exemple pris en charge: "lundi 10:00 18:00 - mardi 18:00 02:00 - jeudi 10:00 18:00"
+  const times = clean.match(/\b\d{1,2}:\d{2}\b/g)
+  if (times && times.length >= 2) {
+    let total = 0
+    for (let i = 0; i + 1 < times.length; i += 2) {
+      total += diffMinutes(times[i], times[i + 1])
+    }
+    return formatHM(total)
+  }
+
+  // 3) Sinon on renvoie la valeur telle quelle (fallback)
+  return clean
+}
+
 export function ColonneCandidate({
   nomComplet,
   secteur,
@@ -27,6 +94,7 @@ export function ColonneCandidate({
   const [open, setOpen] = useState(false)
   const [openHistorique, setOpenHistorique] = useState(false)
   const [nomPrenom, setNomPrenom] = useState("")
+  const totalHeuresAffiche = normalizeTotalHeures(totalHeures)
 
   useEffect(() => {
     const fetchNomPrenom = async () => {
@@ -92,7 +160,7 @@ export function ColonneCandidate({
           </div>
           <div className="flex items-center gap-1">
             <Clock className="w-4 h-4" />
-            <span>{totalHeures}</span>
+            <span>{totalHeuresAffiche}</span>
           </div>
         </div>
       </div>
