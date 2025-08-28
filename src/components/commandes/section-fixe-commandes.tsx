@@ -12,6 +12,7 @@ import {
   User2,
   Building2,
   MessageSquare,
+  Calendar, // ⬅️ ajouté pour l'icône Planning
 } from "lucide-react"
 import { secteursList } from "@/lib/secteurs"
 import { startOfWeek, getWeek } from "date-fns"
@@ -25,6 +26,9 @@ import PopoverSelectCandidat from "./PopoverSelectCandidat"
 import PopoverSelectClient from "@/components/commandes/PopoverSelectClient"
 import { useAgentBadge } from "@/hooks/useAgent"
 import AgentWidget from "@/components/agent/AgentWidget"
+
+// ⬇️ ajout : le dialog de synthèse (le fichier que tu viens d’ajouter)
+import { SyntheseCandidatDialog } from "@/components/commandes/SyntheseCandidatDialog"
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -209,7 +213,7 @@ export function SectionFixeCommandes({
             <div className="relative">
               <Input
                 placeholder="Rechercher..."
-                className="pl-10 w-[200px] border-gray-300 focus:ring-2 focus:ring-[#840404]/20 focus:border-[#840404]"
+                className="pl-10 w=[200px] border-gray-300 focus:ring-2 focus:ring-[#840404]/20 focus:border-[#840404]"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -281,6 +285,22 @@ export function SectionFixeCommandes({
           >
             <Building2 size={18} />
           </Button>
+
+          {/* ▶▶ Bouton Planning (nouveau) */}
+          <SyntheseCandidatDialog>
+            <Button
+              variant="outline"
+              title="Synthèse planning (15 jours)"
+              className={cn(
+                "relative h-9 px-3 rounded-lg border border-gray-300 bg-white",
+                "flex items-center gap-2 text-sm font-medium",
+                "hover:bg-gray-50 hover:border-[#840404] hover:text-[#840404]"
+              )}
+            >
+              <Calendar size={16} />
+              <span>Planning</span>
+            </Button>
+          </SyntheseCandidatDialog>
 
           {/* Séparateur + Bouton Agent */}
           <Separator orientation="vertical" className="h-8" />

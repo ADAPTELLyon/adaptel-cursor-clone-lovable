@@ -40,7 +40,7 @@ export function HistoriqueDialogGauche({ commandeIds, open }: Props) {
     const fetchCommandes = async () => {
       const { data } = await supabase
         .from("commandes")
-        .select("id, date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+        .select("id, date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, candidat_id, candidat:candidat_id (nom, prenom)")
         .in("id", ids)
       if (data) {
         const map: Record<string, any> = {}
@@ -58,10 +58,12 @@ export function HistoriqueDialogGauche({ commandeIds, open }: Props) {
 
   const renderBloc = (item: Historique) => {
     const apres = (item.apres || {}) as any
+    const avant = (item.avant || {}) as any
     const date = format(new Date(item.date_action), "EEEE d MMMM yyyy - HH:mm", { locale: fr })
     const action = item.action
     const commande = commandesMap[item.ligne_id]
-    const candidat = apres?.candidat
+    const candidatApres = apres?.candidat
+    const candidatAvant = avant?.candidat
 
     let titre = "Action inconnue"
     let badge: JSX.Element | null = null
@@ -111,14 +113,14 @@ export function HistoriqueDialogGauche({ commandeIds, open }: Props) {
       titre = "Planification"
       Icon = Pencil
       badge =
-        candidat && (
+        candidatApres && (
           <Badge
             style={{
               backgroundColor: statutColors["Validé"]?.bg,
               color: statutColors["Validé"]?.text,
             }}
           >
-            {candidat.nom} {candidat.prenom}
+            {candidatApres.nom} {candidatApres.prenom}
           </Badge>
         )
       complement = (
@@ -192,12 +194,24 @@ export function HistoriqueDialogGauche({ commandeIds, open }: Props) {
     }
 
     // ———————————————————
-    // Changement de statut (avec différenciation remise en recherche)
+    // Changement de statut (texte court si remise en recherche)
     // ———————————————————
     else if (action === "statut") {
-      titre = apres?.remettre_en_recherche ? "Annulation + remise en recherche" : "Changement de statut"
+      titre = apres?.remettre_en_recherche ? "Annule + En Rech" : "Changement de statut"
       Icon = RefreshCcw
       const statut = apres?.statut || "?"
+
+      // Fallback candidat : apres.candidat -> avant.candidat -> commande.candidat
+      const candidateFromApres = candidatApres
+      const candidateFromAvant = candidatAvant
+      const candidateFromCommande = commande?.candidat
+      const candidateName =
+        (candidateFromApres && `${candidateFromApres.nom} ${candidateFromApres.prenom}`.trim()) ||
+        (candidateFromAvant && `${candidateFromAvant.nom} ${candidateFromAvant.prenom}`.trim()) ||
+        (candidateFromCommande && `${candidateFromCommande.nom} ${candidateFromCommande.prenom}`.trim()) ||
+        null
+
+      // Badge couleur du statut (texte = statut uniquement)
       badge = (
         <Badge
           style={{
@@ -208,19 +222,16 @@ export function HistoriqueDialogGauche({ commandeIds, open }: Props) {
           {statut}
         </Badge>
       )
+
+      // On supprime "Portée : ..." ; on ajoute le candidat concerné (si identifié)
       complement = (
         <div className="text-sm text-muted-foreground space-y-1">
-          {apres?.scope === "all_week" ? (
-            <div>Portée : <strong>toute la semaine</strong></div>
-          ) : (
-            <div>Portée : <strong>uniquement ce jour</strong></div>
-          )}
           {apres?.remettre_en_recherche && (
             <div>Action : recréation de commande(s) en <strong>En recherche</strong></div>
           )}
-          {apres?.candidat && (
+          {candidateName && (
             <div>
-              Candidat concerné : <strong>{apres.candidat?.nom} {apres.candidat?.prenom}</strong>
+              Candidat concerné : <strong>{candidateName}</strong>
             </div>
           )}
           {apres?.complement_motif && (
