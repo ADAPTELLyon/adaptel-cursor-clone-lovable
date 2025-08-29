@@ -151,9 +151,9 @@ export default function Planning() {
       commentaire: d.commentaire ?? null,
       candidat_id: String(d.candidat_id),
       // mappe les colonnes DB -> champs de ton type front
-      matin: !!d.dispo_matin,
-      soir: !!d.dispo_soir,
-      nuit: !!d.dispo_nuit,
+      matin: (d.dispo_matin ?? null) as boolean | null,
+      soir:  (d.dispo_soir  ?? null) as boolean | null,
+      nuit:  (d.dispo_nuit  ?? null) as boolean | null,
       created_at: String(d.created_at),
       updated_at: d.updated_at ?? null,
       // propriété correcte : 'candidat' (et pas 'candidats')
@@ -732,14 +732,28 @@ export default function Planning() {
         fetchPlanning()
       }
     }
-
+    // ⬇️ nouvel écouteur (déjà émis par la modale)
+    const onAdaptelRefresh = (e: Event) => {
+      const ce = e as CustomEvent<{ candidatId?: string; date?: string }>
+      const { candidatId, date } = ce.detail || {}
+      if (candidatId && date) {
+        refreshOne(candidatId, date)
+      } else {
+        fetchPlanning()
+      }
+    }
+  
     window.addEventListener("dispos:updated", onDispoUpdated as EventListener)
     window.addEventListener("planif:updated", onPlanifUpdated as EventListener)
+    window.addEventListener("adaptel:refresh-planning-candidat", onAdaptelRefresh as EventListener)
+  
     return () => {
       window.removeEventListener("dispos:updated", onDispoUpdated as EventListener)
       window.removeEventListener("planif:updated", onPlanifUpdated as EventListener)
+      window.removeEventListener("adaptel:refresh-planning-candidat", onAdaptelRefresh as EventListener)
     }
   }, [refreshOne, fetchPlanning])
+  
 
   // ————————————————— Rendu —————————————————
   const candidatsDisponibles = useMemo(() => Object.keys(planning), [planning])

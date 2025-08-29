@@ -156,6 +156,10 @@ export function PlanningClientTable({
     return groupes;
   }, [planning, clientId]);
 
+  // -------- Helper de normalisation (pour tri alpha cohérent)
+  const norm = (s: string = "") =>
+    s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+
   return (
     <TooltipProvider delayDuration={150}>
       <div className="space-y-8 mt-8">
@@ -173,6 +177,34 @@ export function PlanningClientTable({
               label: format(jour, "eeee dd MMMM", { locale: fr }),
             };
           });
+
+          // --- NOUVEAU : rang de créneau DÉTERMINISTE basé sur le PREMIER jour qui a des heures
+          // Matin/Midi = 0, Soir = 1, Nuit = 2. Fallback 0 si rien trouvé.
+          const getCreneauRankDeterministe = (ligne: JourPlanning[]) => {
+            for (const j of jours) {
+              const found = ligne.find(
+                (x) => format(new Date(x.date), "yyyy-MM-dd") === j.dateStr
+              );
+              if (!found) continue;
+              // Une ligne a au plus une commande par jour (dans ce groupKey)
+              const c = found.commandes[0];
+              if (!c) continue;
+
+              const hasMatin = !!(c.heure_debut_matin || c.heure_fin_matin);
+              const hasSoir  = !!(c.heure_debut_soir  || c.heure_fin_soir);
+              const hasNuit  = !!(c as any).heure_debut_nuit || !!(c as any).heure_fin_nuit;
+
+              if (hasMatin && !hasSoir && !hasNuit) return 0; // Matin/Midi
+              if (!hasMatin && hasSoir && !hasNuit) return 1; // Soir
+              if (!hasMatin && !hasSoir && hasNuit) return 2; // Nuit
+
+              // Cas mixtes sur le même jour (sécurité) : Matin < Soir < Nuit
+              if (hasMatin) return 0;
+              if (hasSoir)  return 1;
+              if (hasNuit)  return 2;
+            }
+            return 0;
+          };
 
           return Object.entries(secteurs).map(([secteur, groupes]) => {
             const semaineTexte = `Semaine ${semaine} • ${secteur}`;
@@ -251,12 +283,28 @@ export function PlanningClientTable({
 
                 {/* Lignes planning */}
                 {Object.entries(groupes)
-                  .sort(([aKey], [bKey]) => {
-                    const [aClient, , , , aSlot] = aKey.split("||");
-                    const [bClient, , , , bSlot] = bKey.split("||");
-                    if (aClient < bClient) return -1;
-                    if (aClient > bClient) return 1;
-                    return parseInt(aSlot) - parseInt(bSlot);
+                  .sort(([aKey, aLigne], [bKey, bLigne]) => {
+                    // Clé = clientNom || secteur || semaine || service || missionSlot
+                    const [aClient, , , aService = "", aSlot] = aKey.split("||");
+                    const [bClient, , , bService = "", bSlot] = bKey.split("||");
+
+                    // 1) Client (inchangé)
+                    const cmpClient = norm(aClient).localeCompare(norm(bClient));
+                    if (cmpClient !== 0) return cmpClient;
+
+                    // 2) Service (inchangé) — "" ne casse pas l'ordre actuel
+                    const cmpService = norm(aService).localeCompare(norm(bService));
+                    if (cmpService !== 0) return cmpService;
+
+                    // 3) NOUVEAU : ordre visuel déterministe par créneau
+                    const ra = getCreneauRankDeterministe(aLigne as JourPlanning[]);
+                    const rb = getCreneauRankDeterministe(bLigne as JourPlanning[]);
+                    if (ra !== rb) return ra - rb;
+
+                    // 4) Fallback : mission_slot (inchangé)
+                    const ai = parseInt(aSlot, 10) || 0;
+                    const bi = parseInt(bSlot, 10) || 0;
+                    return ai - bi;
                   })
                   .map(([groupKey, ligne]) => {
                     const [clientNom, secteurNom, _, service, missionSlotStr] =

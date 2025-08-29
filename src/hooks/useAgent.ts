@@ -67,8 +67,11 @@ function targetsMe(r: AgentReminder, myId: string | null): boolean {
   if (r.audience === "all") return true
   if (!myId) return false
   const ids = Array.isArray(r.user_ids) ? r.user_ids : []
-  return ids.includes(myId)
+  if (ids.includes(myId)) return true
+  if (r.created_by && r.created_by === myId) return true
+  return false
 }
+
 
 // ---------------- Core Hook ----------------
 function useAgentCore(withEvents: boolean) {

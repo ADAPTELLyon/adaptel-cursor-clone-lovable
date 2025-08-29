@@ -2,38 +2,38 @@ import React, { useEffect, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { useAgent, type AgentReminder } from "@/hooks/useAgent"
 import { Button } from "@/components/ui/button"
-import { X, Send, Check, Clock } from "lucide-react"
+import { X, Send, Check, Clock, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+type AgentChoice = { label: string; value?: string; kind?: "client" | "candidat" | "user" | "time"; payload?: any }
 type AgentReply = {
   ok: boolean
   reply: string
-  choices?: Array<{ label: string; value: string; kind: "client" | "candidat" }>
+  choices?: AgentChoice[]
   cards?: any[]
   reminders?: any[]
-  meta?: { tool?: string; missing?: any; time_scope?: any }
+  meta?: any
 }
 
 type ChatMsg = {
   id: string
   role: "user" | "agent"
   text: string
-  choices?: AgentReply["choices"]
-  cards?: AgentReply["cards"]
+  choices?: AgentChoice[]
+  cards?: any[]
 }
 
 export default function AgentWidget({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [tab, setTab] = useState<"chat" | "reminders">("chat")
-
-  // Hooks Agent (me = utilisateur courant via table utilisateurs)
   const { reminders, reloadReminders, me } = useAgent()
 
-  // CHAT STATE
   const [msgs, setMsgs] = useState<ChatMsg[]>([])
   const [input, setInput] = useState("")
   const [busy, setBusy] = useState(false)
 
-  // Scroll zone messages
+  // garde en mémoire un "need_time" renvoyé par le backend (title + base_date_iso)
+  const needTimeRef = useRef<{ title: string; base_date_iso: string } | null>(null)
+
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
@@ -41,13 +41,21 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
 
   // ---------- Historique par utilisateur (localStorage) ----------
   const STORAGE_KEY = me?.id ? `agent_chat_${me.id}` : `agent_chat_anonymous`
+  const LAST_SESSION_KEY = me?.id ? `agent_last_session_${me.id}` : `agent_last_session_anonymous`
   const didLoadHistory = useRef(false)
 
-  // charge l'historique quand me est connu (1 seule fois)
+  // Reset quotidien + chargement
   useEffect(() => {
     if (!me || didLoadHistory.current) return
     didLoadHistory.current = true
     try {
+      const last = localStorage.getItem(LAST_SESSION_KEY)
+      const today = new Date().toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" })
+      if (last !== today) {
+        localStorage.removeItem(STORAGE_KEY)
+        localStorage.setItem(LAST_SESSION_KEY, today)
+      }
+
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
         const parsed = JSON.parse(raw) as ChatMsg[]
@@ -56,7 +64,6 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
           return
         }
       }
-      // pas d'historique → message d'accueil personnalisé
       const hello = `Bonjour${me?.prenom ? ` ${me.prenom}` : ""} !\nQu’est-ce que je peux faire pour toi ?`
       pushAgent(hello)
     } catch {
@@ -66,7 +73,7 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.id])
 
-  // persiste l'historique à chaque changement
+  // persiste l'historique
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs))
@@ -80,14 +87,15 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
     setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "user", text }])
   }
 
-  // ---- APPEL EDGE FUNCTION (nom exact: agent-chat) ----
-  async function callAgent(message: string): Promise<AgentReply> {
-    const { data, error } = await supabase.functions.invoke("agent-chat", {
-      body: { message },
-    })
-    if (error) {
-      return { ok: false, reply: error.message || "Erreur appel Agent." }
-    }
+  // ---- API Edge Function ----
+  async function callAgentMessage(message: string): Promise<AgentReply> {
+    const { data, error } = await supabase.functions.invoke("agent-chat", { body: { message } })
+    if (error) return { ok: false, reply: error.message || "Erreur appel Agent." }
+    return (data as AgentReply) || { ok: false, reply: "Réponse vide." }
+  }
+  async function callAgentFill(fill: any): Promise<AgentReply> {
+    const { data, error } = await supabase.functions.invoke("agent-chat", { body: { fill } })
+    if (error) return { ok: false, reply: error.message || "Erreur appel Agent." }
     return (data as AgentReply) || { ok: false, reply: "Réponse vide." }
   }
 
@@ -96,9 +104,42 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
     if (!value) return
     setInput("")
     pushUser(value)
+
+    // Si on a un "need_time" actif et que l'utilisateur tape une heure libre ("14:30", "14h30", "9h")
+    if (needTimeRef.current) {
+      const hm = value.match(/^([0-2]?\d)(?::|h)?([0-5]\d)?$/)
+      if (hm) {
+        setBusy(true)
+        try {
+          const fill = {
+            action: "set_time_from_base",
+            time: `${hm[1].padStart(2, "0")}:${(hm[2] || "00").padStart(2, "0")}`,
+            title: needTimeRef.current.title,
+            base_date_iso: needTimeRef.current.base_date_iso,
+          }
+          const res = await callAgentFill(fill)
+          pushAgent(res.reply || "OK.", { choices: res.choices ?? [], cards: res.cards ?? [] })
+          if (res.reminders && res.reminders.length) await reloadReminders()
+          needTimeRef.current = null
+          return
+        } finally {
+          setBusy(false)
+        }
+      }
+    }
+
     setBusy(true)
     try {
-      const res = await callAgent(value)
+      const res = await callAgentMessage(value)
+      // si le backend nous renvoie un meta.need_time, on le stocke pour accepter une heure libre
+      if (res?.meta?.need_time?.title && res?.meta?.need_time?.base_date_iso) {
+        needTimeRef.current = {
+          title: res.meta.need_time.title,
+          base_date_iso: res.meta.need_time.base_date_iso,
+        }
+      } else {
+        needTimeRef.current = null
+      }
       pushAgent(res.reply || "OK.", { choices: res.choices ?? [], cards: res.cards ?? [] })
       if (res.reminders && res.reminders.length) await reloadReminders()
     } finally {
@@ -106,12 +147,25 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
     }
   }
 
-  // Désambiguïsation → renvoyer le label directement
-  function handleChoice(label: string) {
-    void handleSend(label)
+  async function handleChoice(choice: AgentChoice) {
+    // Si la choice embarque un payload → on envoie en FILL (ex: set_time_from_base)
+    if (choice.payload) {
+      pushUser(choice.label)
+      setBusy(true)
+      try {
+        const res = await callAgentFill(choice.payload)
+        pushAgent(res.reply || "OK.", { choices: res.choices ?? [], cards: res.cards ?? [] })
+        if (res.reminders && res.reminders.length) await reloadReminders()
+        needTimeRef.current = null
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+    // Sinon, renvoyer le label
+    await handleSend(choice.label)
   }
 
-  // ---- MAJ rappel : DONE / PENDING ----
   async function toggleReminder(r: AgentReminder) {
     await (supabase as any)
       .from("agent_reminders")
@@ -120,13 +174,21 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
     await reloadReminders()
   }
 
-  // ---- Textarea auto-resize (multi-ligne) ----
+  function clearHistory() {
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+      setMsgs([])
+      const hello = `Bonjour${me?.prenom ? ` ${me.prenom}` : ""} !\nQu’est-ce que je peux faire pour toi ?`
+      pushAgent(hello)
+    } catch {}
+  }
+
   const taRef = useRef<HTMLTextAreaElement>(null)
   function autoResize() {
     const el = taRef.current
     if (!el) return
     el.style.height = "0px"
-    el.style.height = Math.min(el.scrollHeight, 140) + "px"
+    el.style.height = Math.min(el.scrollHeight, 220) + "px"
   }
   useEffect(() => {
     autoResize()
@@ -136,7 +198,7 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
 
   return (
     <div className="fixed right-6 bottom-6 z-[80]">
-      <div className="w-[380px] h-[520px] rounded-2xl shadow-2xl border bg-white flex flex-col overflow-hidden">
+      <div className="w-[460px] h-[640px] rounded-2xl shadow-2xl border bg-white flex flex-col overflow-hidden">
         {/* HEADER + TABS */}
         <div className="h-12 flex items-center justify-between px-3 border-b bg-gradient-to-r from-white to-gray-50">
           <div className="flex items-center gap-2">
@@ -147,7 +209,6 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
             </div>
           </div>
 
-          {/* mini switch d’onglets à droite (responsive OK) */}
           <div className="flex items-center gap-1 mr-auto ml-3 rounded-full border overflow-hidden">
             <button
               className={cn("px-3 py-1 text-xs", tab === "chat" ? "bg-black text-white" : "bg-white hover:bg-gray-50")}
@@ -156,23 +217,29 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
               Chat
             </button>
             <button
-              className={cn(
-                "px-3 py-1 text-xs",
-                tab === "reminders" ? "bg-black text-white" : "bg-white hover:bg-gray-50"
-              )}
+              className={cn("px-3 py-1 text-xs", tab === "reminders" ? "bg-black text-white" : "bg-white hover:bg-gray-50")}
               onClick={() => setTab("reminders")}
             >
               Rappels
             </button>
           </div>
 
-          <button
-            className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
-            onClick={onClose}
-            aria-label="Fermer"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
+              title="Vider l'historique"
+              onClick={clearHistory}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+            <button
+              className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
+              onClick={onClose}
+              aria-label="Fermer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* CONTENU */}
@@ -189,7 +256,6 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
                 >
                   <div>{m.text}</div>
 
-                  {/* Choix de désambig */}
                   {!!m.choices?.length && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {m.choices.map((c, idx) => (
@@ -197,7 +263,7 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
                           key={idx}
                           className="text-xs px-2 py-1 rounded-full border hover:bg-white"
                           title={c.kind}
-                          onClick={() => handleChoice(c.label)}
+                          onClick={() => handleChoice(c)}
                         >
                           {c.label}
                         </button>
@@ -205,7 +271,6 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
                     </div>
                   )}
 
-                  {/* Cartes simples */}
                   {!!m.cards?.length && (
                     <div className="mt-2 space-y-2">
                       {m.cards.map((card: any, i: number) => (
@@ -231,14 +296,6 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
                                 </div>
                               )}
                             </>
-                          ) : card.type === "candidat" ? (
-                            <>
-                              <div className="font-medium text-sm">{card.nom || "Candidat"}</div>
-                              {card.id && <div className="text-gray-600">{card.id}</div>}
-                              {"vehicule" in card && (
-                                <div className="mt-1">Véhicule : {card.vehicule ? "Oui" : "Non"}</div>
-                              )}
-                            </>
                           ) : (
                             <pre className="whitespace-pre-wrap">{JSON.stringify(card, null, 2)}</pre>
                           )}
@@ -250,7 +307,7 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
               ))}
             </div>
 
-            {/* ZONE SAISIE — textarea multi-ligne, auto-resize, toujours visible */}
+            {/* ZONE SAISIE */}
             <div className="p-3 border-t bg-white">
               <div className="flex items-end gap-2">
                 <textarea
@@ -265,9 +322,9 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
                       handleSend()
                     }
                   }}
-                  rows={1}
-                  className="flex-1 resize-none rounded-md border px-3 py-2 text-sm leading-5 max-h-[140px] focus:outline-none focus:ring-1 focus:ring-neutral-300"
-                  style={{ overflowY: "auto" }}
+                  rows={2}
+                  className="flex-1 resize-none rounded-md border px-3 py-2 text-sm leading-5 max-h-[220px] focus:outline-none focus:ring-1 focus:ring-neutral-300"
+                  style={{ overflowY: "auto", minHeight: 64 }}
                 />
                 <Button onClick={() => handleSend()} disabled={busy} className="bg-[#840404] hover:bg-[#6f0303]">
                   <Send className="h-4 w-4" />
@@ -283,6 +340,14 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
 
             {reminders.map((r) => {
               const due = new Date(r.due_at)
+              const dueText = new Date(due).toLocaleString("fr-FR", {
+                timeZone: "Europe/Paris",
+                weekday: "short",
+                day: "2-digit",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
               const isPast = Date.now() > due.getTime()
               return (
                 <div key={r.id} className="border rounded-lg p-3 flex items-start gap-3 bg-white">
@@ -299,13 +364,18 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
                   <div className="min-w-0 flex-1">
                     <div className="font-medium truncate">{r.title}</div>
                     {r.body && <div className="text-sm text-gray-700 truncate">{r.body}</div>}
+
+                    {/* >>> SEULE LIGNE QUI CHANGE (audience masquée quand "user") <<< */}
                     <div className="mt-1 text-xs text-gray-500 flex items-center gap-2 flex-wrap">
                       <Clock className="h-3.5 w-3.5" />
-                      <span className={cn(isPast ? "text-red-600" : "")}>{due.toLocaleString()}</span>
-                      <span>• Audience: {r.audience}</span>
-                      {Array.isArray(r.user_ids) && r.user_ids.length > 0 && <span>({r.user_ids.length} utilisateur·s)</span>}
+                      <span className={cn(isPast ? "text-red-600" : "")}>{dueText}</span>
+                      {r.audience !== "user" && <span>• Audience: {r.audience}</span>}
+                      {Array.isArray(r.user_ids) && r.user_ids.length > 0 && (
+                        <span>({r.user_ids.length} utilisateur·s)</span>
+                      )}
                       {r.urgent ? <span className="rounded bg-red-100 text-red-700 px-1.5">URGENT</span> : null}
                     </div>
+                    {/* <<< FIN DU CHANGEMENT >>> */}
                   </div>
                 </div>
               )
