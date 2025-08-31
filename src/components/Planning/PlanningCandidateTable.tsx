@@ -1,3 +1,4 @@
+// src/components/Planning/PlanningCandidateTable.tsx
 import { useEffect, useState } from "react"
 import { Plus } from "lucide-react"
 import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns"
@@ -6,19 +7,25 @@ import { supabase } from "@/lib/supabase"
 import type { JourPlanningCandidat, CommandeFull } from "@/types/types-front"
 import { ColonneCandidate } from "@/components/Planning/ColonneCandidate"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { CandidateJourneeDialog } from "@/components/Planning/CandidateJourneeDialog"
+import CandidateJourneeDialog from "@/components/Planning/CandidateJourneeDialog"
 
 const HALF_H = 48
 const GAP = 6
 const FULL_H_ETAGES = 56
 const ROW_H_OTHERS = HALF_H * 2 + GAP
 
+// Compaction sûre : coupe par mots, puis fallback caractères pour les “mots” très longs
 const compactClient = (raw?: string) => {
   if (!raw) return "Client ?"
-  const words = raw.trim().split(/\s+/)
-  if (words.length <= 3) return raw
-  return words.slice(0, 3).join(" ") + " ..."
+  const trimmed = raw.trim()
+  const words = trimmed.split(/\s+/)
+  if (words.length <= 3) {
+    return trimmed.length > 26 ? trimmed.slice(0, 23) + "..." : trimmed
+  }
+  const reduced = words.slice(0, 3).join(" ")
+  return reduced.length > 26 ? reduced.slice(0, 23) + "..." : reduced + " ..."
 }
+
 const fmt = (h?: string | null) => (h && h.length >= 5 ? h.slice(0, 5) : "")
 
 export function PlanningCandidateTable({
@@ -34,6 +41,7 @@ export function PlanningCandidateTable({
 }) {
   const [heuresParCandidat, setHeuresParCandidat] = useState<Record<string, string>>({})
 
+  // Dialog “saisie dispo”
   const [dispoDialog, setDispoDialog] = useState<{
     open: boolean
     date: string | null
@@ -72,6 +80,7 @@ export function PlanningCandidateTable({
     closeDispo()
   }
 
+  // rafraîchissement local quand les dispos/planifs changent
   useEffect(() => {
     const handler = () => onRefresh()
     window.addEventListener("dispos:updated", handler as EventListener)
@@ -166,7 +175,7 @@ export function PlanningCandidateTable({
       if (!groupesParSemaine[keySemaineSecteur]) groupesParSemaine[keySemaineSecteur] = {}
       if (!groupesParSemaine[keySemaineSecteur][candidat]) groupesParSemaine[keySemaineSecteur][candidat] = {}
 
-      // ⚠️ clé de regroupement : on ne passe plus par toISOString() (UTC)
+      // clé locale
       const dateKey = String(jour.date).slice(0, 10)
       if (!groupesParSemaine[keySemaineSecteur][candidat][dateKey]) {
         groupesParSemaine[keySemaineSecteur][candidat][dateKey] = []
@@ -175,38 +184,52 @@ export function PlanningCandidateTable({
     })
   })
 
+  /** ——— vignettes ——— */
+  // IMPORTANT: centrage vertical + monoligne + ellipses, pas de croissance
   const VignettePlanifiee = ({ client, hours }: { client: string; hours: string }) => (
     <div
-      className="w-full h-full rounded-md px-2 pt-1.5 pb-2 flex flex-col items-start justify-center gap-1 overflow-hidden shadow-sm"
+      className="w-full h-full rounded-md px-2 py-2 flex flex-col items-start justify-center gap-1 overflow-hidden shadow-sm min-w-0"
       style={{
         backgroundColor: statutColors["Validé"]?.bg,
         color: statutColors["Validé"]?.text,
         boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
       }}
     >
-      <div className="w-full min-w-0 font-bold text-[12px] leading-[1.15] truncate" title={client}>
+      {/* Nom client : police légèrement réduite pour limiter les “…” */}
+      <div
+        className="block w-full min-w-0 font-bold text-[11px] leading-tight whitespace-nowrap truncate"
+        title={client}
+      >
         {compactClient(client)}
       </div>
-      <div className="text-[12px] font-semibold opacity-95 leading-none">
+
+      {/* Heures : une seule ligne, ellipses au cas limite */}
+      <div
+        className="block w-full min-w-0 text-[12px] font-semibold opacity-95 leading-none whitespace-nowrap truncate"
+        title={hours}
+      >
         {hours}
       </div>
     </div>
   )
 
-  const VignetteColor = ({ color }: { color: string }) => (
-    <div
-      className="w-full h-full rounded-md shadow-sm"
+  const VignetteColor = ({ color, onClick }: { color: string; onClick: () => void }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full h-full rounded-md shadow-sm cursor-pointer overflow-hidden min-w-0"
       style={{
         backgroundColor: color,
         boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
       }}
+      title="Modifier la disponibilité"
     />
   )
 
   const VignetteEmpty = ({ onAdd }: { onAdd: () => void }) => (
     <button
       type="button"
-      className="w-full h-full rounded-md relative shadow-[inset_0_0_0_1px_rgba(203,213,225,0.9)] hover:shadow-md transition"
+      className="w-full h-full rounded-md relative shadow-[inset_0_0_0_1px_rgba(203,213,225,0.9)] hover:shadow-md transition overflow-hidden min-w-0"
       style={{
         backgroundColor: "#ffffff",
         backgroundImage:
@@ -239,14 +262,13 @@ export function PlanningCandidateTable({
       )}
 
       <TooltipProvider delayDuration={150}>
+        {/* Fond gris moyen global (type Synthèse) */}
         <div className="space-y-8 mt-8 p-1 rounded-md bg-[#e5e7eb]">
           {Object.entries(groupesParSemaine).map(([keySemaineSecteur, groupes]) => {
             const [semaineStr, secteurStr] = keySemaineSecteur.split("_")
             const baseDate = startOfWeek(new Date(), { weekStartsOn: 1 })
             const diff = parseInt(semaineStr) - parseInt(format(baseDate, "I"))
             const lundiCible = addWeeks(baseDate, diff)
-
-            // ⚠️ dateStr local, pas toISOString()
             const jours = Array.from({ length: 7 }, (_, i) => {
               const jour = new Date(lundiCible)
               jour.setDate(jour.getDate() + i)
@@ -270,6 +292,7 @@ export function PlanningCandidateTable({
 
             return (
               <div key={keySemaineSecteur} className="border rounded-lg overflow-hidden shadow-sm bg-transparent">
+                {/* ——— ENTÊTE ——— */}
                 <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
                   <div className="p-4 border-r flex flex-col items-center justify-center min-h-[64px]">
                     <div>{`Semaine ${semaineStr}`}</div>
@@ -285,6 +308,7 @@ export function PlanningCandidateTable({
                   ))}
                 </div>
 
+                {/* ——— LIGNES façon “cartes” ——— */}
                 <div className="p-2 space-y-2">
                   {Object.entries(groupes)
                     .sort(([a], [b]) => a.localeCompare(b, "fr", { sensitivity: "base" }))
@@ -311,6 +335,7 @@ export function PlanningCandidateTable({
                       return (
                         <div key={key} className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition">
                           <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] text-sm">
+                            {/* Colonne Candidat */}
                             <ColonneCandidate
                               nomComplet={nomPrenom}
                               secteur={secteur}
@@ -320,14 +345,15 @@ export function PlanningCandidateTable({
                               totalHeures={totalHeures}
                             />
 
+                            {/* 7 jours */}
                             {jours.map((jour, index) => {
                               const jourCells = jourMap[jour.dateStr] || []
-                              const byId = new Map<string, CommandeFull>()
 
                               const rawCmds: CommandeFull[] = [
                                 ...jourCells.map((j) => j.commande).filter((c): c is CommandeFull => !!c),
                                 ...jourCells.flatMap((j) => (j.autresCommandes || []) as CommandeFull[]).filter(Boolean),
                               ]
+                              const byId = new Map<string, CommandeFull>()
                               for (const c of rawCmds) { if (c?.id) byId.set(c.id, c) }
                               const commandes: CommandeFull[] = Array.from(byId.values())
 
@@ -340,18 +366,18 @@ export function PlanningCandidateTable({
                               const colorDispo = disponibiliteColors["Dispo"]?.bg || "#d1d5db"
                               const colorNonDispo = disponibiliteColors["Non Dispo"]?.bg || "#6b7280"
 
-                              // Détection Étages par cellule (sécurise le cas de ligne mal initialisée)
                               const secteurCell = jourCells[0]?.secteur || secteur
                               const isEtagesCell = secteurCell === "Étages"
 
                               return (
                                 <div
                                   key={`${jour.dateStr}-${index}`}
-                                  className="border-r p-2"
-                                  style={{ minHeight: minH }}
+                                  className="border-r p-2 min-w-0"
+                                  style={{ minHeight: minH, overflow: "hidden" }}
                                 >
+                                  {/* Étages => 1 vignette pleine case */}
                                   {isEtagesCell ? (
-                                    <div className="w-full h-full">
+                                    <div className="w-full h-full min-w-0 overflow-hidden">
                                       {missionMatin || missionSoir ? (
                                         <VignettePlanifiee
                                           client={(missionMatin || missionSoir)!.client?.nom || "Client ?"}
@@ -361,9 +387,35 @@ export function PlanningCandidateTable({
                                           ].filter(Boolean).join(" / ")}
                                         />
                                       ) : dispo?.matin === true ? (
-                                        <VignetteColor color={colorDispo} />
+                                        <VignetteColor
+                                          color={colorDispo}
+                                          onClick={() =>
+                                            openDispo({
+                                              date: jour.dateStr,
+                                              secteur: secteurCell,
+                                              candidatId,
+                                              service,
+                                              disponibilite: dispo || null,
+                                              candidatNomPrenom: nomPrenom,
+                                              creneauVerrouille: "matin",
+                                            })
+                                          }
+                                        />
                                       ) : dispo?.matin === false ? (
-                                        <VignetteColor color={colorNonDispo} />
+                                        <VignetteColor
+                                          color={colorNonDispo}
+                                          onClick={() =>
+                                            openDispo({
+                                              date: jour.dateStr,
+                                              secteur: secteurCell,
+                                              candidatId,
+                                              service,
+                                              disponibilite: dispo || null,
+                                              candidatNomPrenom: nomPrenom,
+                                              creneauVerrouille: "matin",
+                                            })
+                                          }
+                                        />
                                       ) : (
                                         <VignetteEmpty
                                           onAdd={() =>
@@ -381,21 +433,48 @@ export function PlanningCandidateTable({
                                       )}
                                     </div>
                                   ) : (
+                                    // Autres secteurs => 2 vignettes (matin / soir)
                                     <div
-                                      className="grid h-full gap-[6px]"
-                                      style={{ gridTemplateRows: `repeat(2, minmax(${HALF_H}px, ${HALF_H}px))` }}
+                                      className="grid h-full gap-[6px] min-w-0"
+                                      style={{ gridTemplateRows: `repeat(2, minmax(${HALF_H}px, ${HALF_H}px))`, overflow: "hidden" }}
                                     >
                                       {/* Matin */}
-                                      <div className="w-full h-full">
+                                      <div className="w-full h-full min-w-0 overflow-hidden">
                                         {missionMatin ? (
                                           <VignettePlanifiee
                                             client={missionMatin.client?.nom || "Client ?"}
                                             hours={`${fmt(missionMatin.heure_debut_matin)} ${fmt(missionMatin.heure_fin_matin)}`}
                                           />
                                         ) : dispo?.matin === true ? (
-                                          <VignetteColor color={colorDispo} />
+                                          <VignetteColor
+                                            color={colorDispo}
+                                            onClick={() =>
+                                              openDispo({
+                                                date: jour.dateStr,
+                                                secteur: secteurCell,
+                                                candidatId,
+                                                service,
+                                                disponibilite: dispo || null,
+                                                candidatNomPrenom: nomPrenom,
+                                                creneauVerrouille: "matin",
+                                              })
+                                            }
+                                          />
                                         ) : dispo?.matin === false ? (
-                                          <VignetteColor color={colorNonDispo} />
+                                          <VignetteColor
+                                            color={colorNonDispo}
+                                            onClick={() =>
+                                              openDispo({
+                                                date: jour.dateStr,
+                                                secteur: secteurCell,
+                                                candidatId,
+                                                service,
+                                                disponibilite: dispo || null,
+                                                candidatNomPrenom: nomPrenom,
+                                                creneauVerrouille: "matin",
+                                              })
+                                            }
+                                          />
                                         ) : (
                                           <VignetteEmpty
                                             onAdd={() =>
@@ -414,16 +493,42 @@ export function PlanningCandidateTable({
                                       </div>
 
                                       {/* Soir */}
-                                      <div className="w-full h-full">
+                                      <div className="w-full h-full min-w-0 overflow-hidden">
                                         {missionSoir ? (
                                           <VignettePlanifiee
                                             client={missionSoir.client?.nom || "Client ?"}
                                             hours={`${fmt(missionSoir.heure_debut_soir)} ${fmt(missionSoir.heure_fin_soir)}`}
                                           />
                                         ) : dispo?.soir === true ? (
-                                          <VignetteColor color={colorDispo} />
+                                          <VignetteColor
+                                            color={colorDispo}
+                                            onClick={() =>
+                                              openDispo({
+                                                date: jour.dateStr,
+                                                secteur: secteurCell,
+                                                candidatId,
+                                                service,
+                                                disponibilite: dispo || null,
+                                                candidatNomPrenom: nomPrenom,
+                                                creneauVerrouille: "soir",
+                                              })
+                                            }
+                                          />
                                         ) : dispo?.soir === false ? (
-                                          <VignetteColor color={colorNonDispo} />
+                                          <VignetteColor
+                                            color={colorNonDispo}
+                                            onClick={() =>
+                                              openDispo({
+                                                date: jour.dateStr,
+                                                secteur: secteurCell,
+                                                candidatId,
+                                                service,
+                                                disponibilite: dispo || null,
+                                                candidatNomPrenom: nomPrenom,
+                                                creneauVerrouille: "soir",
+                                              })
+                                            }
+                                          />
                                         ) : (
                                           <VignetteEmpty
                                             onAdd={() =>

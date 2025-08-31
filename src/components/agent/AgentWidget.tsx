@@ -31,9 +31,7 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
   const [input, setInput] = useState("")
   const [busy, setBusy] = useState(false)
 
-  // garde en mémoire un "need_time" renvoyé par le backend (title + base_date_iso)
   const needTimeRef = useRef<{ title: string; base_date_iso: string } | null>(null)
-
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
@@ -44,7 +42,6 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
   const LAST_SESSION_KEY = me?.id ? `agent_last_session_${me.id}` : `agent_last_session_anonymous`
   const didLoadHistory = useRef(false)
 
-  // Reset quotidien + chargement
   useEffect(() => {
     if (!me || didLoadHistory.current) return
     didLoadHistory.current = true
@@ -73,11 +70,8 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me?.id])
 
-  // persiste l'historique
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs))
-    } catch {}
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(msgs)) } catch {}
   }, [msgs, STORAGE_KEY])
 
   function pushAgent(text: string, extras?: Partial<ChatMsg>) {
@@ -87,14 +81,26 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
     setMsgs((m) => [...m, { id: crypto.randomUUID(), role: "user", text }])
   }
 
-  // ---- API Edge Function ----
+  // ---- Edge Function helpers (ajout du header TZ !) ----
+  function currentTZ() {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris"
+    } catch { return "Europe/Paris" }
+  }
+
   async function callAgentMessage(message: string): Promise<AgentReply> {
-    const { data, error } = await supabase.functions.invoke("agent-chat", { body: { message } })
+    const { data, error } = await supabase.functions.invoke("agent-chat", {
+      body: { message },
+      headers: { "x-agent-tz": currentTZ() },
+    })
     if (error) return { ok: false, reply: error.message || "Erreur appel Agent." }
     return (data as AgentReply) || { ok: false, reply: "Réponse vide." }
   }
   async function callAgentFill(fill: any): Promise<AgentReply> {
-    const { data, error } = await supabase.functions.invoke("agent-chat", { body: { fill } })
+    const { data, error } = await supabase.functions.invoke("agent-chat", {
+      body: { fill },
+      headers: { "x-agent-tz": currentTZ() },
+    })
     if (error) return { ok: false, reply: error.message || "Erreur appel Agent." }
     return (data as AgentReply) || { ok: false, reply: "Réponse vide." }
   }
@@ -105,7 +111,6 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
     setInput("")
     pushUser(value)
 
-    // Si on a un "need_time" actif et que l'utilisateur tape une heure libre ("14:30", "14h30", "9h")
     if (needTimeRef.current) {
       const hm = value.match(/^([0-2]?\d)(?::|h)?([0-5]\d)?$/)
       if (hm) {
@@ -131,12 +136,8 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
     setBusy(true)
     try {
       const res = await callAgentMessage(value)
-      // si le backend nous renvoie un meta.need_time, on le stocke pour accepter une heure libre
       if (res?.meta?.need_time?.title && res?.meta?.need_time?.base_date_iso) {
-        needTimeRef.current = {
-          title: res.meta.need_time.title,
-          base_date_iso: res.meta.need_time.base_date_iso,
-        }
+        needTimeRef.current = { title: res.meta.need_time.title, base_date_iso: res.meta.need_time.base_date_iso }
       } else {
         needTimeRef.current = null
       }
@@ -148,7 +149,6 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
   }
 
   async function handleChoice(choice: AgentChoice) {
-    // Si la choice embarque un payload → on envoie en FILL (ex: set_time_from_base)
     if (choice.payload) {
       pushUser(choice.label)
       setBusy(true)
@@ -162,15 +162,11 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
       }
       return
     }
-    // Sinon, renvoyer le label
     await handleSend(choice.label)
   }
 
   async function toggleReminder(r: AgentReminder) {
-    await (supabase as any)
-      .from("agent_reminders")
-      .update({ status: r.status === "done" ? "pending" : "done" } as any)
-      .eq("id", r.id)
+    await (supabase as any).from("agent_reminders").update({ status: r.status === "done" ? "pending" : "done" } as any).eq("id", r.id)
     await reloadReminders()
   }
 
@@ -190,9 +186,7 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
     el.style.height = "0px"
     el.style.height = Math.min(el.scrollHeight, 220) + "px"
   }
-  useEffect(() => {
-    autoResize()
-  }, [input])
+  useEffect(() => { autoResize() }, [input])
 
   if (!open) return null
 
@@ -210,33 +204,15 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
           </div>
 
           <div className="flex items-center gap-1 mr-auto ml-3 rounded-full border overflow-hidden">
-            <button
-              className={cn("px-3 py-1 text-xs", tab === "chat" ? "bg-black text-white" : "bg-white hover:bg-gray-50")}
-              onClick={() => setTab("chat")}
-            >
-              Chat
-            </button>
-            <button
-              className={cn("px-3 py-1 text-xs", tab === "reminders" ? "bg-black text-white" : "bg-white hover:bg-gray-50")}
-              onClick={() => setTab("reminders")}
-            >
-              Rappels
-            </button>
+            <button className={cn("px-3 py-1 text-xs", tab === "chat" ? "bg-black text-white" : "bg-white hover:bg-gray-50")} onClick={() => setTab("chat")}>Chat</button>
+            <button className={cn("px-3 py-1 text-xs", tab === "reminders" ? "bg-black text-white" : "bg-white hover:bg-gray-50")} onClick={() => setTab("reminders")}>Rappels</button>
           </div>
 
           <div className="flex items-center gap-1">
-            <button
-              className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
-              title="Vider l'historique"
-              onClick={clearHistory}
-            >
+            <button className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center" title="Vider l'historique" onClick={clearHistory}>
               <Trash2 className="h-4 w-4" />
             </button>
-            <button
-              className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
-              onClick={onClose}
-              aria-label="Fermer"
-            >
+            <button className="h-8 w-8 rounded-full hover:bg-gray-100 flex items-center justify-center" onClick={onClose} aria-label="Fermer">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -247,24 +223,13 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
           <>
             <div ref={scrollRef} className="flex-1 overflow-auto p-3 space-y-2">
               {msgs.map((m) => (
-                <div
-                  key={m.id}
-                  className={cn(
-                    "max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap",
-                    m.role === "user" ? "ml-auto bg-[#840404] text-white" : "bg-gray-100"
-                  )}
-                >
+                <div key={m.id} className={cn("max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap", m.role === "user" ? "ml-auto bg-[#840404] text-white" : "bg-gray-100")}>
                   <div>{m.text}</div>
 
                   {!!m.choices?.length && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {m.choices.map((c, idx) => (
-                        <button
-                          key={idx}
-                          className="text-xs px-2 py-1 rounded-full border hover:bg-white"
-                          title={c.kind}
-                          onClick={() => handleChoice(c)}
-                        >
+                        <button key={idx} className="text-xs px-2 py-1 rounded-full border hover:bg-white" title={c.kind} onClick={() => handleChoice(c)}>
                           {c.label}
                         </button>
                       ))}
@@ -275,17 +240,13 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
                     <div className="mt-2 space-y-2">
                       {m.cards.map((card: any, i: number) => (
                         <div key={i} className="rounded-xl border p-2 text-xs bg-white">
-                          {card.type === "mission" || card.type === "mission_en_recherche" ? (
+                          {(card.type === "mission" || card.type === "mission_en_recherche") ? (
                             <>
-                              <div className="font-medium text-sm">{card.client || "Client"}</div>
+                              {card.client && <div className="font-medium text-sm">{card.client}</div>}
                               <div className="text-gray-600">{card.date}</div>
                               <div className="mt-1 flex flex-wrap gap-2">
-                                {card.secteur && (
-                                  <span className="rounded bg-neutral-100 border px-1.5">Secteur: {card.secteur}</span>
-                                )}
-                                {card.service && (
-                                  <span className="rounded bg-neutral-100 border px-1.5">Service: {card.service}</span>
-                                )}
+                                {card.secteur && <span className="rounded bg-neutral-100 border px-1.5">Secteur: {card.secteur}</span>}
+                                {card.service && <span className="rounded bg-neutral-100 border px-1.5">Service: {card.service}</span>}
                               </div>
                               {card.candidat && <div className="mt-1">Candidat : {card.candidat}</div>}
                               {card.horaires && (
@@ -317,10 +278,7 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
                   onChange={(e) => setInput(e.target.value)}
                   onInput={autoResize}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault()
-                      handleSend()
-                    }
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend() }
                   }}
                   rows={2}
                   className="flex-1 resize-none rounded-md border px-3 py-2 text-sm leading-5 max-h-[220px] focus:outline-none focus:ring-1 focus:ring-neutral-300"
@@ -337,7 +295,6 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
         {tab === "reminders" && (
           <div className="flex-1 overflow-auto p-3 space-y-2">
             {reminders.length === 0 && <div className="text-sm text-gray-500">Aucun rappel à venir.</div>}
-
             {reminders.map((r) => {
               const due = new Date(r.due_at)
               const dueText = new Date(due).toLocaleString("fr-FR", {
@@ -364,18 +321,13 @@ export default function AgentWidget({ open, onClose }: { open: boolean; onClose:
                   <div className="min-w-0 flex-1">
                     <div className="font-medium truncate">{r.title}</div>
                     {r.body && <div className="text-sm text-gray-700 truncate">{r.body}</div>}
-
-                    {/* >>> SEULE LIGNE QUI CHANGE (audience masquée quand "user") <<< */}
                     <div className="mt-1 text-xs text-gray-500 flex items-center gap-2 flex-wrap">
                       <Clock className="h-3.5 w-3.5" />
                       <span className={cn(isPast ? "text-red-600" : "")}>{dueText}</span>
                       {r.audience !== "user" && <span>• Audience: {r.audience}</span>}
-                      {Array.isArray(r.user_ids) && r.user_ids.length > 0 && (
-                        <span>({r.user_ids.length} utilisateur·s)</span>
-                      )}
+                      {Array.isArray(r.user_ids) && r.user_ids.length > 0 && <span>({r.user_ids.length} utilisateur·s)</span>}
                       {r.urgent ? <span className="rounded bg-red-100 text-red-700 px-1.5">URGENT</span> : null}
                     </div>
-                    {/* <<< FIN DU CHANGEMENT >>> */}
                   </div>
                 </div>
               )
