@@ -1,5 +1,4 @@
-// src/components/Planning/PlanningCandidateTable.tsx
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { Plus } from "lucide-react"
 import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns"
 import { statutColors, disponibiliteColors } from "@/lib/colors"
@@ -27,6 +26,14 @@ const compactClient = (raw?: string) => {
 }
 
 const fmt = (h?: string | null) => (h && h.length >= 5 ? h.slice(0, 5) : "")
+
+// ✔︎ Helper commun : considère "Validé" + "Planifié" + "À valider" (avec/ sans accents)
+const isPlanif = (s?: string | null) => {
+  const v = (s || "")
+    .normalize("NFD").replace(/\p{Diacritic}/gu, "")
+    .toLowerCase().trim()
+  return v === "valide" || v === "planifie" || v === "a valider" || v === "à valider"
+}
 
 export function PlanningCandidateTable({
   planning,
@@ -357,7 +364,7 @@ export function PlanningCandidateTable({
                               for (const c of rawCmds) { if (c?.id) byId.set(c.id, c) }
                               const commandes: CommandeFull[] = Array.from(byId.values())
 
-                              const valides = commandes.filter((c) => c.statut === "Validé")
+                              const valides = commandes.filter((c) => isPlanif(c.statut))
                               const missionMatin = valides.find((c) => !!c.heure_debut_matin && !!c.heure_fin_matin)
                               const missionSoir  = valides.find((c) => !!c.heure_debut_soir  && !!c.heure_fin_soir)
 

@@ -6,7 +6,7 @@ import { indicateurColors } from "@/lib/colors";
 import { supabase } from "@/lib/supabase";
 import type { CommandeWithCandidat, JourPlanning } from "@/types/types-front";
 import { ColonneClient } from "@/components/commandes/ColonneClient";
-import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
+import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog";
 import { CellulePlanning } from "@/components/commandes/CellulePlanning";
 import {
   Tooltip,
@@ -40,8 +40,8 @@ export function PlanningClientTable({
   const [commentaireTemp, setCommentaireTemp] = useState<string>("");
   const [lastClickedCommandeId, setLastClickedCommandeId] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
-  const [commandeToEdit, setCommandeToEdit] = useState<any | null>(null)
-  const [openEdit, setOpenEdit] = useState(false)
+  const [commandeToEdit, setCommandeToEdit] = useState<any | null>(null);
+  const [openEdit, setOpenEdit] = useState(false);
 
   useEffect(() => {
     const elt = document.getElementById("commandes-filters");
@@ -115,19 +115,21 @@ export function PlanningClientTable({
     }
   };
 
+  /**
+   * AGRÉGATION CORRIGÉE
+   * -> On itère sur Object.entries(planning) pour récupérer le clientNom de la clé parent
+   * -> On ne dépend plus de `commande.client` (souvent null en Realtime => pertes d'items)
+   */
   const groupesParSemaineEtSecteur = useMemo(() => {
     const groupes: Record<string, Record<string, Record<string, JourPlanning[]>>> = {};
 
-    Object.values(planning)
-      .flat()
-      .forEach((jour) => {
+    Object.entries(planning).forEach(([clientNom, jours]) => {
+      jours.forEach((jour) => {
         jour.commandes.forEach((commande) => {
-          if (!commande.client) return;
           if (clientId && commande.client_id !== clientId) return;
 
           const semaine = getWeek(new Date(jour.date), { weekStartsOn: 1 }).toString();
           const secteur = jour.secteur;
-          const clientNom = commande.client.nom;
           const service = commande.service || "";
           const missionSlot = commande.mission_slot;
 
@@ -152,6 +154,7 @@ export function PlanningClientTable({
           }
         });
       });
+    });
 
     return groupes;
   }, [planning, clientId]);
@@ -178,15 +181,13 @@ export function PlanningClientTable({
             };
           });
 
-          // --- NOUVEAU : rang de créneau DÉTERMINISTE basé sur le PREMIER jour qui a des heures
-          // Matin/Midi = 0, Soir = 1, Nuit = 2. Fallback 0 si rien trouvé.
+          // Détermination de l'ordre visuel par créneau (Matin/Midi < Soir < Nuit)
           const getCreneauRankDeterministe = (ligne: JourPlanning[]) => {
             for (const j of jours) {
               const found = ligne.find(
                 (x) => format(new Date(x.date), "yyyy-MM-dd") === j.dateStr
               );
               if (!found) continue;
-              // Une ligne a au plus une commande par jour (dans ce groupKey)
               const c = found.commandes[0];
               if (!c) continue;
 
@@ -194,11 +195,10 @@ export function PlanningClientTable({
               const hasSoir  = !!(c.heure_debut_soir  || c.heure_fin_soir);
               const hasNuit  = !!(c as any).heure_debut_nuit || !!(c as any).heure_fin_nuit;
 
-              if (hasMatin && !hasSoir && !hasNuit) return 0; // Matin/Midi
-              if (!hasMatin && hasSoir && !hasNuit) return 1; // Soir
-              if (!hasMatin && !hasSoir && hasNuit) return 2; // Nuit
+              if (hasMatin && !hasSoir && !hasNuit) return 0;
+              if (!hasMatin && hasSoir && !hasNuit) return 1;
+              if (!hasMatin && !hasSoir && hasNuit) return 2;
 
-              // Cas mixtes sur le même jour (sécurité) : Matin < Soir < Nuit
               if (hasMatin) return 0;
               if (hasSoir)  return 1;
               if (hasNuit)  return 2;
@@ -288,26 +288,22 @@ export function PlanningClientTable({
                     const [aClient, , , aService = "", aSlot] = aKey.split("||");
                     const [bClient, , , bService = "", bSlot] = bKey.split("||");
 
-                    // 1) Client (inchangé)
                     const cmpClient = norm(aClient).localeCompare(norm(bClient));
                     if (cmpClient !== 0) return cmpClient;
 
-                    // 2) Service (inchangé) — "" ne casse pas l'ordre actuel
                     const cmpService = norm(aService).localeCompare(norm(bService));
                     if (cmpService !== 0) return cmpService;
 
-                    // 3) NOUVEAU : ordre visuel déterministe par créneau
                     const ra = getCreneauRankDeterministe(aLigne as JourPlanning[]);
                     const rb = getCreneauRankDeterministe(bLigne as JourPlanning[]);
                     if (ra !== rb) return ra - rb;
 
-                    // 4) Fallback : mission_slot (inchangé)
                     const ai = parseInt(aSlot, 10) || 0;
                     const bi = parseInt(bSlot, 10) || 0;
                     return ai - bi;
                   })
                   .map(([groupKey, ligne]) => {
-                    const [clientNom, secteurNom, _, service, missionSlotStr] =
+                    const [clientNom, secteurNom, , service, missionSlotStr] =
                       groupKey.split("||");
                     const missionSlot = parseInt(missionSlotStr);
                     const nbEnRecherche = ligne
@@ -336,8 +332,8 @@ export function PlanningClientTable({
                           clientId={ligneClientId}
                           onOpenClientEdit={onOpenClientEdit}
                           onOpenCommandeEdit={(commande) => {
-                            setCommandeToEdit(commande)
-                            setOpenEdit(true)
+                            setCommandeToEdit(commande);
+                            setOpenEdit(true);
                           }}
                         />
                         {jours.map((jour, index) => {
@@ -409,7 +405,6 @@ export function PlanningClientTable({
         onRefreshDone={onRefresh}
         commande={commandeToEdit}
       />
-
     </TooltipProvider>
   );
 }

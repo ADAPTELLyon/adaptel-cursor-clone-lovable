@@ -166,6 +166,14 @@ export default function Planning() {
     return (x?.updated_at ? Date.parse(x.updated_at) : 0) || (x?.created_at ? Date.parse(x.created_at!) : 0) || 0
   }, [])
 
+  // ✔︎ Helper commun : considère "Validé" + "Planifié" + "À valider" (avec/ sans accents)
+  const isPlanif = useCallback((s?: string | null) => {
+    const v = (s || "")
+      .normalize("NFD").replace(/\p{Diacritic}/gu, "")
+      .toLowerCase().trim()
+    return v === "valide" || v === "planifie" || v === "a valider" || v === "à valider"
+  }, [])
+
   // Supprime une commande (par id) partout, et nettoie les jours vides
   const removeCommandeEverywhere = useCallback((base: Record<string, JourPlanningCandidat[]>, id: string) => {
     const next: Record<string, JourPlanningCandidat[]> = {}
@@ -363,7 +371,7 @@ export default function Planning() {
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) => {
         const statut = j.commande?.statut
-        if (statut === "Validé") p++
+        if (isPlanif(statut)) p++
         else {
           const s = j.disponibilite?.statut || "Non renseigné"
           if (s === "Dispo") d++
@@ -379,7 +387,7 @@ export default function Planning() {
       "Non Dispo": nd,
       "Planifié": p,
     })
-  }, [])
+  }, [isPlanif])
 
   // ——————————————— compose un JourPlanningCandidat (logique unique) ———————————————
   const composeJour = useCallback((
@@ -389,7 +397,7 @@ export default function Planning() {
   ): { secteur: string; service: string | null; commande?: CommandeFull; autresCommandes: CommandeFull[]; disponibilite?: CandidatDispoWithNom } => {
     const dispoFull = dispoRow ? buildDispoFull(dispoRow) : undefined
 
-    const valides = commandesRows.filter((c) => c.statut === "Validé")
+    const valides = commandesRows.filter((c) => isPlanif(c.statut))
     const annexes = commandesRows.filter((c) =>
       ["Annule Int", "Annule Client", "Annule ADA", "Absence"].includes(c.statut || "")
     )
@@ -419,7 +427,7 @@ export default function Planning() {
         secteur = principale.secteur
         service = (principale.service ?? service) ?? null
       } else {
-        // Validé sans heures (cas rare)
+        // Planif sans heures (cas rare)
         const lastValide = [...valides].sort((a, b) => ts(b) - ts(a))[0]
         principale = buildCommandeFull(lastValide)
         secteur = principale.secteur
@@ -444,7 +452,7 @@ export default function Planning() {
       autresCommandes: secondaires,
       disponibilite: dispoFull,
     }
-  }, [buildCommandeFull, buildDispoFull, ts])
+  }, [buildCommandeFull, buildDispoFull, ts, isPlanif])
 
   // ————————————————— Fetch initial —————————————————
   const fetchPlanning = useCallback(async () => {
