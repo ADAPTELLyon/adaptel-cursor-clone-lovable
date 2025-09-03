@@ -1,17 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react"
 import MainLayout from "@/components/main-layout"
 import { SectionFixeCommandes } from "@/components/commandes/section-fixe-commandes"
 import { PlanningClientTable } from "@/components/commandes/PlanningClientTable"
 import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
 import { supabase } from "@/lib/supabase"
-import { format, getWeek } from "date-fns"
+import { addDays, format, getWeek, startOfWeek } from "date-fns"
 import type { JourPlanning, CommandeWithCandidat } from "@/types/types-front"
 import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateurs"
 import { ClientEditDialog } from "@/components/clients/ClientEditDialog"
 import { useLiveRows } from "@/hooks/useLiveRows"
 
 // ——————————————————————————————————————————————————————————————
-// PAGE Commandes : fetch initial + patchs Realtime ciblés, sans refetch global
+// PAGE Commandes : fetch initial (semaine/secteur via SQL) + patchs Realtime ciblés
 // ——————————————————————————————————————————————————————————————
 
 type CommandeRow = {
@@ -32,8 +32,8 @@ type CommandeRow = {
   commentaire?: string | null
   created_at: string
   updated_at?: string | null
-  motif_contrat?: string | null         
-  complement_motif?: string | null      
+  motif_contrat?: string | null
+  complement_motif?: string | null
 }
 
 // ✅ Seuls ces statuts sont comptabilisés dans les indicateurs
@@ -47,7 +47,7 @@ export default function Commandes() {
   })
   const [semaineEnCours, setSemaineEnCours] = useState(() => {
     const stored = localStorage.getItem("semaineEnCours")
-    return stored ? JSON.parse(stored) : false
+    return stored ? JSON.parse(stored) : true
   })
   const [semaine, setSemaine] = useState(format(new Date(), "yyyy-MM-dd"))
   const [selectedSemaine, setSelectedSemaine] = useState(() => {
@@ -58,6 +58,11 @@ export default function Commandes() {
   const [search, setSearch] = useState("")
   const [toutAfficher, setToutAfficher] = useState(false)
   const [enRecherche, setEnRecherche] = useState(false)
+
+  // Déferrement pour un rendu fluide pendant la saisie
+  const deferredSearch = useDeferredValue(search)
+  const deferredClient = useDeferredValue(client)
+  const deferredEnRecherche = useDeferredValue(enRecherche)
 
   // Données
   const [planning, setPlanning] = useState<Record<string, JourPlanning[]>>({})
@@ -72,13 +77,34 @@ export default function Commandes() {
   const [clientIdToEdit, setClientIdToEdit] = useState<string | null>(null)
   const [showEditDialog, setShowEditDialog] = useState(false)
 
+  // 🔹 Semaines dispo
+  const [semainesDisponibles, setSemainesDisponibles] = useState<string[]>([])
+
   // Persistance de filtres
   useEffect(() => { localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs)) }, [selectedSecteurs])
   useEffect(() => { localStorage.setItem("selectedSemaine", selectedSemaine) }, [selectedSemaine])
   useEffect(() => { localStorage.setItem("semaineEnCours", JSON.stringify(semaineEnCours)) }, [semaineEnCours])
 
-  // ——————— Helpers de transformation ———————
+  // ——————— Helpers semaine (borne SQL pour une semaine unique) ———————
+  const computeWeekRange = useCallback(() => {
+    const now = new Date()
+    const mondayCurrent = startOfWeek(now, { weekStartsOn: 1 })
+    const weekCurrent = getWeek(now, { weekStartsOn: 1 })
 
+    const targetWeek = (semaineEnCours || selectedSemaine === "Toutes")
+      ? weekCurrent
+      : parseInt(selectedSemaine || String(weekCurrent), 10)
+
+    const deltaWeeks = targetWeek - weekCurrent
+    const mondayTarget = addDays(mondayCurrent, deltaWeeks * 7)
+    const sundayTarget = addDays(mondayTarget, 6)
+
+    const dmin = format(mondayTarget, "yyyy-MM-dd")
+    const dmax = format(sundayTarget, "yyyy-MM-dd")
+    return { dmin, dmax }
+  }, [semaineEnCours, selectedSemaine])
+
+  // ——————— Helpers de transformation ———————
   const buildCommandeFromRow = useCallback((item: any): CommandeWithCandidat => {
     return {
       id: item.id,
@@ -98,63 +124,58 @@ export default function Commandes() {
       commentaire: item.commentaire ?? null,
       created_at: item.created_at,
       updated_at: item.updated_at ?? undefined,
-      // ⚠️ Le payload Realtime n'inclut pas les joints ; on reconstruit via caches/état
-      candidat: null,
+      candidat: item.candidats ? { nom: item.candidats.nom ?? "–", prenom: item.candidats.prenom ?? "–" } : null,
       client: item.clients?.nom
         ? { nom: item.clients.nom }
-        : (clientNames[item.client_id] ? { nom: clientNames[item.client_id] } : null),
+        : (clientNames[item.client_id] ? { nom: clientNames[item.client_id] } : { nom: item.client_id || "Client inconnu" }),
       motif_contrat: item.motif_contrat ?? null,
-      complement_motif: item.complement_motif ?? null, 
+      complement_motif: item.complement_motif ?? null,
     }
   }, [clientNames])
 
-  // Insère/remplace une commande dans la map { clientNom -> Jour[] } (et supprime son ancienne position si nécessaire)
   const upsertCommandeInPlanning = useCallback((
     base: Record<string, JourPlanning[]>,
     item: any
   ): Record<string, JourPlanning[]> => {
-    const commande = buildCommandeFromRow(item)
+    const c = buildCommandeFromRow(item)
     const clientNom =
       item.clients?.nom ||
-      clientNames[commande.client_id] ||
+      clientNames[c.client_id] ||
       item.client_id ||
       "Client inconnu"
 
-    // 1) supprimer si la commande existait ailleurs
     const mapCopy: Record<string, JourPlanning[]> = {}
     for (const [cNom, jours] of Object.entries(base)) {
       const newJours: JourPlanning[] = []
       for (const j of jours) {
-        const reste = j.commandes.filter((c) => c.id !== commande.id)
+        const reste = j.commandes.filter((x) => x.id !== c.id)
         if (reste.length > 0) newJours.push({ ...j, commandes: reste })
       }
       if (newJours.length > 0) mapCopy[cNom] = newJours
     }
 
-    // 2) ajouter dans le bon groupe (date + secteur + service + slot) sous le bon client
     const jourKeyMatch = (j: JourPlanning) =>
-      j.date === commande.date &&
-      j.secteur === commande.secteur &&
-      (j.service ?? null) === (commande.service ?? null) &&
-      (j.mission_slot ?? 0) === (commande.mission_slot ?? 0)
+      j.date === c.date &&
+      j.secteur === c.secteur &&
+      (j.service ?? null) === (c.service ?? null) &&
+      (j.mission_slot ?? 0) === (c.mission_slot ?? 0)
 
     const joursClient = mapCopy[clientNom] ?? []
     const idx = joursClient.findIndex(jourKeyMatch)
 
     if (idx >= 0) {
       const jour = joursClient[idx]
-      joursClient[idx] = { ...jour, commandes: [...jour.commandes, commande] }
+      joursClient[idx] = { ...jour, commandes: [...jour.commandes, c] }
     } else {
       joursClient.push({
-        date: commande.date,
-        secteur: commande.secteur,
-        service: commande.service ?? null,
-        mission_slot: commande.mission_slot ?? 0,
-        commandes: [commande],
+        date: c.date,
+        secteur: c.secteur,
+        service: c.service ?? null,
+        mission_slot: c.mission_slot ?? 0,
+        commandes: [c],
       })
     }
 
-    // 3) réinjecter + trier
     const next: Record<string, JourPlanning[]> = { ...mapCopy, [clientNom]: joursClient }
     const entries = Object.entries(next).sort(([a], [b]) => a.localeCompare(b))
     const sorted: Record<string, JourPlanning[]> = {}
@@ -178,23 +199,15 @@ export default function Commandes() {
     return next
   }, [])
 
-  // Recalcule filteredPlanning + stats à partir de planning + filtres (aucune “vue par défaut” forcée)
-  const applyFilters = useCallback((
+  // ——————— Filtre léger (client / recherche / drapeau enRecherche) ———————
+  const applyFiltersLight = useCallback((
     source: Record<string, JourPlanning[]>,
     {
-      selectedSecteurs,
-      selectedSemaine,
-      client,
-      search,
-      enRecherche,
-      semaineEnCours,
+      client, search, enRecherche,
     }: {
-      selectedSecteurs: string[],
-      selectedSemaine: string,
       client: string,
       search: string,
       enRecherche: boolean,
-      semaineEnCours: boolean,
     }
   ) => {
     const matchSearchTerm = (val: string) =>
@@ -203,33 +216,22 @@ export default function Commandes() {
     const newFiltered: Record<string, JourPlanning[]> = {}
 
     Object.entries(source).forEach(([clientNom, jours]) => {
-      const joursFiltres = jours.filter((j) => {
-        const semaineDuJour = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
-        const matchSecteur = selectedSecteurs.includes(j.secteur)
-        const matchClient = client ? clientNom === client : true
-        const matchRecherche = enRecherche ? j.commandes.some((cmd) => cmd.statut === "En recherche") : true
-        const matchSemaine =
-          semaineEnCours
-            ? semaineDuJour === getWeek(new Date(), { weekStartsOn: 1 }).toString()
-            : (selectedSemaine === "Toutes" || selectedSemaine === semaineDuJour)
+      if (client && clientNom !== client) return
 
+      const joursFiltres = jours.filter((j) => {
         const searchFields = [
           clientNom,
           j.secteur,
-          semaineDuJour,
           ...j.commandes.map((cmd) => `${cmd.candidat?.prenom || ""} ${cmd.candidat?.nom || ""}`),
         ].join(" ")
-
         const matchSearch = matchSearchTerm(searchFields)
-        return matchSecteur && matchClient && matchRecherche && matchSemaine && matchSearch
+        const matchRecherche = enRecherche ? j.commandes.some((cmd) => cmd.statut === "En recherche") : true
+        return matchSearch && matchRecherche
       })
 
-      if (joursFiltres.length > 0) {
-        newFiltered[clientNom] = joursFiltres
-      }
+      if (joursFiltres.length > 0) newFiltered[clientNom] = joursFiltres
     })
 
-    // ✅ Stats basées uniquement sur les statuts COUNTABLE
     let d = 0, v = 0, r = 0, np = 0
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) =>
@@ -246,22 +248,55 @@ export default function Commandes() {
     return { newFiltered, stats: { demandées: d, validées: v, enRecherche: r, nonPourvue: np } }
   }, [])
 
-  // ——————— Chargement initial (UN SEUL fetch) ———————
+  // ——————— Chargement (borne SEMAINE OU toutes à partir de la semaine courante) ———————
   const fetchPlanning = useCallback(async () => {
-    const { data, error } = await supabase
+    // Lundi de la semaine courante
+    const mondayCurrent = startOfWeek(new Date(), { weekStartsOn: 1 })
+    const dminToutes = format(mondayCurrent, "yyyy-MM-dd")
+    // borne max défensive
+    const dmaxToutes = format(addDays(mondayCurrent, 180), "yyyy-MM-dd")
+
+    // Borne pour une semaine unique
+    const { dmin, dmax } = computeWeekRange()
+
+    let query = supabase
       .from("commandes")
       .select(`
         id, date, statut, secteur, service, mission_slot, client_id, candidat_id,
         heure_debut_matin, heure_fin_matin,
         heure_debut_soir, heure_fin_soir,
+        heure_debut_nuit, heure_fin_nuit,
         commentaire, created_at, updated_at,
-        motif_contrat, complement_motif,   
+        motif_contrat, complement_motif,
         candidats (id, nom, prenom),
         clients (nom)
       `)
 
+    // 🟢 “Toutes les semaines” => [lundi courant .. +180j]
+    if (selectedSemaine === "Toutes") {
+      query = query.gte("date", dminToutes).lte("date", dmaxToutes)
+    } else {
+      query = query.gte("date", dmin).lte("date", dmax)
+    }
+
+    query = query
+      .order("date", { ascending: true })
+      .order("client_id", { ascending: true })
+      .order("secteur", { ascending: true })
+      .order("service", { ascending: true, nullsFirst: true })
+      .order("mission_slot", { ascending: true })
+
+    if (selectedSecteurs.length > 0) {
+      query = query.in("secteur", selectedSecteurs)
+    }
+
+    const { data, error } = await query
+
     if (error || !data) {
       console.error("❌ Erreur Supabase :", error)
+      setPlanning({})
+      setFilteredPlanning({})
+      setStats({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
       return
     }
 
@@ -273,32 +308,13 @@ export default function Commandes() {
       if (item.client_id && item.clients?.nom) nameCache[item.client_id] = item.clients.nom
 
       const clientNom = item.clients?.nom || item.client_id || "Client inconnu"
-      const commande = {
-        id: item.id,
-        date: item.date,
-        statut: item.statut,
-        secteur: item.secteur,
-        service: item.service ?? null,
-        mission_slot: item.mission_slot ?? 0,
-        client_id: item.client_id,
-        candidat_id: item.candidat_id ?? null,
-        heure_debut_matin: item.heure_debut_matin ?? null,
-        heure_fin_matin: item.heure_fin_matin ?? null,
-        heure_debut_soir: item.heure_debut_soir ?? null,
-        heure_fin_soir: item.heure_fin_soir ?? null,
-        heure_debut_nuit: item.heure_debut_nuit ?? null,
-        heure_fin_nuit: item.heure_fin_nuit ?? null,
-        commentaire: item.commentaire ?? null,
-        created_at: item.created_at,
-        updated_at: item.updated_at ?? undefined,
-        candidat: item.candidats ? { nom: item.candidats.nom ?? "–", prenom: item.candidats.prenom ?? "–" } : null,
-        client: item.clients?.nom ? { nom: item.clients.nom } : null,
-        motif_contrat: item.motif_contrat ?? null,
-        complement_motif: item.complement_motif ?? null,
-      } as CommandeWithCandidat
+      const commande = buildCommandeFromRow(item)
 
       const jourKey = (j: JourPlanning) =>
-        j.date === item.date && j.secteur === item.secteur && (j.service ?? null) === (item.service ?? null) && (j.mission_slot ?? 0) === (item.mission_slot ?? 0)
+        j.date === item.date &&
+        j.secteur === item.secteur &&
+        (j.service ?? null) === (item.service ?? null) &&
+        (j.mission_slot ?? 0) === (item.mission_slot ?? 0)
 
       const arr = map[clientNom] ?? []
       const idx = arr.findIndex(jourKey)
@@ -324,34 +340,63 @@ export default function Commandes() {
 
     setClientNames(nameCache)
     setPlanning(sorted)
-
-    const { newFiltered, stats } = applyFilters(sorted, {
-      selectedSecteurs,
-      selectedSemaine,
-      client,
-      search,
-      enRecherche,
-      semaineEnCours,
-    })
-    setFilteredPlanning(newFiltered)
-    setStats(stats)
-  }, [applyFilters, selectedSecteurs, selectedSemaine, client, search, enRecherche, semaineEnCours])
+    // ⚠️ NE PAS filtrer ici — filtrage local dans l’effet ci-dessous
+  }, [computeWeekRange, selectedSemaine, selectedSecteurs, buildCommandeFromRow])
 
   useEffect(() => { fetchPlanning() }, [fetchPlanning])
 
-  // ——————— Recalcule filteredPlanning quand filtres OU planning changent ———————
+  // ——————— fetch ultra-léger des semaines disponibles ———————
+  const fetchSemainesDisponibles = useCallback(async () => {
+    try {
+      // Fenêtre glissante : 52 semaines passées / 26 futures
+      const now = new Date()
+      const mondayNow = startOfWeek(now, { weekStartsOn: 1 })
+      const startWindow = addDays(mondayNow, -52 * 7)
+      const endWindow = addDays(mondayNow, 26 * 7 + 6)
+
+      let q = supabase
+        .from("commandes")
+        .select("date")
+        .gte("date", format(startWindow, "yyyy-MM-dd"))
+        .lte("date", format(endWindow, "yyyy-MM-dd"))
+
+      if (selectedSecteurs.length > 0) {
+        q = q.in("secteur", selectedSecteurs)
+      }
+
+      const { data, error } = await q
+      if (error || !data) {
+        console.error("❌ Erreur Semaines Disponibles :", error)
+        setSemainesDisponibles([])
+        return
+      }
+
+      const weeks = new Set<string>()
+      ;(data as { date: string }[]).forEach((row) => {
+        const w = getWeek(new Date(row.date), { weekStartsOn: 1 }).toString()
+        weeks.add(w)
+      })
+
+      const sorted = Array.from(weeks).sort((a, b) => parseInt(a) - parseInt(b))
+      setSemainesDisponibles(sorted)
+    } catch (e) {
+      console.error("fetchSemainesDisponibles exception:", e)
+      setSemainesDisponibles([])
+    }
+  }, [selectedSecteurs])
+
+  useEffect(() => { fetchSemainesDisponibles() }, [fetchSemainesDisponibles])
+
+  // ——————— Recalcule filteredPlanning quand planning OU filtres changent (local/deferred) ———————
   useEffect(() => {
-    const { newFiltered, stats } = applyFilters(planning, {
-      selectedSecteurs,
-      selectedSemaine,
-      client,
-      search,
-      enRecherche,
-      semaineEnCours,
+    const { newFiltered, stats } = applyFiltersLight(planning, {
+      client: deferredClient,
+      search: deferredSearch,
+      enRecherche: deferredEnRecherche,
     })
     setFilteredPlanning(newFiltered)
     setStats(stats)
-  }, [planning, selectedSecteurs, selectedSemaine, client, search, enRecherche, semaineEnCours, applyFilters])
+  }, [planning, deferredClient, deferredSearch, deferredEnRecherche, applyFiltersLight])
 
   // ——————— Patchs Realtime ciblés (pas de refetch global) ———————
   useLiveRows<CommandeRow>({
@@ -370,19 +415,7 @@ export default function Commandes() {
     },
   })
 
-  // ——————— Données dérivées (semaines / clients disponibles) ———————
-  const semainesDisponibles = useMemo(() => {
-    return Array.from(
-      new Set(
-        Object.values(planning).flat().map((j) =>
-          getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
-        )
-      )
-    ).sort()
-  }, [planning])
-
-  const clientsDisponibles = useMemo(() => Object.keys(planning), [planning])
-
+  // ——————— Données dérivées (totaux semaine courante) ———————
   const semaineCourante = getWeek(new Date(), { weekStartsOn: 1 }).toString()
   const totauxSemaine = useMemo(() => {
     const res = { demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 }
@@ -450,12 +483,13 @@ export default function Commandes() {
             localStorage.setItem("selectedSecteurs", JSON.stringify(["Étages"]))
             localStorage.setItem("selectedSemaine", semActuelle)
             localStorage.setItem("semaineEnCours", JSON.stringify(true))
+            // refetch explicite
+            fetchPlanning()
           }}
           semainesDisponibles={semainesDisponibles}
-          clientsDisponibles={clientsDisponibles}
-          // ❌ On ne déclenche PLUS de refresh global côté UI
+          clientsDisponibles={Object.keys(planning)}
           refreshTrigger={0}
-          onRefresh={() => {}}
+          onRefresh={() => { fetchPlanning() }}
           planningContext={{}}
         />
       </div>
@@ -464,8 +498,7 @@ export default function Commandes() {
         planning={filteredPlanning}
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
-        // ❌ Pas de refetch global au succès d’une action
-        onRefresh={() => {}}
+        onRefresh={() => fetchPlanning()}
         refreshTrigger={0}
         onOpenClientEdit={(id) => {
           setClientIdToEdit(id)
@@ -476,8 +509,7 @@ export default function Commandes() {
       <NouvelleCommandeDialog
         open={openDialog}
         onOpenChange={setOpenDialog}
-        // ❌ plus de refetch global — on laisse Realtime patcher
-        onRefreshDone={() => {}}
+        onRefreshDone={() => fetchPlanning()}
       />
 
       {clientIdToEdit && (
@@ -488,8 +520,7 @@ export default function Commandes() {
             setShowEditDialog(open)
             if (!open) setClientIdToEdit(null)
           }}
-          // ❌ plus de refetch global
-          onRefresh={() => {}}
+          onRefresh={() => fetchPlanning()}
         />
       )}
     </MainLayout>

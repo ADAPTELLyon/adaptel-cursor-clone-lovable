@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
-import { Plus, Info, Pencil, Check, FileText } from "lucide-react"
+import { Plus, Pencil, Check, FileText, Info } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -43,15 +43,33 @@ const MOTIFS = [
   "Remplacement Personnel Absent",
 ] as const
 
-// Normalise (quelle que soit la casse/accents) vers nos 3 libellés exacts
+// Normalise quel que soit la casse/accents vers nos 3 libellés
 const normalizeMotif = (m?: string | null): typeof MOTIFS[number] | null => {
   if (!m) return null
   const s = m.trim().toLowerCase()
   if (s === "extra") return "Extra"
   if (s.startsWith("accroissement")) return "Accroissement d'activité"
   if (s.startsWith("remplacement")) return "Remplacement Personnel Absent"
-  // Si déjà conforme, on garde tel quel (au cas où la BDD stocke déjà exactement l’un des 3)
   return (m as unknown) as typeof MOTIFS[number]
+}
+
+// Utilitaire: début/fin de semaine (Lundi→Dimanche) à partir d'une date YYYY-MM-DD
+function getWeekBounds(dateStr: string) {
+  const [y, m, d] = dateStr.split("-").map(Number)
+  const base = new Date(y, (m ?? 1) - 1, d ?? 1)
+  const day = base.getDay() // 0=Dim,1=Lun,...6=Sam
+  const diffToMonday = day === 0 ? -6 : 1 - day
+  const monday = new Date(base)
+  monday.setDate(base.getDate() + diffToMonday)
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  const toYMD = (dt: Date) => {
+    const yy = dt.getFullYear()
+    const mm = String(dt.getMonth() + 1).padStart(2, "0")
+    const dd = String(dt.getDate()).padStart(2, "0")
+    return `${yy}-${mm}-${dd}`
+  }
+  return { start: toYMD(monday), end: toYMD(sunday) }
 }
 
 export function CellulePlanning({
@@ -90,7 +108,8 @@ export function CellulePlanning({
     async function hydrate() {
       if (!commande) return
       if (commande.statut === "Validé" && !commande.candidat && commande.candidat_id) {
-        const { data } = await supabase
+        const sb: any = supabase
+        const { data } = await sb
           .from("candidats")
           .select("nom, prenom")
           .eq("id", commande.candidat_id)
@@ -306,29 +325,56 @@ export function CellulePlanning({
                       complement_motif: complementMotifTemp || null,
                     } as const
 
-                    const { data: authData } = await supabase.auth.getUser()
+                    const sb: any = supabase
+
+                    // 1) Récup user (pour historique)
+                    const { data: authData } = await sb.auth.getUser()
                     const userEmail = authData?.user?.email || null
-                    const { data: userApp } = await supabase
-                      .from("utilisateurs")
-                      .select("id")
-                      .eq("email", userEmail)
-                      .single()
+                    const { data: userApp } = userEmail
+                      ? await sb.from("utilisateurs").select("id").eq("email", userEmail).single()
+                      : { data: null as any }
                     const userId = userApp?.id || null
 
-                    const { error } = await supabase
+                    // 2) UPDATE EN MASSE sur toute la ligne (client+secteur+mission_slot+service) sur la semaine vue
+                    const { start, end } = getWeekBounds(date)
+                    let q = sb
                       .from("commandes")
                       .update(updates)
-                      .eq("id", commande.id)
+                      .eq("client_id", (commande as any).client_id)
+                      .eq("secteur", (commande as any).secteur)
+                      .eq("mission_slot", (commande as any).mission_slot ?? missionSlot)
+                      .gte("date", start)
+                      .lte("date", end)
 
+                    const serviceValue = (commande as any).service ?? service ?? null
+                    if (serviceValue === null) {
+                      q = q.is("service", null)
+                    } else {
+                      q = q.eq("service", serviceValue)
+                    }
+
+                    const { error } = await q
+
+                    // 3) Historique (une entrée agrégée par ligne)
                     if (!error && userId) {
-                      await supabase.from("historique").insert({
+                      await sb.from("historique").insert({
                         table_cible: "commandes",
-                        ligne_id: commande.id,
-                        action: "modification_motif_contrat",
-                        description: "Mise à jour motif contrat",
+                        ligne_id: (commande as any).id, // référence de contexte
+                        action: "modification_motif_contrat_ligne",
+                        description: "Mise à jour motif contrat sur toute la ligne (semaine courante)",
                         user_id: userId,
                         date_action: new Date().toISOString(),
-                        apres: updates,
+                        apres: {
+                          ...updates,
+                          scope: {
+                            client_id: (commande as any).client_id,
+                            secteur: (commande as any).secteur,
+                            mission_slot: (commande as any).mission_slot ?? missionSlot,
+                            service: serviceValue,
+                            date_from: start,
+                            date_to: end,
+                          },
+                        },
                       })
                     }
 
@@ -345,57 +391,68 @@ export function CellulePlanning({
         </div>
       )}
 
-      {/* Popover COMMENTAIRE (Info/Pencil inchangé) */}
-      <div className="absolute bottom-2 right-1 z-10">
-        <Popover
-          open={editingCommentId === commande.id}
-          onOpenChange={(open) => !open && setEditingCommentId(null)}
+{/* Popover COMMENTAIRE (pencil blanc si vide, pastille rouge pleine “!” si présent) */}
+<div className="absolute bottom-2 right-1 z-10">
+  <Popover
+    open={editingCommentId === commande.id}
+    onOpenChange={(open) => !open && setEditingCommentId(null)}
+  >
+    <PopoverTrigger asChild>
+      <Button
+        variant="ghost"
+        className="p-0 h-auto w-auto text-white"
+        onClick={(e) => {
+          e.stopPropagation()
+          setEditingCommentId(commande.id)
+          setCommentaireTemp(commande.commentaire || "")
+        }}
+        title={hasComment ? "Voir/éditer le commentaire" : "Ajouter un commentaire"}
+        aria-label={hasComment ? "Commentaire présent" : "Ajouter un commentaire"}
+      >
+        {hasComment ? (
+          // SVG custom : rond rouge plein + point d’exclamation blanc (sans cercle blanc)
+          <svg
+            className="h-5 w-5"
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+          >
+            <circle cx="10" cy="10" r="10" fill="#dc2626" />
+            {/* barre de l’exclamation */}
+            <rect x="9" y="4.5" width="2" height="8" rx="1" fill="#ffffff" />
+            {/* point de l’exclamation */}
+            <circle cx="10" cy="14.5" r="1.2" fill="#ffffff" />
+          </svg>
+        ) : (
+          <Pencil className="h-4 w-4" />
+        )}
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent className="w-64 p-2 space-y-2" align="end">
+      <textarea
+        value={commentaireTemp}
+        onChange={(e) => setCommentaireTemp(e.target.value)}
+        rows={4}
+        className="w-full border rounded px-2 py-1 text-sm"
+      />
+      <div className="flex justify-end">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={async () => {
+            await updateHeure(commande, "commentaire", commentaireTemp as any)
+            setEditingCommentId(null)
+            if (onSuccess) onSuccess()
+          }}
+          title="Enregistrer"
+          aria-label="Enregistrer le commentaire"
         >
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              className={cn(
-                "p-0 h-auto w-auto",
-                hasComment ? "text-gray-800" : "text-white"
-              )}
-              onClick={(e) => {
-                e.stopPropagation()
-                setEditingCommentId(commande.id)
-                setCommentaireTemp(commande.commentaire || "")
-              }}
-              title="Commentaire"
-            >
-              {hasComment ? (
-                <Info className="h-4 w-4" />
-              ) : (
-                <Pencil className="h-4 w-4" />
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-64 p-2 space-y-2" align="end">
-            <textarea
-              value={commentaireTemp}
-              onChange={(e) => setCommentaireTemp(e.target.value)}
-              rows={4}
-              className="w-full border rounded px-2 py-1 text-sm"
-            />
-            <div className="flex justify-end">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={async () => {
-                  await updateHeure(commande, "commentaire", commentaireTemp)
-                  setEditingCommentId(null)
-                  if (onSuccess) onSuccess()
-                }}
-                title="Enregistrer"
-              >
-                <Check className="w-4 h-4 text-green-600" />
-              </Button>
-            </div>
-          </PopoverContent>
-        </Popover>
+          <Check className="w-4 h-4 text-green-600" />
+        </Button>
       </div>
+    </PopoverContent>
+  </Popover>
+</div>
+
 
       <PlanificationCandidatDialog
         open={openPlanifDialog}
