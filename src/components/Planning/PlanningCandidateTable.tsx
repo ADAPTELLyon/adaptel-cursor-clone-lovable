@@ -5,7 +5,7 @@ import { statutColors, disponibiliteColors } from "@/lib/colors"
 import { supabase } from "@/lib/supabase"
 import type { JourPlanningCandidat, CommandeFull } from "@/types/types-front"
 import { ColonneCandidate } from "@/components/Planning/ColonneCandidate"
-import { TooltipProvider } from "@/components/ui/tooltip"
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import CandidateJourneeDialog from "@/components/Planning/CandidateJourneeDialog"
 
 const HALF_H = 48
@@ -202,19 +202,10 @@ export function PlanningCandidateTable({
         boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
       }}
     >
-      {/* Nom client : police légèrement réduite pour limiter les “…” */}
-      <div
-        className="block w-full min-w-0 font-bold text-[11px] leading-tight whitespace-nowrap truncate"
-        title={client}
-      >
+      <div className="block w-full min-w-0 font-bold text-[11px] leading-tight whitespace-nowrap truncate">
         {compactClient(client)}
       </div>
-
-      {/* Heures : une seule ligne, ellipses au cas limite */}
-      <div
-        className="block w-full min-w-0 text-[12px] font-semibold opacity-95 leading-none whitespace-nowrap truncate"
-        title={hours}
-      >
+      <div className="block w-full min-w-0 text-[12px] font-semibold opacity-95 leading-none whitespace-nowrap truncate">
         {hours}
       </div>
     </div>
@@ -229,7 +220,6 @@ export function PlanningCandidateTable({
         backgroundColor: color,
         boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
       }}
-      title="Modifier la disponibilité"
     />
   )
 
@@ -242,7 +232,6 @@ export function PlanningCandidateTable({
         backgroundImage:
           "repeating-linear-gradient(45deg, rgba(0,0,0,0.03) 0, rgba(0,0,0,0.03) 10px, transparent 10px, transparent 20px)",
       }}
-      title="Ajouter une disponibilité"
       onClick={onAdd}
     >
       <div className="absolute inset-0 flex items-center justify-center">
@@ -377,184 +366,190 @@ export function PlanningCandidateTable({
                               const isEtagesCell = secteurCell === "Étages"
 
                               return (
-                                <div
-                                  key={`${jour.dateStr}-${index}`}
-                                  className="border-r p-2 min-w-0"
-                                  style={{ minHeight: minH, overflow: "hidden" }}
-                                >
-                                  {/* Étages => 1 vignette pleine case */}
-                                  {isEtagesCell ? (
-                                    <div className="w-full h-full min-w-0 overflow-hidden">
-                                      {missionMatin || missionSoir ? (
-                                        <VignettePlanifiee
-                                          client={(missionMatin || missionSoir)!.client?.nom || "Client ?"}
-                                          hours={[
-                                            missionMatin ? `${fmt(missionMatin.heure_debut_matin)} ${fmt(missionMatin.heure_fin_matin)}` : "",
-                                            missionSoir  ? `${fmt(missionSoir.heure_debut_soir)} ${fmt(missionSoir.heure_fin_soir)}`   : ""
-                                          ].filter(Boolean).join(" / ")}
-                                        />
-                                      ) : dispo?.matin === true ? (
-                                        <VignetteColor
-                                          color={colorDispo}
-                                          onClick={() =>
-                                            openDispo({
-                                              date: jour.dateStr,
-                                              secteur: secteurCell,
-                                              candidatId,
-                                              service,
-                                              disponibilite: dispo || null,
-                                              candidatNomPrenom: nomPrenom,
-                                              creneauVerrouille: "matin",
-                                            })
-                                          }
-                                        />
-                                      ) : dispo?.matin === false ? (
-                                        <VignetteColor
-                                          color={colorNonDispo}
-                                          onClick={() =>
-                                            openDispo({
-                                              date: jour.dateStr,
-                                              secteur: secteurCell,
-                                              candidatId,
-                                              service,
-                                              disponibilite: dispo || null,
-                                              candidatNomPrenom: nomPrenom,
-                                              creneauVerrouille: "matin",
-                                            })
-                                          }
-                                        />
+                                <Tooltip key={`${jour.dateStr}-${index}`}>
+                                  <TooltipTrigger asChild>
+                                    <div
+                                      className="border-r p-2 min-w-0"
+                                      style={{ minHeight: minH, overflow: "hidden" }}
+                                    >
+                                      {/* Étages => 1 vignette pleine case */}
+                                      {isEtagesCell ? (
+                                        <div className="w-full h-full min-w-0 overflow-hidden">
+                                          {missionMatin || missionSoir ? (
+                                            <VignettePlanifiee
+                                              client={(missionMatin || missionSoir)!.client?.nom || "Client ?"}
+                                              hours={[
+                                                missionMatin ? `${fmt(missionMatin.heure_debut_matin)} ${fmt(missionMatin.heure_fin_matin)}` : "",
+                                                missionSoir  ? `${fmt(missionSoir.heure_debut_soir)} ${fmt(missionSoir.heure_fin_soir)}`   : ""
+                                              ].filter(Boolean).join(" / ")}
+                                            />
+                                          ) : dispo?.matin === true ? (
+                                            <VignetteColor
+                                              color={colorDispo}
+                                              onClick={() =>
+                                                openDispo({
+                                                  date: jour.dateStr,
+                                                  secteur: secteurCell,
+                                                  candidatId,
+                                                  service,
+                                                  disponibilite: dispo || null,
+                                                  candidatNomPrenom: nomPrenom,
+                                                  creneauVerrouille: "matin",
+                                                })
+                                              }
+                                            />
+                                          ) : dispo?.matin === false ? (
+                                            <VignetteColor
+                                              color={colorNonDispo}
+                                              onClick={() =>
+                                                openDispo({
+                                                  date: jour.dateStr,
+                                                  secteur: secteurCell,
+                                                  candidatId,
+                                                  service,
+                                                  disponibilite: dispo || null,
+                                                  candidatNomPrenom: nomPrenom,
+                                                  creneauVerrouille: "matin",
+                                                })
+                                              }
+                                            />
+                                          ) : (
+                                            <VignetteEmpty
+                                              onAdd={() =>
+                                                openDispo({
+                                                  date: jour.dateStr,
+                                                  secteur: secteurCell,
+                                                  candidatId,
+                                                  service,
+                                                  disponibilite: dispo || null,
+                                                  candidatNomPrenom: nomPrenom,
+                                                  creneauVerrouille: "matin",
+                                                })
+                                              }
+                                            />
+                                          )}
+                                        </div>
                                       ) : (
-                                        <VignetteEmpty
-                                          onAdd={() =>
-                                            openDispo({
-                                              date: jour.dateStr,
-                                              secteur: secteurCell,
-                                              candidatId,
-                                              service,
-                                              disponibilite: dispo || null,
-                                              candidatNomPrenom: nomPrenom,
-                                              creneauVerrouille: "matin",
-                                            })
-                                          }
-                                        />
+                                        // Autres secteurs => 2 vignettes (matin / soir)
+                                        <div
+                                          className="grid h-full gap-[6px] min-w-0"
+                                          style={{ gridTemplateRows: `repeat(2, minmax(${HALF_H}px, ${HALF_H}px))`, overflow: "hidden" }}
+                                        >
+                                          {/* Matin */}
+                                          <div className="w-full h-full min-w-0 overflow-hidden">
+                                            {missionMatin ? (
+                                              <VignettePlanifiee
+                                                client={missionMatin.client?.nom || "Client ?"}
+                                                hours={`${fmt(missionMatin.heure_debut_matin)} ${fmt(missionMatin.heure_fin_matin)}`}
+                                              />
+                                            ) : dispo?.matin === true ? (
+                                              <VignetteColor
+                                                color={colorDispo}
+                                                onClick={() =>
+                                                  openDispo({
+                                                    date: jour.dateStr,
+                                                    secteur: secteurCell,
+                                                    candidatId,
+                                                    service,
+                                                    disponibilite: dispo || null,
+                                                    candidatNomPrenom: nomPrenom,
+                                                    creneauVerrouille: "matin",
+                                                  })
+                                                }
+                                              />
+                                            ) : dispo?.matin === false ? (
+                                              <VignetteColor
+                                                color={colorNonDispo}
+                                                onClick={() =>
+                                                  openDispo({
+                                                    date: jour.dateStr,
+                                                    secteur: secteurCell,
+                                                    candidatId,
+                                                    service,
+                                                    disponibilite: dispo || null,
+                                                    candidatNomPrenom: nomPrenom,
+                                                    creneauVerrouille: "matin",
+                                                  })
+                                                }
+                                              />
+                                            ) : (
+                                              <VignetteEmpty
+                                                onAdd={() =>
+                                                  openDispo({
+                                                    date: jour.dateStr,
+                                                    secteur: secteurCell,
+                                                    candidatId,
+                                                    service,
+                                                    disponibilite: dispo || null,
+                                                    candidatNomPrenom: nomPrenom,
+                                                    creneauVerrouille: "matin",
+                                                  })
+                                                }
+                                              />
+                                            )}
+                                          </div>
+
+                                          {/* Soir */}
+                                          <div className="w-full h-full min-w-0 overflow-hidden">
+                                            {missionSoir ? (
+                                              <VignettePlanifiee
+                                                client={missionSoir.client?.nom || "Client ?"}
+                                                hours={`${fmt(missionSoir.heure_debut_soir)} ${fmt(missionSoir.heure_fin_soir)}`}
+                                              />
+                                            ) : dispo?.soir === true ? (
+                                              <VignetteColor
+                                                color={colorDispo}
+                                                onClick={() =>
+                                                  openDispo({
+                                                    date: jour.dateStr,
+                                                    secteur: secteurCell,
+                                                    candidatId,
+                                                    service,
+                                                    disponibilite: dispo || null,
+                                                    candidatNomPrenom: nomPrenom,
+                                                    creneauVerrouille: "soir",
+                                                  })
+                                                }
+                                              />
+                                            ) : dispo?.soir === false ? (
+                                              <VignetteColor
+                                                color={colorNonDispo}
+                                                onClick={() =>
+                                                  openDispo({
+                                                    date: jour.dateStr,
+                                                    secteur: secteurCell,
+                                                    candidatId,
+                                                    service,
+                                                    disponibilite: dispo || null,
+                                                    candidatNomPrenom: nomPrenom,
+                                                    creneauVerrouille: "soir",
+                                                  })
+                                                }
+                                              />
+                                            ) : (
+                                              <VignetteEmpty
+                                                onAdd={() =>
+                                                  openDispo({
+                                                    date: jour.dateStr,
+                                                    secteur: secteurCell,
+                                                    candidatId,
+                                                    service,
+                                                    disponibilite: dispo || null,
+                                                    candidatNomPrenom: nomPrenom,
+                                                    creneauVerrouille: "soir",
+                                                  })
+                                                }
+                                              />
+                                            )}
+                                          </div>
+                                        </div>
                                       )}
                                     </div>
-                                  ) : (
-                                    // Autres secteurs => 2 vignettes (matin / soir)
-                                    <div
-                                      className="grid h-full gap-[6px] min-w-0"
-                                      style={{ gridTemplateRows: `repeat(2, minmax(${HALF_H}px, ${HALF_H}px))`, overflow: "hidden" }}
-                                    >
-                                      {/* Matin */}
-                                      <div className="w-full h-full min-w-0 overflow-hidden">
-                                        {missionMatin ? (
-                                          <VignettePlanifiee
-                                            client={missionMatin.client?.nom || "Client ?"}
-                                            hours={`${fmt(missionMatin.heure_debut_matin)} ${fmt(missionMatin.heure_fin_matin)}`}
-                                          />
-                                        ) : dispo?.matin === true ? (
-                                          <VignetteColor
-                                            color={colorDispo}
-                                            onClick={() =>
-                                              openDispo({
-                                                date: jour.dateStr,
-                                                secteur: secteurCell,
-                                                candidatId,
-                                                service,
-                                                disponibilite: dispo || null,
-                                                candidatNomPrenom: nomPrenom,
-                                                creneauVerrouille: "matin",
-                                              })
-                                            }
-                                          />
-                                        ) : dispo?.matin === false ? (
-                                          <VignetteColor
-                                            color={colorNonDispo}
-                                            onClick={() =>
-                                              openDispo({
-                                                date: jour.dateStr,
-                                                secteur: secteurCell,
-                                                candidatId,
-                                                service,
-                                                disponibilite: dispo || null,
-                                                candidatNomPrenom: nomPrenom,
-                                                creneauVerrouille: "matin",
-                                              })
-                                            }
-                                          />
-                                        ) : (
-                                          <VignetteEmpty
-                                            onAdd={() =>
-                                              openDispo({
-                                                date: jour.dateStr,
-                                                secteur: secteurCell,
-                                                candidatId,
-                                                service,
-                                                disponibilite: dispo || null,
-                                                candidatNomPrenom: nomPrenom,
-                                                creneauVerrouille: "matin",
-                                              })
-                                            }
-                                          />
-                                        )}
-                                      </div>
-
-                                      {/* Soir */}
-                                      <div className="w-full h-full min-w-0 overflow-hidden">
-                                        {missionSoir ? (
-                                          <VignettePlanifiee
-                                            client={missionSoir.client?.nom || "Client ?"}
-                                            hours={`${fmt(missionSoir.heure_debut_soir)} ${fmt(missionSoir.heure_fin_soir)}`}
-                                          />
-                                        ) : dispo?.soir === true ? (
-                                          <VignetteColor
-                                            color={colorDispo}
-                                            onClick={() =>
-                                              openDispo({
-                                                date: jour.dateStr,
-                                                secteur: secteurCell,
-                                                candidatId,
-                                                service,
-                                                disponibilite: dispo || null,
-                                                candidatNomPrenom: nomPrenom,
-                                                creneauVerrouille: "soir",
-                                              })
-                                            }
-                                          />
-                                        ) : dispo?.soir === false ? (
-                                          <VignetteColor
-                                            color={colorNonDispo}
-                                            onClick={() =>
-                                              openDispo({
-                                                date: jour.dateStr,
-                                                secteur: secteurCell,
-                                                candidatId,
-                                                service,
-                                                disponibilite: dispo || null,
-                                                candidatNomPrenom: nomPrenom,
-                                                creneauVerrouille: "soir",
-                                              })
-                                            }
-                                          />
-                                        ) : (
-                                          <VignetteEmpty
-                                            onAdd={() =>
-                                              openDispo({
-                                                date: jour.dateStr,
-                                                secteur: secteurCell,
-                                                candidatId,
-                                                service,
-                                                disponibilite: dispo || null,
-                                                candidatNomPrenom: nomPrenom,
-                                                creneauVerrouille: "soir",
-                                              })
-                                            }
-                                          />
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <span>{jour.label}</span>
+                                  </TooltipContent>
+                                </Tooltip>
                               )
                             })}
                           </div>

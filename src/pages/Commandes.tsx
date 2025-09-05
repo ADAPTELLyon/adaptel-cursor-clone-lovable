@@ -10,10 +10,9 @@ import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateur
 import { ClientEditDialog } from "@/components/clients/ClientEditDialog"
 import { useLiveRows } from "@/hooks/useLiveRows"
 
-// ⬇️ AJOUTS : vrai Dialog + composant de synthèse
+// ⬇️ Dialog + composant de synthèse (identique)
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import SyntheseCandidatContent from "@/components/commandes/SyntheseCandidatDialog"
-// Si ton fichier est ailleurs, ajuste le chemin ci-dessus.
 
 type CommandeRow = {
   id: string
@@ -39,6 +38,17 @@ type CommandeRow = {
 
 const COUNTABLE = new Set(["Validé", "En recherche", "Non pourvue"])
 
+// ——— utilitaire anti-boucle : ne setState que si le mapping a réellement changé
+function shallowEqualRecord(a: Record<string, string>, b: Record<string, string>) {
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+  if (aKeys.length !== bKeys.length) return false
+  for (const k of aKeys) {
+    if (a[k] !== b[k]) return false
+  }
+  return true
+}
+
 export default function Commandes() {
   // Filtres & états d’UI
   const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(() => {
@@ -59,7 +69,7 @@ export default function Commandes() {
   const [toutAfficher, setToutAfficher] = useState(false)
   const [enRecherche, setEnRecherche] = useState(false)
 
-  // ⬇️ AJOUT : état du pop-up Synthèse
+  // Pop-up Synthèse
   const [openSynthese, setOpenSynthese] = useState(false)
 
   // Déferrement
@@ -82,11 +92,12 @@ export default function Commandes() {
   // Semaines dispo
   const [semainesDisponibles, setSemainesDisponibles] = useState<string[]>([])
 
+  // Persist selection
   useEffect(() => { localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs)) }, [selectedSecteurs])
   useEffect(() => { localStorage.setItem("selectedSemaine", selectedSemaine) }, [selectedSemaine])
   useEffect(() => { localStorage.setItem("semaineEnCours", JSON.stringify(semaineEnCours)) }, [semaineEnCours])
 
-  // ⬇️ AJOUT : écoute l’événement global émis par le bouton "Planning"
+  // Bouton Planning -> ouvre la synthèse
   useEffect(() => {
     const onOpen = () => setOpenSynthese(true)
     window.addEventListener("adaptel:open-synthese-candidat", onOpen as EventListener)
@@ -178,7 +189,7 @@ export default function Commandes() {
       joursClient.push({
         date: c.date,
         secteur: c.secteur,
-        service: c.service ?? null,
+        service: c.service ?? null, // ← retour à ton code “base”
         mission_slot: c.mission_slot ?? 0,
         commandes: [c],
       })
@@ -292,9 +303,7 @@ export default function Commandes() {
 
     if (error || !data) {
       console.error("❌ Erreur Supabase :", error)
-      setPlanning({})
-      setFilteredPlanning({})
-      setStats({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
+      // on NE vide pas l’écran (évite flash)
       return
     }
 
@@ -334,7 +343,8 @@ export default function Commandes() {
     const sorted: Record<string, JourPlanning[]> = {}
     for (const [k, v] of entries) sorted[k] = v
 
-    setClientNames(nameCache)
+    // ⛔️ anti-boucle : n’actualiser le cache nom client que s’il a changé
+    setClientNames((prev) => (shallowEqualRecord(prev, nameCache) ? prev : nameCache))
     setPlanning(sorted)
   }, [computeWeekRange, selectedSemaine, selectedSecteurs, buildCommandeFromRow])
 
@@ -427,7 +437,6 @@ export default function Commandes() {
   
       if (error || !data) {
         console.error("❌ Erreur totauxSemaine :", error)
-        setTotauxSemaine({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
         return
       }
   
@@ -534,14 +543,14 @@ export default function Commandes() {
         />
       )}
 
-      {/* ⬇️ AJOUT : vrai Dialog monté pour la synthèse planning */}
+      {/* Synthèse planning (inchangé) */}
       <Dialog open={openSynthese} onOpenChange={setOpenSynthese}>
-  <DialogContent className="p-0 w-[98vw] max-w-[1600px] max-h-[85vh] overflow-hidden">
-    <div className="h-full overflow-y-auto">
-      <SyntheseCandidatContent />
-    </div>
-  </DialogContent>
-</Dialog>
-</MainLayout>
+        <DialogContent className="p-0 w-[98vw] max-w-[1600px] max-h-[85vh] overflow-hidden">
+          <div className="h-full overflow-y-auto">
+            <SyntheseCandidatContent />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </MainLayout>
   )
 }
