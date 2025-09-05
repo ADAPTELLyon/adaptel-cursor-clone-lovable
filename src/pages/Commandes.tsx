@@ -10,9 +10,10 @@ import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateur
 import { ClientEditDialog } from "@/components/clients/ClientEditDialog"
 import { useLiveRows } from "@/hooks/useLiveRows"
 
-// ——————————————————————————————————————————————————————————————
-// PAGE Commandes : fetch initial (semaine/secteur via SQL) + patchs Realtime ciblés
-// ——————————————————————————————————————————————————————————————
+// ⬇️ AJOUTS : vrai Dialog + composant de synthèse
+import { Dialog, DialogContent } from "@/components/ui/dialog"
+import SyntheseCandidatContent from "@/components/commandes/SyntheseCandidatDialog"
+// Si ton fichier est ailleurs, ajuste le chemin ci-dessus.
 
 type CommandeRow = {
   id: string
@@ -36,7 +37,6 @@ type CommandeRow = {
   complement_motif?: string | null
 }
 
-// ✅ Seuls ces statuts sont comptabilisés dans les indicateurs
 const COUNTABLE = new Set(["Validé", "En recherche", "Non pourvue"])
 
 export default function Commandes() {
@@ -59,7 +59,10 @@ export default function Commandes() {
   const [toutAfficher, setToutAfficher] = useState(false)
   const [enRecherche, setEnRecherche] = useState(false)
 
-  // Déferrement pour un rendu fluide pendant la saisie
+  // ⬇️ AJOUT : état du pop-up Synthèse
+  const [openSynthese, setOpenSynthese] = useState(false)
+
+  // Déferrement
   const deferredSearch = useDeferredValue(search)
   const deferredClient = useDeferredValue(client)
   const deferredEnRecherche = useDeferredValue(enRecherche)
@@ -69,7 +72,6 @@ export default function Commandes() {
   const [filteredPlanning, setFilteredPlanning] = useState<Record<string, JourPlanning[]>>({})
   const [stats, setStats] = useState({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
 
-  // Cache noms clients (pour éviter "Client inconnu" lors des updates Realtime)
   const [clientNames, setClientNames] = useState<Record<string, string>>({})
 
   // UI modales
@@ -77,15 +79,22 @@ export default function Commandes() {
   const [clientIdToEdit, setClientIdToEdit] = useState<string | null>(null)
   const [showEditDialog, setShowEditDialog] = useState(false)
 
-  // 🔹 Semaines dispo
+  // Semaines dispo
   const [semainesDisponibles, setSemainesDisponibles] = useState<string[]>([])
 
-  // Persistance de filtres
   useEffect(() => { localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs)) }, [selectedSecteurs])
   useEffect(() => { localStorage.setItem("selectedSemaine", selectedSemaine) }, [selectedSemaine])
   useEffect(() => { localStorage.setItem("semaineEnCours", JSON.stringify(semaineEnCours)) }, [semaineEnCours])
 
-  // ——————— Helpers semaine (borne SQL pour une semaine unique) ———————
+  // ⬇️ AJOUT : écoute l’événement global émis par le bouton "Planning"
+  useEffect(() => {
+    const onOpen = () => setOpenSynthese(true)
+    window.addEventListener("adaptel:open-synthese-candidat", onOpen as EventListener)
+    return () => {
+      window.removeEventListener("adaptel:open-synthese-candidat", onOpen as EventListener)
+    }
+  }, [])
+
   const computeWeekRange = useCallback(() => {
     const now = new Date()
     const mondayCurrent = startOfWeek(now, { weekStartsOn: 1 })
@@ -104,7 +113,6 @@ export default function Commandes() {
     return { dmin, dmax }
   }, [semaineEnCours, selectedSemaine])
 
-  // ——————— Helpers de transformation ———————
   const buildCommandeFromRow = useCallback((item: any): CommandeWithCandidat => {
     return {
       id: item.id,
@@ -199,16 +207,11 @@ export default function Commandes() {
     return next
   }, [])
 
-  // ——————— Filtre léger (client / recherche / drapeau enRecherche) ———————
   const applyFiltersLight = useCallback((
     source: Record<string, JourPlanning[]>,
     {
       client, search, enRecherche,
-    }: {
-      client: string,
-      search: string,
-      enRecherche: boolean,
-    }
+    }: { client: string, search: string, enRecherche: boolean }
   ) => {
     const matchSearchTerm = (val: string) =>
       search.trim().toLowerCase().split(" ").every((term) => val.toLowerCase().includes(term))
@@ -248,15 +251,11 @@ export default function Commandes() {
     return { newFiltered, stats: { demandées: d, validées: v, enRecherche: r, nonPourvue: np } }
   }, [])
 
-  // ——————— Chargement (borne SEMAINE OU toutes à partir de la semaine courante) ———————
   const fetchPlanning = useCallback(async () => {
-    // Lundi de la semaine courante
     const mondayCurrent = startOfWeek(new Date(), { weekStartsOn: 1 })
     const dminToutes = format(mondayCurrent, "yyyy-MM-dd")
-    // borne max défensive
     const dmaxToutes = format(addDays(mondayCurrent, 180), "yyyy-MM-dd")
 
-    // Borne pour une semaine unique
     const { dmin, dmax } = computeWeekRange()
 
     let query = supabase
@@ -272,7 +271,6 @@ export default function Commandes() {
         clients (nom)
       `)
 
-    // 🟢 “Toutes les semaines” => [lundi courant .. +180j]
     if (selectedSemaine === "Toutes") {
       query = query.gte("date", dminToutes).lte("date", dmaxToutes)
     } else {
@@ -300,7 +298,6 @@ export default function Commandes() {
       return
     }
 
-    // Construit la map {client -> jours[]} + cache noms clients
     let map: Record<string, JourPlanning[]> = {}
     const nameCache: Record<string, string> = {}
 
@@ -333,22 +330,18 @@ export default function Commandes() {
       map[clientNom] = arr
     }
 
-    // Tri typé
     const entries = Object.entries(map).sort(([a], [b]) => a.localeCompare(b))
     const sorted: Record<string, JourPlanning[]> = {}
     for (const [k, v] of entries) sorted[k] = v
 
     setClientNames(nameCache)
     setPlanning(sorted)
-    // ⚠️ NE PAS filtrer ici — filtrage local dans l’effet ci-dessous
   }, [computeWeekRange, selectedSemaine, selectedSecteurs, buildCommandeFromRow])
 
   useEffect(() => { fetchPlanning() }, [fetchPlanning])
 
-  // ——————— fetch ultra-léger des semaines disponibles ———————
   const fetchSemainesDisponibles = useCallback(async () => {
     try {
-      // Fenêtre glissante : 52 semaines passées / 26 futures
       const now = new Date()
       const mondayNow = startOfWeek(now, { weekStartsOn: 1 })
       const startWindow = addDays(mondayNow, -52 * 7)
@@ -387,7 +380,6 @@ export default function Commandes() {
 
   useEffect(() => { fetchSemainesDisponibles() }, [fetchSemainesDisponibles])
 
-  // ——————— Recalcule filteredPlanning quand planning OU filtres changent (local/deferred) ———————
   useEffect(() => {
     const { newFiltered, stats } = applyFiltersLight(planning, {
       client: deferredClient,
@@ -398,7 +390,6 @@ export default function Commandes() {
     setStats(stats)
   }, [planning, deferredClient, deferredSearch, deferredEnRecherche, applyFiltersLight])
 
-  // ——————— Patchs Realtime ciblés (pas de refetch global) ———————
   useLiveRows<CommandeRow>({
     table: "commandes",
     onInsert: (row) => {
@@ -415,26 +406,46 @@ export default function Commandes() {
     },
   })
 
-  // ——————— Données dérivées (totaux semaine courante) ———————
   const semaineCourante = getWeek(new Date(), { weekStartsOn: 1 }).toString()
-  const totauxSemaine = useMemo(() => {
-    const res = { demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 }
-    Object.values(planning).forEach((jours) => {
-      jours.forEach((j) => {
-        const week = getWeek(new Date(j.date), { weekStartsOn: 1 }).toString()
-        if (week === semaineCourante) {
-          j.commandes.forEach((cmd) => {
-            if (!COUNTABLE.has(cmd.statut)) return
-            res.demandées++
-            if (cmd.statut === "Validé") res.validées++
-            else if (cmd.statut === "En recherche") res.enRecherche++
-            else if (cmd.statut === "Non pourvue") res.nonPourvue++
-          })
-        }
+  const [totauxSemaine, setTotauxSemaine] = useState({
+    demandées: 0,
+    validées: 0,
+    enRecherche: 0,
+    nonPourvue: 0,
+  })
+  
+  useEffect(() => {
+    const fetchTotauxSemaine = async () => {
+      const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
+      const dimanche = addDays(lundi, 6)
+  
+      const { data, error } = await supabase
+        .from("commandes")
+        .select("id, date, statut")
+        .gte("date", format(lundi, "yyyy-MM-dd"))
+        .lte("date", format(dimanche, "yyyy-MM-dd"))
+  
+      if (error || !data) {
+        console.error("❌ Erreur totauxSemaine :", error)
+        setTotauxSemaine({ demandées: 0, validées: 0, enRecherche: 0, nonPourvue: 0 })
+        return
+      }
+  
+      let d = 0, v = 0, r = 0, np = 0
+      data.forEach((cmd: any) => {
+        if (!COUNTABLE.has(cmd.statut)) return
+        d++
+        if (cmd.statut === "Validé") v++
+        else if (cmd.statut === "En recherche") r++
+        else if (cmd.statut === "Non pourvue") np++
       })
-    })
-    return res
-  }, [planning, semaineCourante])
+  
+      setTotauxSemaine({ demandées: d, validées: v, enRecherche: r, nonPourvue: np })
+    }
+  
+    fetchTotauxSemaine()
+  }, [semaineCourante])
+  
 
   return (
     <MainLayout>
@@ -483,7 +494,6 @@ export default function Commandes() {
             localStorage.setItem("selectedSecteurs", JSON.stringify(["Étages"]))
             localStorage.setItem("selectedSemaine", semActuelle)
             localStorage.setItem("semaineEnCours", JSON.stringify(true))
-            // refetch explicite
             fetchPlanning()
           }}
           semainesDisponibles={semainesDisponibles}
@@ -523,6 +533,15 @@ export default function Commandes() {
           onRefresh={() => fetchPlanning()}
         />
       )}
-    </MainLayout>
+
+      {/* ⬇️ AJOUT : vrai Dialog monté pour la synthèse planning */}
+      <Dialog open={openSynthese} onOpenChange={setOpenSynthese}>
+  <DialogContent className="p-0 w-[98vw] max-w-[1600px] max-h-[85vh] overflow-hidden">
+    <div className="h-full overflow-y-auto">
+      <SyntheseCandidatContent />
+    </div>
+  </DialogContent>
+</Dialog>
+</MainLayout>
   )
 }

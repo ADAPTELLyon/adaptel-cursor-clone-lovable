@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import MainLayout from "@/components/main-layout"
 import { SectionFixeCandidates } from "@/components/Planning/section-fixe-candidates"
 import { PlanningCandidateTable } from "@/components/Planning/PlanningCandidateTable"
 import { supabase } from "@/lib/supabase"
-import { format, getWeek, parseISO } from "date-fns"
+import { addDays, format, getWeek, parseISO, startOfWeek } from "date-fns"
 import type {
   JourPlanningCandidat,
   CommandeFull,
@@ -182,7 +182,6 @@ export default function Planning() {
       service: (d.service ?? null) as string | null,
       commentaire: d.commentaire ?? null,
       candidat_id: String(d.candidat_id),
-      // mappe les colonnes DB -> champs de ton type front
       matin: (d.dispo_matin ?? null) as boolean | null,
       soir: (d.dispo_soir ?? null) as boolean | null,
       nuit: (d.dispo_nuit ?? null) as boolean | null,
@@ -258,7 +257,6 @@ export default function Planning() {
       if (!row?.id || !row.date) return base
       const candId = row.candidat_id ?? null
       if (!candId) {
-        // non assignée => on l’ignore côté planning candidat
         return removeCommandeEverywhere(base, String(row.id))
       }
 
@@ -366,7 +364,7 @@ export default function Planning() {
     []
   )
 
-  // ————————————————— Filtres —————————————————
+  // ————————————————— Filtres (inclut “+2 semaines précédentes”) —————————————————
   const applyFilters = useCallback((
     rawPlanning: Record<string, JourPlanningCandidat[]>,
     secteurs: string[],
@@ -374,10 +372,10 @@ export default function Planning() {
     candidatSelect: string,
     dispoFilter: boolean,
     searchText: string,
-    toutAfficherBool: boolean
+    _toutAfficherBool: boolean
   ) => {
     const newFiltered: typeof rawPlanning = {}
-    const currentWeek = getWeek(new Date(), { weekStartsOn: 1 }).toString()
+    const currentWeekStr = getWeek(new Date(), { weekStartsOn: 1 }).toString()
 
     const matchSearchTerm = (val: string) =>
       searchText
@@ -386,35 +384,113 @@ export default function Planning() {
         .split(" ")
         .every((term) => val.toLowerCase().includes(term))
 
+    // Prépare les infos “semaine sélectionnée” + 2 semaines précédentes
+    const isToutes = semaineSelect === "Toutes"
+    const selectedWeekNum = isToutes ? null : parseInt(semaineSelect || "0", 10)
+    const prevWeeks = new Set<string>()
+    if (!isToutes && selectedWeekNum && !Number.isNaN(selectedWeekNum)) {
+      // wrap simple 52 semaines (suffisant ici)
+      const w1 = selectedWeekNum - 1 > 0 ? selectedWeekNum - 1 : 52
+      const w2 = w1 - 1 > 0 ? w1 - 1 : 52
+      prevWeeks.add(String(w1))
+      prevWeeks.add(String(w2))
+    }
+
+    // Cherche une date “exemple” appartenant à la semaine sélectionnée pour fabriquer 7 jours vides
+    let mondayOfSelectedWeek: Date | null = null
+    if (!isToutes && selectedWeekNum) {
+      outer: for (const jours of Object.values(rawPlanning)) {
+        for (const j of jours) {
+          const w = getWeek(parseISO(j.date), { weekStartsOn: 1 })
+          if (w === selectedWeekNum) {
+            mondayOfSelectedWeek = startOfWeek(parseISO(j.date), { weekStartsOn: 1 })
+            break outer
+          }
+        }
+      }
+      // fallback défensif
+      if (!mondayOfSelectedWeek) {
+        mondayOfSelectedWeek = startOfWeek(new Date(), { weekStartsOn: 1 })
+      }
+    }
+
+    const weekMatch = (dateISO: string) => {
+      const semaineDuJour = getWeek(parseISO(dateISO), { weekStartsOn: 1 }).toString()
+      return isToutes
+        ? parseInt(semaineDuJour) >= parseInt(currentWeekStr)
+        : semaineDuJour === String(selectedWeekNum)
+    }
+
+    const weekInPrev2 = (dateISO: string) => {
+      if (isToutes) return false
+      const w = getWeek(parseISO(dateISO), { weekStartsOn: 1 }).toString()
+      return prevWeeks.has(w)
+    }
+
+    // Construit la ligne filtrée
     Object.entries(rawPlanning).forEach(([candidatNom, jours]) => {
-      const joursFiltres = jours.filter((j) => {
-        const semaineDuJour = getWeek(parseISO(j.date), { weekStartsOn: 1 }).toString()
-        const matchSecteur = secteurs.includes(j.secteur)
-        const matchCandidat = candidatSelect ? candidatNom === candidatSelect : true
-        const matchDispo = dispoFilter ? j.disponibilite?.statut === "Dispo" : true
-        const matchSemaine =
-          semaineSelect === "Toutes"
-            ? parseInt(semaineDuJour) >= parseInt(currentWeek)
-            : semaineSelect === semaineDuJour
+      // 1) test recherche (sur le candidat + secteur/service + noms clients des commandes)
+      const aggregateForSearch = [
+        candidatNom,
+        ...jours.map(j => j.secteur || ""),
+        ...jours.map(j => j.service || ""),
+        ...jours.map(j => j.commande?.client?.nom || ""),
+        ...jours.flatMap(j => (j.autresCommandes || []).map(c => c.client?.nom || "")),
+      ].join(" ")
 
-        return (
-          matchSecteur &&
-          matchCandidat &&
-          matchDispo &&
-          matchSemaine &&
-          (searchText.trim() === "" ||
-            matchSearchTerm(candidatNom) ||
-            matchSearchTerm(j.secteur) ||
-            matchSearchTerm(j.service || "") ||
-            (j.disponibilite?.statut && matchSearchTerm(j.disponibilite.statut)))
-        )
-      })
+      const matchesSearch =
+        searchText.trim() === "" ? true : matchSearchTerm(aggregateForSearch)
 
-      if (joursFiltres.length > 0) newFiltered[candidatNom] = joursFiltres
+      if (!matchesSearch) return
+      if (candidatSelect && candidatNom !== candidatSelect) return
+
+      // 2) jours appartenant à la semaine sélectionnée (mais on applique aussi le filtre secteur)
+      const joursSemaine = jours.filter((j) =>
+        secteurs.includes(j.secteur) && weekMatch(j.date)
+      )
+
+      // 3) si le filtre "Dispo" est activé, on ne conserve la ligne que si au moins un jour de la semaine a "Dispo"
+      if (dispoFilter) {
+        const hasDispo = joursSemaine.some((j) => j.disponibilite?.statut === "Dispo")
+        if (!hasDispo) return
+      }
+
+      if (joursSemaine.length > 0) {
+        // ✅ cas normal : on garde cette ligne avec les jours de la semaine filtrés
+        newFiltered[candidatNom] = joursSemaine
+      } else if (!isToutes && !dispoFilter) {
+        // 4) sinon (aucun jour sur la semaine choisie), on regarde si le candidat
+        //    a AU MOINS un statut sur l’une des 2 semaines précédentes (et secteur OK)
+        const hadRecent = jours.some((j) => secteurs.includes(j.secteur) && weekInPrev2(j.date))
+        if (hadRecent && mondayOfSelectedWeek) {
+          // On affiche une ligne "complète" de 7 jours vides pour la semaine sélectionnée
+          // Secteur “récent” pour éviter de filtrer la ligne (prend le plus récent des 2 semaines précédentes)
+          const recentJours = jours
+            .filter((j) => weekInPrev2(j.date) && secteurs.includes(j.secteur))
+            .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())
+          const recentSecteur = recentJours[0]?.secteur || "Inconnu"
+          const recentService = recentJours[0]?.service ?? null
+
+          const sevenDays: JourPlanningCandidat[] = Array.from({ length: 7 }).map((_, idx) => {
+            const d = addDays(mondayOfSelectedWeek!, idx)
+            const dISO = format(d, "yyyy-MM-dd")
+            return {
+              date: dISO,
+              secteur: recentSecteur,
+              service: recentService,
+              commande: undefined,
+              autresCommandes: [],
+              disponibilite: undefined,
+            }
+          })
+          newFiltered[candidatNom] = sevenDays
+        }
+      }
     })
 
     setFilteredPlanning(newFiltered)
 
+    // Stats basées sur la vue filtrée
     let nr = 0, d = 0, nd = 0, p = 0
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) => {
@@ -428,7 +504,6 @@ export default function Planning() {
         }
       })
     )
-
     setStats({
       "Non renseigné": nr,
       "Dispo": d,
@@ -445,9 +520,10 @@ export default function Planning() {
   ): { secteur: string; service: string | null; commande?: CommandeFull; autresCommandes: CommandeFull[]; disponibilite?: CandidatDispoWithNom } => {
     const dispoFull = dispoRow ? buildDispoFull(dispoRow) : undefined
 
-    const valides = commandesRows.filter((c) => c.statut === "Validé")
+    // robustesse casse/espaces
+    const valides = commandesRows.filter((c) => (c.statut || "").trim().toLowerCase() === "validé")
     const annexes = commandesRows.filter((c) =>
-      ["Annule Int", "Absence", "Annule Client", "Annule ADA"].includes(c.statut || "")
+      ["Annule Int", "Absence", "Annule Client", "Annule ADA"].includes((c.statut || "").trim())
     )
 
     let principale: CommandeFull | undefined
@@ -456,7 +532,6 @@ export default function Planning() {
     let service = (dispoRow?.service ?? null) as string | null
 
     if (valides.length > 0) {
-      // priorité absolue -> matin/soir
       const missionMatin = valides.find((c) => !!c.heure_debut_matin && !!c.heure_fin_matin)
       const missionSoir  = valides.find((c) => !!c.heure_debut_soir  && !!c.heure_fin_soir)
 
@@ -477,7 +552,6 @@ export default function Planning() {
         secteur = full.secteur
         service = (full.service ?? service) ?? null
       } else {
-        // Validé sans heures (cas rare)
         const lastValide = [...valides].sort((a, b) => ts(b) - ts(a))[0]
         const full = buildCommandeFull(lastValide)
         principale = full
@@ -485,7 +559,6 @@ export default function Planning() {
         service = (full.service ?? service) ?? null
       }
     } else {
-      // arbitrage Annexe vs Dispo au timestamp
       const lastAnnexe = annexes.length > 0 ? [...annexes].sort((a, b) => ts(b) - ts(a))[0] : null
       if (lastAnnexe && (!dispoFull || ts(lastAnnexe) >= ts(dispoFull))) {
         const full = buildCommandeFull(lastAnnexe)
@@ -507,6 +580,8 @@ export default function Planning() {
   }, [buildCommandeFull, buildDispoFull, ts])
 
   // ————————————————— Fetch initial (avec fallback planification) —————————————————
+  const didInitRef = useRef(false)
+
   const fetchPlanning = useCallback(async () => {
     try {
       const [
@@ -606,10 +681,7 @@ export default function Planning() {
         ]))
 
         for (const dt of dates) {
-          // commandes du jour pour ce candidat
           let cs: CommandeRow[] = commandesCandidat.filter((c) => c.date === dt)
-
-          // fallback : si aucune commande "assignée" pour ce candidat à cette date
           if (cs.length === 0) {
             const ps = planifIdx.get(`${candId}|${dt}`) || []
             if (ps.length > 0) {
@@ -620,8 +692,8 @@ export default function Planning() {
           const dispoJour = dispoCandidat.find((d) => d.date === dt) ?? null
           const composed = composeJour(dt, dispoJour as any, cs as any)
 
-          const semaine = getWeek(parseISO(dt), { weekStartsOn: 1 }).toString()
-          semaines.add(semaine)
+          const w = getWeek(parseISO(dt), { weekStartsOn: 1 }).toString()
+          semaines.add(w)
 
           jours[dt] = {
             date: dt,
@@ -642,39 +714,15 @@ export default function Planning() {
       const semainesTriees = Array.from(semaines).sort((a, b) => parseInt(b) - parseInt(a))
       setSemainesDisponibles(semainesTriees)
 
-      // ⚠️ Conserver la vue utilisateur
-      if (semaineEnCours) {
-        const currentWeek = getWeek(new Date(), { weekStartsOn: 1 }).toString()
-        setSelectedSemaine(currentWeek)
-      } else if (!semainesTriees.includes(selectedSemaine) && selectedSemaine !== "Toutes") {
-        setSelectedSemaine("Toutes")
+      // ❌ Ne pas forcer selectedSemaine ici – laisse l'utilisateur décider.
+      // (on synchronise "semaine en cours" dans un useEffect dédié)
+      if (!didInitRef.current) {
+        didInitRef.current = true
       }
-
-      // premier calcul filtré
-      applyFilters(
-        map,
-        selectedSecteurs,
-        semaineEnCours ? getWeek(new Date(), { weekStartsOn: 1 }).toString() : selectedSemaine,
-        candidat,
-        dispo,
-        search,
-        toutAfficher
-      )
     } catch (e) {
       console.error(e)
     }
-  }, [
-    applyFilters,
-    composeJour,
-    selectedSecteurs,
-    selectedSemaine,
-    candidat,
-    dispo,
-    search,
-    toutAfficher,
-    semaineEnCours,
-    buildCommandeRowFromPlanif,
-  ])
+  }, [composeJour, buildCommandeRowFromPlanif])
 
   // ———————————————— Refresh ciblé (1 candidat / 1 jour) ————————————————
   const refreshOne = useCallback(async (candidatId: string, dateISO: string) => {
@@ -739,18 +787,15 @@ export default function Planning() {
         return
       }
 
-      // nom complet pour la clé
       const label =
         candidateNames[candidatId] ||
         (candRow ? `${candRow.nom ?? ""} ${candRow.prenom ?? ""}`.trim() : "Candidat inconnu")
 
-      // commandes du jour (ou fallback planification)
       let cmdRows: CommandeRow[] = (cmdData ?? []) as any
       if (!cmdRows || cmdRows.length === 0) {
         cmdRows = (planData ?? []).map(buildCommandeRowFromPlanif)
       }
 
-      // compose l’entrée du jour
       const composed = composeJour(jour, (dispoData as any) ?? null, cmdRows as any)
 
       setCandidateNames((prev) => ({ ...prev, [candidatId]: label }))
@@ -786,6 +831,14 @@ export default function Planning() {
   useEffect(() => {
     fetchPlanning()
   }, [fetchPlanning])
+
+  // ✅ Synchronisation "Semaine en cours" -> selectedSemaine (sans override quand l'utilisateur change la liste)
+  useEffect(() => {
+    if (semaineEnCours) {
+      const currentWeek = getWeek(new Date(), { weekStartsOn: 1 }).toString()
+      setSelectedSemaine(currentWeek)
+    }
+  }, [semaineEnCours])
 
   useEffect(() => {
     applyFilters(planning, selectedSecteurs, selectedSemaine, candidat, dispo, search, toutAfficher)
@@ -909,7 +962,7 @@ export default function Planning() {
         resetFiltres={resetFiltres}
         semainesDisponibles={semainesDisponibles}
         candidatsDisponibles={candidatsDisponibles}
-        setRefreshTrigger={() => {}} // plus de refresh global
+        setRefreshTrigger={() => {}} // plus de refresh global (tout passe par Realtime + refreshOne)
       />
 
       <PlanningCandidateTable

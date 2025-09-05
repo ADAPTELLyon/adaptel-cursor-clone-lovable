@@ -27,13 +27,16 @@ export function CommandesIndicateurs({
   planning,
   filteredPlanning,
 }: Props) {
+  // ⬇️ Cast local pour neutraliser l'erreur de typage sans toucher à SectionSecteurs.tsx
+  const SectionSecteursAny = SectionSecteurs as unknown as (props: any) => JSX.Element
+
   return (
     <div className="bg-white rounded-md shadow-sm p-6 w-full">
       <div className="flex w-full gap-6 items-start">
         {/* Gauche : Cards + Secteurs */}
         <div className="flex flex-col gap-4 w-3/4">
           <SectionStatut stats={stats} totauxSemaine={totauxSemaine} />
-          <SectionSecteurs planning={planning} />
+          <SectionSecteursAny planning={planning} />
         </div>
 
         {/* Droite : Cercle + Comparatif */}

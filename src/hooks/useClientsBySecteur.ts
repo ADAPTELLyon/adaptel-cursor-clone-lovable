@@ -2,6 +2,13 @@ import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import type { Client } from "@/types/types-front"
 
+/**
+ * useClientsBySecteur
+ * -----------------------------------------------------------
+ * Retourne la liste des clients pour un secteur donné.
+ * 🔒 BUSINESS RULE: n'expose que les clients **actifs** (actif = true).
+ * (Ajout : .eq("actif", true) + sélection du champ `actif` dans la requête)
+ */
 export function useClientsBySecteur(secteur: string) {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(false)
@@ -27,7 +34,8 @@ export function useClientsBySecteur(secteur: string) {
 
       const { data, error } = await supabase
         .from("clients")
-        .select("id, nom, services, secteurs")
+        .select("id, nom, services, secteurs, actif") // <- ajoute `actif` pour robustesse
+        .eq("actif", true)                             // <- filtre: uniquement clients actifs
         .contains("secteurs", [secteurClean])
         .order("nom", { ascending: true })
 

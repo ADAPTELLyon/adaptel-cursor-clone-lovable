@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
+/* @refresh skip */
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { useCandidatsBySecteur } from "@/hooks/useCandidatsBySecteur"
 import { supabase } from "@/lib/supabase"
 import { format } from "date-fns"
@@ -11,6 +11,9 @@ import { CheckCircle2, Clock, AlertCircle, Car, History, ChevronRight, ArrowDown
 import { cn } from "@/lib/utils"
 import { PlanificationCoupureDialog } from "./PlanificationCoupureDialog"
 import { Icon } from "@iconify/react"
+
+const DEBUG = true
+const log = (...a: any[]) => DEBUG && console.log("[PCD]", ...a)
 
 const statusConfig = {
   dispo: {
@@ -65,7 +68,149 @@ interface PlanificationCandidatDialogProps {
   onSuccess: () => void
 }
 
-export function PlanificationCandidatDialog({
+/* ------------- Item (mémo) ------------- */
+const CandidatItem = memo(function CandidatItem({
+  candidat,
+  status,
+  onSelect,
+  planification,
+}: {
+  candidat: CandidatMini
+  status: keyof typeof statusConfig
+  onSelect: (id: string) => void
+  planification?: any
+}) {
+  const config = statusConfig[status]
+  const formatHeure = (h?: string | null) => (h ? h.slice(0, 5) : "")
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer",
+        "hover:bg-muted/50",
+        status === "planifie" ? "cursor-default" : ""
+      )}
+      onClick={() => status !== "planifie" && onSelect(candidat.id)}
+    >
+      <div className="flex-1">
+        <div className="flex items-center gap-2">
+          <p className="font-medium">
+            {candidat.nom} {candidat.prenom}
+          </p>
+          <div className="flex items-center gap-1">
+            {candidat.vehicule && (
+              <span className="p-1 rounded-full bg-muted" title="Véhicule">
+                <Car className="w-4 h-4" />
+              </span>
+            )}
+            {candidat.interditClient && (
+              <span className="p-1 rounded-full bg-muted" title="Interdit sur ce client">
+                <Icon icon="material-symbols:do-not-disturb-on" className="w-4 h-4 text-red-500" />
+              </span>
+            )}
+            {candidat.prioritaire && (
+              <span className="p-1 rounded-full bg-muted" title="Prioritaire">
+                <Icon icon="mdi:star" className="w-4 h-4 text-yellow-500" />
+              </span>
+            )}
+            {candidat.dejaPlanifie && (
+              <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce jour">
+                <History className="w-4 h-4 text-amber-500" />
+              </span>
+            )}
+            {candidat.dejaTravaille && (
+              <span className="p-1 rounded-full bg-muted" title="A déjà travaillé pour ce client">
+                <ArrowDownCircle className="w-4 h-4 text-violet-600" />
+              </span>
+            )}
+          </div>
+        </div>
+
+        {status === "planifie" && planification && (
+          <div className="text-xs text-muted-foreground mt-1">
+            <div className="flex gap-2">
+              {planification.heure_debut_matin && (
+                <span>
+                  Matin: {formatHeure(planification.heure_debut_matin)}-{formatHeure(planification.heure_fin_matin)}
+                </span>
+              )}
+              {planification.heure_debut_soir && (
+                <span>
+                  Soir: {formatHeure(planification.heure_debut_soir)}-{formatHeure(planification.heure_fin_soir)}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {status !== "planifie" && (
+        <div className={cn("p-1 rounded-full", config.badgeColor, "hover:bg-[#8ea9db] hover:text-white")}>
+          <ChevronRight className="w-4 h-4" />
+        </div>
+      )}
+    </div>
+  )
+})
+
+/* ------------- Colonne (mémo) ------------- */
+const StatusColumn = memo(function StatusColumn({
+  statusKey,
+  candidats,
+  onSelect,
+  planificationDetails,
+}: {
+  statusKey: keyof typeof statusConfig
+  candidats: CandidatMini[]
+  onSelect: (id: string) => void
+  planificationDetails: Record<string, any>
+}) {
+  const config = statusConfig[statusKey]
+  return (
+    <div
+      className={cn(
+        "flex-1 rounded-lg border overflow-hidden",
+        config.borderColor,
+        "border-2 flex flex-col h-full min-h-0"
+      )}
+    >
+      <div className={cn("w-full flex items-center justify-between p-3", config.color, "bg-opacity-20")}>
+        <div className="flex items-center gap-3">
+          <div className={cn("p-2 rounded-full", config.badgeColor)}>{config.icon}</div>
+          <h3 className="font-medium">
+            {config.title} <span className="text-muted-foreground">({candidats.length})</span>
+          </h3>
+        </div>
+      </div>
+
+      <div
+        className="flex-1 overflow-y-auto overscroll-contain p-2 space-y-1"
+        onScroll={(e) => {
+          if (!DEBUG) return
+          const st = (e.currentTarget as HTMLDivElement).scrollTop
+          if (st % 120 < 1) log(`scroll ${statusKey}`, Math.round(st))
+        }}
+      >
+        {candidats.length === 0 ? (
+          <p className="text-sm text-muted-foreground italic p-3 text-center">Aucun candidat dans cette catégorie</p>
+        ) : (
+          candidats.map((c) => (
+            <CandidatItem
+              key={c.id}
+              candidat={c}
+              status={statusKey}
+              onSelect={onSelect}
+              planification={planificationDetails[c.id]}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  )
+})
+
+/* ------------- Modale (mémo) ------------- */
+function PlanificationCandidatDialogInner({
   open,
   onClose,
   date,
@@ -74,7 +219,10 @@ export function PlanificationCandidatDialog({
   commande,
   onSuccess,
 }: PlanificationCandidatDialogProps) {
+  if (!open) return null // ⛔ pas monté si fermé → pas d’effets ni reflow
+
   const { data: candidats = [] } = useCandidatsBySecteur(secteur)
+
   const [dispos, setDispos] = useState<CandidatMini[]>([])
   const [nonRenseignes, setNonRenseignes] = useState<CandidatMini[]>([])
   const [planifies, setPlanifies] = useState<CandidatMini[]>([])
@@ -82,56 +230,72 @@ export function PlanificationCandidatDialog({
   const [selectedCandidatId, setSelectedCandidatId] = useState<string | null>(null)
   const [openCoupureDialog, setOpenCoupureDialog] = useState(false)
 
+  // Dédup stricte du fetch
+  const candidatIdsKey = useMemo(
+    () => (candidats.length ? candidats.map((c) => c.id).sort().join(",") : ""),
+    [candidats]
+  )
+  const lastSignatureRef = useRef<string | null>(null)
+
   useEffect(() => {
-    if (!open || candidats.length === 0) return
+    log("render:", Math.floor(performance.now() / 100)) // repère visuel
 
-    const fetchDispoEtPlanif = async () => {
-      const jour = date.slice(0, 10)
+    if (!secteur || !date || !candidats.length) return
+    const jour = date.slice(0, 10)
+    const signature = `${jour}|${secteur}|${commande.id}|${candidatIdsKey}`
 
-      // Interdictions / priorités
+    if (lastSignatureRef.current === signature) return
+    lastSignatureRef.current = signature
+
+    let isCancelled = false
+
+    ;(async () => {
+      log("FETCH start", { signature })
+
+      // Q1 : interdictions / priorités
       const { data: ipData } = await supabase
         .from("interdictions_priorites")
         .select("candidat_id, type")
         .eq("client_id", commande.client_id)
+      if (isCancelled) return
 
       const interditSet = new Set(ipData?.filter((i) => i.type === "interdiction").map((i) => i.candidat_id))
       const prioritaireSet = new Set(ipData?.filter((i) => i.type === "priorite").map((i) => i.candidat_id))
 
-      // Déjà travaillé
+      // Q2 : historique « a déjà travaillé »
       const { data: dejaData } = await supabase
         .from("commandes")
         .select("candidat_id")
         .eq("client_id", commande.client_id)
+      if (isCancelled) return
 
       const dejaTravailleSet = new Set((dejaData || []).map((c) => c.candidat_id).filter(Boolean))
 
-      const candidatIds = candidats.map((c) => c.id)
-
-      // Disponibilités (avec flags par créneau)
+      // Q3 : disponibilités jour
       const { data: dispoData } = await supabase
         .from("disponibilites")
         .select("candidat_id, statut, dispo_matin, dispo_soir")
         .eq("secteur", secteur)
         .eq("date", jour)
-        .in("candidat_id", candidatIds)
+        .in("candidat_id", candidats.map((c) => c.id))
+      if (isCancelled) return
 
       type DispoRow = { candidat_id: string; statut: string | null; dispo_matin: boolean | null; dispo_soir: boolean | null }
       const dispoMap = new Map<string, DispoRow>()
       ;(dispoData || []).forEach((d: any) => dispoMap.set(d.candidat_id, d as DispoRow))
 
-      // Occupations via COMMANDES — Validé uniquement
+      // Q4 : occupations « Validé »
       const { data: cmdData } = await supabase
         .from("commandes")
         .select("candidat_id, statut, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
         .eq("secteur", secteur)
         .eq("date", jour)
-        .in("candidat_id", candidatIds)
+        .in("candidat_id", candidats.map((c) => c.id))
         .in("statut", ["Validé"])
+      if (isCancelled) return
 
-      // Détails pour affichage (heures)
       const occMap = new Map<string, { matin: boolean; soir: boolean }>()
       const detailsMap: Record<string, any> = {}
-
       const touch = (id: string, which: "matin" | "soir", hd?: string | null, hf?: string | null) => {
         const prev = occMap.get(id) || { matin: false, soir: false }
         prev[which] = true
@@ -150,14 +314,15 @@ export function PlanificationCandidatDialog({
         }
         detailsMap[id] = d
       }
-
       ;(cmdData || []).forEach((c: any) => {
         if (c.heure_debut_matin && c.heure_fin_matin) touch(c.candidat_id, "matin", c.heure_debut_matin, c.heure_fin_matin)
         if (c.heure_debut_soir && c.heure_fin_soir) touch(c.candidat_id, "soir", c.heure_debut_soir, c.heure_fin_soir)
       })
+
       setPlanificationDetails(detailsMap)
 
-      const isCoupure = !!(commande.heure_debut_matin && commande.heure_fin_matin && commande.heure_debut_soir && commande.heure_fin_soir)
+      const isCoupure =
+        !!(commande.heure_debut_matin && commande.heure_fin_matin && commande.heure_debut_soir && commande.heure_fin_soir)
       const chercheMatin = !!commande.heure_debut_matin && !!commande.heure_fin_matin && !commande.heure_debut_soir
       const chercheSoir = !!commande.heure_debut_soir && !!commande.heure_fin_soir && !commande.heure_debut_matin
 
@@ -170,15 +335,11 @@ export function PlanificationCandidatDialog({
         const dispoRow = dispoMap.get(c.id)
         const statutNorm = normalizeStatut(dispoRow?.statut)
 
-        // Exclure seulement "Non Dispo"
         if (statutNorm === "non dispo") continue
-
-        // Respect flags créneau si présents
         if (chercheMatin && dispoRow && dispoRow.dispo_matin === false) continue
         if (chercheSoir && dispoRow && dispoRow.dispo_soir === false) continue
         if (isCoupure && dispoRow && dispoRow.dispo_matin === false && dispoRow.dispo_soir === false) continue
 
-        // Conflits par besoin (basés uniquement sur COMMANDES Validé)
         if (isCoupure) {
           if (occ.matin && occ.soir) continue
         } else if (chercheMatin) {
@@ -194,31 +355,35 @@ export function PlanificationCandidatDialog({
           vehicule: c.vehicule,
           interditClient: interditSet.has(c.id),
           prioritaire: prioritaireSet.has(c.id),
-          dejaPlanifie: (occ.matin || occ.soir),
+          dejaPlanifie: occ.matin || occ.soir,
           dejaTravaille: dejaTravailleSet.has(c.id),
         }
 
         if (occ.matin || occ.soir) planifieList.push(mini)
         else if (statutNorm === "dispo") dispoList.push(mini)
-        else nonList.push(mini) // "non renseigné" ou pas de ligne
+        else nonList.push(mini)
       }
 
-      setDispos(dispoList)
-      setPlanifies(planifieList)
-      setNonRenseignes(nonList)
+      if (!isCancelled) {
+        setDispos(dispoList)
+        setPlanifies(planifieList)
+        setNonRenseignes(nonList)
+        log("FETCH done", { signature, counts: { dispo: dispoList.length, nonRenseigne: nonList.length, planifie: planifieList.length } })
+      }
+    })()
+
+    return () => {
+      isCancelled = true
     }
+  }, [secteur, date, commande.id, commande.heure_debut_matin, commande.heure_fin_matin, commande.heure_debut_soir, commande.heure_fin_soir, candidatIdsKey, candidats])
 
-    fetchDispoEtPlanif()
-  }, [open, date, secteur, candidats, commande.client_id])
-
-  const handleSelect = async (candidatId: string) => {
+  const handleSelect = useCallback(async (candidatId: string) => {
     const jour = date.slice(0, 10)
     const candidat = candidats.find((c) => c.id === candidatId)
 
     const aMatin = !!(commande.heure_debut_matin && commande.heure_fin_matin)
     const aSoir = !!(commande.heure_debut_soir && commande.heure_fin_soir)
 
-    // Conflit via COMMANDES (Validé)
     const { data: existingCmds } = await supabase
       .from("commandes")
       .select("heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
@@ -227,19 +392,15 @@ export function PlanificationCandidatDialog({
       .eq("secteur", secteur)
       .eq("statut", "Validé")
 
-    const occMatin = existingCmds?.some(p => p.heure_debut_matin && p.heure_fin_matin) ?? false
-    const occSoir  = existingCmds?.some(p => p.heure_debut_soir && p.heure_fin_soir) ?? false
-
-    const conflitMatin = aMatin && occMatin
-    const conflitSoir  = aSoir && occSoir
+    const occMatin = existingCmds?.some((p) => p.heure_debut_matin && p.heure_fin_matin) ?? false
+    const occSoir = existingCmds?.some((p) => p.heure_debut_soir && p.heure_fin_soir) ?? false
 
     if (aMatin && aSoir) {
       setSelectedCandidatId(candidatId)
       setOpenCoupureDialog(true)
       return
     }
-
-    if (conflitMatin || conflitSoir) {
+    if ((aMatin && occMatin) || (aSoir && occSoir)) {
       toast({
         title: "Conflit de créneau",
         description: "Ce candidat a déjà une mission sur ce créneau.",
@@ -264,10 +425,7 @@ export function PlanificationCandidatDialog({
 
     await supabase
       .from("commandes")
-      .update({
-        candidat_id: candidatId,
-        statut: "Validé",
-      })
+      .update({ candidat_id: candidatId, statut: "Validé" })
       .eq("id", commande.id)
 
     const { data: authData } = await supabase.auth.getUser()
@@ -279,9 +437,7 @@ export function PlanificationCandidatDialog({
         .select("id")
         .eq("email", userEmail)
         .single()
-
       const userId = userApp?.id || null
-
       if (userId) {
         await supabase.from("historique").insert({
           table_cible: "commandes",
@@ -292,10 +448,7 @@ export function PlanificationCandidatDialog({
           date_action: new Date().toISOString(),
           apres: {
             date: jour,
-            candidat: {
-              nom: candidat.nom,
-              prenom: candidat.prenom,
-            },
+            candidat: { nom: candidat.nom, prenom: candidat.prenom },
             heure_debut_matin: commande.heure_debut_matin,
             heure_fin_matin: commande.heure_fin_matin,
             heure_debut_soir: commande.heure_debut_soir,
@@ -308,137 +461,16 @@ export function PlanificationCandidatDialog({
     toast({ title: "Candidat planifié avec succès" })
     onClose()
     onSuccess?.()
-  }
-
-  const dateFormatee = format(new Date(date), "eeee d MMMM", { locale: fr })
-
-  const StatusColumn = ({
-    statusKey,
-    candidats,
-  }: {
-    statusKey: keyof typeof statusConfig
-    candidats: CandidatMini[]
-  }) => {
-    const config = statusConfig[statusKey]
-
-    return (
-      <div className={cn("flex-1 rounded-lg border overflow-hidden", config.borderColor, "border-2 flex flex-col h-full")}>
-        <div className={cn("w-full flex items-center justify-between p-3", config.color, "bg-opacity-20")}>
-          <div className="flex items-center gap-3">
-            <div className={cn("p-2 rounded-full", config.badgeColor)}>{config.icon}</div>
-            <h3 className="font-medium">
-              {config.title} <span className="text-muted-foreground">({candidats.length})</span>
-            </h3>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto max-h-[400px] p-2 space-y-1">
-          {candidats.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic p-3 text-center">Aucun candidat dans cette catégorie</p>
-          ) : (
-            candidats.map((c) => (
-              <CandidatItem
-                key={c.id}
-                candidat={c}
-                status={statusKey}
-                onSelect={handleSelect}
-                planification={planificationDetails[c.id]}
-              />
-            ))
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  const CandidatItem = ({
-    candidat,
-    status,
-    onSelect,
-    planification,
-  }: {
-    candidat: CandidatMini
-    status: keyof typeof statusConfig
-    onSelect: (id: string) => void
-    planification?: any
-  }) => {
-    const config = statusConfig[status]
-    const formatHeure = (h?: string | null) => (h ? h.slice(0, 5) : "")
-
-    return (
-      <div
-        className={cn(
-          "flex items-center justify-between p-3 rounded-lg transition-colors cursor-pointer",
-          "hover:bg-muted/50",
-          status === "planifie" ? "cursor-default" : ""
-        )}
-        onClick={() => status !== "planifie" && onSelect(candidat.id)}
-      >
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <p className="font-medium">
-              {candidat.nom} {candidat.prenom}
-            </p>
-            <div className="flex items-center gap-1">
-              {candidat.vehicule && (
-                <span className="p-1 rounded-full bg-muted" title="Véhicule">
-                  <Car className="w-4 h-4 text-blue-500" />
-                </span>
-              )}
-              {candidat.interditClient && (
-                <span className="p-1 rounded-full bg-muted" title="Interdit sur ce client">
-                  <Icon icon="material-symbols:do-not-disturb-on" className="w-4 h-4 text-red-500" />
-                </span>
-              )}
-              {candidat.prioritaire && (
-                <span className="p-1 rounded-full bg-muted" title="Prioritaire">
-                  <Icon icon="mdi:star" className="w-4 h-4 text-yellow-500" />
-                </span>
-              )}
-              {candidat.dejaPlanifie && (
-                <span className="p-1 rounded-full bg-muted" title="Déjà planifié sur ce jour">
-                  <History className="w-4 h-4 text-amber-500" />
-                </span>
-              )}
-              {candidat.dejaTravaille && (
-                <span className="p-1 rounded-full bg-muted" title="A déjà travaillé pour ce client">
-                  <ArrowDownCircle className="w-4 h-4 text-violet-600" />
-                </span>
-              )}
-            </div>
-          </div>
-
-          {status === "planifie" && planification && (
-            <div className="text-xs text-muted-foreground mt-1">
-              <div className="flex gap-2">
-                {planification.heure_debut_matin && (
-                  <span>
-                    Matin: {formatHeure(planification.heure_debut_matin)}-{formatHeure(planification.heure_fin_matin)}
-                  </span>
-                )}
-                {planification.heure_debut_soir && (
-                  <span>
-                    Soir: {formatHeure(planification.heure_debut_soir)}-{formatHeure(planification.heure_fin_soir)}
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {status !== "planifie" && (
-          <div className={cn("p-1 rounded-full", config.badgeColor, "hover:bg-[#8ea9db] hover:text-white")}>
-            <ChevronRight className="w-4 h-4" />
-          </div>
-        )}
-      </div>
-    )
-  }
+  }, [date, secteur, commande, candidats, onClose, onSuccess])
 
   return (
     <>
       <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        {/* overflow-hidden ici ; le scroll vit à l’intérieur des colonnes */}
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-hidden" aria-describedby="pcd-desc">
+          {/* Description vide (sr-only) juste pour éviter l’avertissement Radix, aucun texte ajouté */}
+          <DialogDescription id="pcd-desc" className="sr-only" />
+
           <DialogHeader>
             <DialogTitle className="text-lg flex items-center gap-2">
               <span className="p-2 rounded-lg bg-primary/10 text-primary">
@@ -452,10 +484,11 @@ export function PlanificationCandidatDialog({
             </p>
           </DialogHeader>
 
-          <div className="flex gap-4 h-[500px]">
-            <StatusColumn statusKey="dispo" candidats={dispos} />
-            <StatusColumn statusKey="nonRenseigne" candidats={nonRenseignes} />
-            <StatusColumn statusKey="planifie" candidats={planifies} />
+          {/* Hauteur fixe + min-h-0 → pas de rebond ; 3 zones scrollables internes */}
+          <div className="flex gap-4 h-[500px] min-h-0">
+            <StatusColumn statusKey="dispo" candidats={dispos} onSelect={handleSelect} planificationDetails={planificationDetails} />
+            <StatusColumn statusKey="nonRenseigne" candidats={nonRenseignes} onSelect={handleSelect} planificationDetails={planificationDetails} />
+            <StatusColumn statusKey="planifie" candidats={planifies} onSelect={handleSelect} planificationDetails={planificationDetails} />
           </div>
         </DialogContent>
       </Dialog>
@@ -485,3 +518,22 @@ export function PlanificationCandidatDialog({
     </>
   )
 }
+
+/* ------------- memo export ------------- */
+const propsAreEqual = (prev: PlanificationCandidatDialogProps, next: PlanificationCandidatDialogProps) => {
+  if (prev.open !== next.open) return false
+  if (!next.open) return true // fermée → inutile d’aller plus loin
+  return (
+    prev.secteur === next.secteur &&
+    prev.date === next.date &&
+    (prev.service || "") === (next.service || "") &&
+    prev.commande.id === next.commande.id &&
+    prev.commande.heure_debut_matin === next.commande.heure_debut_matin &&
+    prev.commande.heure_fin_matin === next.commande.heure_fin_matin &&
+    prev.commande.heure_debut_soir === next.commande.heure_debut_soir &&
+    prev.commande.heure_fin_soir === next.commande.heure_fin_soir
+  )
+}
+
+export const PlanificationCandidatDialog = memo(PlanificationCandidatDialogInner, propsAreEqual)
+export default PlanificationCandidatDialog

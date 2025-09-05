@@ -1,796 +1,417 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
-import MainLayout from "@/components/main-layout"
-import { SectionFixeCandidates } from "@/components/Planning/section-fixe-candidates"
-import { PlanningCandidateTable } from "@/components/Planning/PlanningCandidateTable"
+// components/commandes/SyntheseCandidatDialog.tsx
+import { useEffect, useMemo, useState } from "react"
+import { addDays, format, startOfWeek, getISOWeek } from "date-fns"
+import { fr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
-import { format, getWeek, parseISO } from "date-fns"
-import type {
-  JourPlanningCandidat,
-  CommandeFull,
-  StatutCommande,
-  CandidatDispoWithNom,
-} from "@/types/types-front"
-import { useLiveRows } from "@/hooks/useLiveRows"
+import { Button } from "@/components/ui/button"
+import { secteursList } from "@/lib/secteurs"
+import { statutColors, disponibiliteColors } from "@/lib/colors"
+import { Calendar, ChevronLeft, ChevronRight, Car, Clock } from "lucide-react"
 
-/** -----------------------------------------
- *  Helpers de persistance (localStorage)
- *  ----------------------------------------- */
-const lsGet = <T,>(key: string, fallback: T): T => {
-  try {
-    const raw = localStorage.getItem(key)
-    if (!raw) return fallback
-    return JSON.parse(raw) as T
-  } catch {
-    return fallback
-  }
-}
-const lsSet = (key: string, value: unknown) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value))
-  } catch {}
-}
-
-type CommandeRow = {
+type Candidat = {
   id: string
-  date: string
-  statut: StatutCommande | string
-  secteur: string
-  service?: string | null
-  mission_slot?: number | null
-  client_id: string
-  candidat_id?: string | null
-  heure_debut_matin?: string | null
-  heure_fin_matin?: string | null
-  heure_debut_soir?: string | null
-  heure_fin_soir?: string | null
-  heure_debut_nuit?: string | null
-  heure_fin_nuit?: string | null
-  commentaire?: string | null
-  created_at: string
-  updated_at?: string | null
-  // joints (fetch initial uniquement)
-  client?: { nom: string } | null
-  candidat?: { nom: string; prenom: string } | null
+  nom: string
+  prenom: string
+  vehicule?: boolean | null
 }
 
-type DispoRow = {
-  id: string
-  date: string
-  secteur: string
-  service?: string | null
-  statut: "Dispo" | "Non Dispo" | "Non Renseigné"
+type Planif = {
   candidat_id: string
-  commentaire?: string | null
-  dispo_matin?: boolean | null
-  dispo_soir?: boolean | null
-  dispo_nuit?: boolean | null
-  created_at: string
-  updated_at?: string | null
-  // joint (fetch initial uniquement)
-  candidats?: { nom: string; prenom: string } | null
+  date: string
+  // on ne garde que Validé côté SQL ; heures + client pour l’affichage
+  heure_debut_matin: string | null
+  heure_fin_matin: string | null
+  heure_debut_soir: string | null
+  heure_fin_soir: string | null
+  client: { nom: string } | null
+  candidat?: { id: string; nom: string; prenom: string; vehicule?: boolean | null } | null
 }
 
-export default function Planning() {
-  const [planning, setPlanning] = useState<Record<string, JourPlanningCandidat[]>>({})
-  const [filteredPlanning, setFilteredPlanning] = useState<Record<string, JourPlanningCandidat[]>>({})
+type Dispo = {
+  candidat_id: string
+  date: string
+  statut: "Dispo" | "Non Dispo" | "Non Renseigné"
+  dispo_matin: boolean | null
+  dispo_soir: boolean | null
+  candidats?: { id: string; nom: string; prenom: string; vehicule?: boolean | null } | null
+}
 
-  // --------- États avec initialisation depuis localStorage ---------
-  const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(
-    () => lsGet<string[]>("planning.selectedSecteurs", ["Étages"])
-  )
-  const [semaineEnCours, setSemaineEnCours] = useState<boolean>(
-    () => lsGet<boolean>("planning.semaineEnCours", true)
-  )
-  const [semaine, setSemaine] = useState<string>(
-    () => lsGet<string>("planning.semaine", format(new Date(), "yyyy-MM-dd"))
-  )
-  const [selectedSemaine, setSelectedSemaine] = useState<string>(
-    () => lsGet<string>("planning.selectedSemaine", "Toutes")
-  )
-  const [candidat, setCandidat] = useState<string>(() => lsGet<string>("planning.candidat", ""))
-  const [search, setSearch] = useState<string>(() => lsGet<string>("planning.search", ""))
-  const [toutAfficher, setToutAfficher] = useState<boolean>(
-    () => lsGet<boolean>("planning.toutAfficher", false)
-  )
-  const [dispo, setDispo] = useState<boolean>(() => lsGet<boolean>("planning.dispo", false))
-  // ---------------------------------------------------------------
+// ——— helpers
+const fmt = (h?: string | null) => (h && h.length >= 5 ? h.slice(0, 5) : "")
+const getWeekDays = (base: Date) => {
+  const monday = startOfWeek(base, { weekStartsOn: 1 })
+  return Array.from({ length: 7 }, (_, i) => addDays(monday, i))
+}
+const PLANNING_BG = "#e5e7eb"
 
-  const [semainesDisponibles, setSemainesDisponibles] = useState<string[]>([])
+export default function SyntheseCandidat() {
+  // Semaine + secteur visibles
+  const [baseDate, setBaseDate] = useState<Date>(() => new Date())
+  const [selectedSecteur, setSelectedSecteur] = useState<string>(() => secteursList[0]?.label || "Étages")
 
-  const [stats, setStats] = useState({
-    "Non renseigné": 0,
-    "Dispo": 0,
-    "Non Dispo": 0,
-    "Planifié": 0,
-  })
+  const days = useMemo(() => getWeekDays(baseDate), [baseDate])
+  const weekNum = useMemo(() => getISOWeek(baseDate), [baseDate])
+  const weekDates = useMemo(() => days.map(d => format(d, "yyyy-MM-dd")), [days])
 
-  // cache id -> "Nom Prénom" pour grouper de façon stable côté Realtime
-  const [candidateNames, setCandidateNames] = useState<Record<string, string>>({})
+  // Données
+  const [loading, setLoading] = useState(false)
+  const [planifs, setPlanifs] = useState<Planif[]>([])
+  const [dispos, setDispos] = useState<Dispo[]>([])
+  const [candidats, setCandidats] = useState<Candidat[]>([])
 
-  // ————————————————— Helpers —————————————————
-
-  const getLabelForCandidate = useCallback(
-    (candidat_id?: string | null) =>
-      (candidat_id && candidateNames[candidat_id]) || "Candidat inconnu",
-    [candidateNames]
-  )
-
-  const buildCommandeFull = useCallback((c: Partial<CommandeRow>): CommandeFull => {
-    return {
-      id: String(c.id),
-      date: String(c.date),
-      statut: (c.statut as StatutCommande) || "En recherche",
-      secteur: String(c.secteur),
-      service: (c.service ?? null) as string | null,
-      client_id: String(c.client_id),
-      candidat_id: (c.candidat_id ?? null) as string | null,
-      heure_debut_matin: c.heure_debut_matin ?? null,
-      heure_fin_matin: c.heure_fin_matin ?? null,
-      heure_debut_soir: c.heure_debut_soir ?? null,
-      heure_fin_soir: c.heure_fin_soir ?? null,
-      heure_debut_nuit: c.heure_debut_nuit ?? null,
-      heure_fin_nuit: c.heure_fin_nuit ?? null,
-      commentaire: c.commentaire ?? null,
-      created_at: String(c.created_at),
-      updated_at: (c.updated_at ?? undefined) as string | undefined,
-      mission_slot: (c.mission_slot ?? 0) as number,
-      // joints indisponibles via Realtime -> on met à null (ou on peut étendre via caches si besoin)
-      candidat: c.candidat ? { nom: c.candidat.nom, prenom: c.candidat.prenom } : null,
-      client: c.client ? { nom: c.client.nom } : undefined,
-      motif_contrat: null,
-    }
-  }, [])
-
-  const buildDispoFull = useCallback((d: Partial<DispoRow>): CandidatDispoWithNom => {
-    return {
-      id: String(d.id),
-      date: String(d.date),
-      secteur: String(d.secteur),
-      statut: (d.statut as "Dispo" | "Non Dispo" | "Non Renseigné") ?? "Non Renseigné",
-      service: (d.service ?? null) as string | null,
-      commentaire: d.commentaire ?? null,
-      candidat_id: String(d.candidat_id),
-      // mappe les colonnes DB -> champs de ton type front
-      matin: (d.dispo_matin ?? null) as boolean | null,
-      soir:  (d.dispo_soir  ?? null) as boolean | null,
-      nuit:  (d.dispo_nuit  ?? null) as boolean | null,
-      created_at: String(d.created_at),
-      updated_at: d.updated_at ?? null,
-      // propriété correcte : 'candidat' (et pas 'candidats')
-      candidat: d.candidats ? { nom: d.candidats.nom, prenom: d.candidats.prenom } : undefined,
-    }
-  }, [])
-
-  // utilitaire timestamp
-  const ts = useCallback((x?: { updated_at?: string | null; created_at?: string | null } | null) => {
-    return (x?.updated_at ? Date.parse(x.updated_at) : 0) || (x?.created_at ? Date.parse(x.created_at!) : 0) || 0
-  }, [])
-
-  // Supprime une commande (par id) partout, et nettoie les jours vides
-  const removeCommandeEverywhere = useCallback((base: Record<string, JourPlanningCandidat[]>, id: string) => {
-    const next: Record<string, JourPlanningCandidat[]> = {}
-    for (const [label, jours] of Object.entries(base)) {
-      const nj: JourPlanningCandidat[] = []
-      for (const j of jours) {
-        let changed = false
-        let clone: JourPlanningCandidat = j
-        if (j.commande?.id === id) {
-          clone = { ...clone, commande: undefined }
-          changed = true
-        }
-        if (j.autresCommandes?.length) {
-          const filtered = j.autresCommandes.filter((c) => c.id !== id)
-          if (filtered.length !== j.autresCommandes.length) {
-            clone = { ...clone, autresCommandes: filtered }
-            changed = true
-          }
-        }
-        const keep =
-          clone.commande ||
-          (clone.autresCommandes && clone.autresCommandes.length > 0) ||
-          clone.disponibilite
-        if (keep) nj.push(changed ? clone : j)
-      }
-      if (nj.length > 0) next[label] = nj
-    }
-    return next
-  }, [])
-
-  // Insère/replace une commande pour le bon candidat & jour
-  const upsertCommande = useCallback(
-    (base: Record<string, JourPlanningCandidat[]>, row: Partial<CommandeRow>) => {
-      if (!row?.id || !row.date) return base
-      const candId = row.candidat_id ?? null
-      if (!candId) {
-        // non assignée => on l’ignore côté planning candidat
-        return removeCommandeEverywhere(base, String(row.id))
-      }
-
-      const label = getLabelForCandidate(candId)
-      const commande = buildCommandeFull(row)
-      const dateStr = String(row.date)
-
-      const next = removeCommandeEverywhere(base, String(row.id))
-      const line = next[label] ?? []
-      const idx = line.findIndex((j) => j.date === dateStr)
-
-      if (idx >= 0) {
-        const current = line[idx]
-        const anciensAutres = current.autresCommandes ?? []
-        let autres = anciensAutres.filter((c) => c.id !== row.id)
-        let principale = commande
-
-        if (current.commande && current.commande.id !== row.id) {
-          autres = [...autres, current.commande]
-        }
-
-        line[idx] = {
-          ...current,
-          secteur: row.secteur ?? current.secteur,
-          service: (row.service ?? current.service) ?? null,
-          commande: principale,
-          autresCommandes: autres,
-        }
-      } else {
-        line.push({
-          date: dateStr,
-          secteur: String(row.secteur ?? "Inconnu"),
-          service: (row.service ?? null) as string | null,
-          commande,
-          autresCommandes: [],
-        })
-      }
-
-      next[label] = line
-      return next
-    },
-    [buildCommandeFull, getLabelForCandidate, removeCommandeEverywhere]
-  )
-
-  // Upsert disponibilité
-  const upsertDispo = useCallback(
-    (base: Record<string, JourPlanningCandidat[]>, row: Partial<DispoRow>) => {
-      if (!row?.id || !row.date || !row.candidat_id) return base
-      const label = getLabelForCandidate(row.candidat_id)
-      const dispo = buildDispoFull(row)
-      const dateStr = String(row.date)
-
-      const next = { ...base }
-      const line = next[label] ?? []
-      const idx = line.findIndex((j) => j.date === dateStr)
-
-      if (idx >= 0) {
-        const current = line[idx]
-        line[idx] = {
-          ...current,
-          secteur: String(row.secteur ?? current.secteur ?? "Inconnu"),
-          service: (row.service ?? current.service) ?? null,
-          disponibilite: dispo,
-        }
-      } else {
-        line.push({
-          date: dateStr,
-          secteur: String(row.secteur ?? "Inconnu"),
-          service: (row.service ?? null) as string | null,
-          disponibilite: dispo,
-          commande: undefined,
-          autresCommandes: [],
-        })
-      }
-
-      next[label] = line
-      return next
-    },
-    [buildDispoFull, getLabelForCandidate]
-  )
-
-  // Remove disponibilité
-  const removeDispo = useCallback(
-    (base: Record<string, JourPlanningCandidat[]>, row: Partial<DispoRow>) => {
-      if (!row?.id) return base
-      const next: Record<string, JourPlanningCandidat[]> = {}
-      for (const [label, jours] of Object.entries(base)) {
-        const nj: JourPlanningCandidat[] = []
-        for (const j of jours) {
-          if (j.disponibilite?.id === String(row.id)) {
-            const clone: JourPlanningCandidat = { ...j, disponibilite: undefined }
-            const keep =
-              clone.commande ||
-              (clone.autresCommandes && clone.autresCommandes.length > 0) ||
-              clone.disponibilite
-            if (keep) nj.push(clone)
-          } else {
-            nj.push(j)
-          }
-        }
-        if (nj.length > 0) next[label] = nj
-      }
-      return next
-    },
-    []
-  )
-
-  // ————————————————— Filtres —————————————————
-  const applyFilters = useCallback((
-    rawPlanning: Record<string, JourPlanningCandidat[]>,
-    secteurs: string[],
-    semaineSelect: string,
-    candidatSelect: string,
-    dispoFilter: boolean,
-    searchText: string,
-    toutAfficherBool: boolean
-  ) => {
-    const newFiltered: typeof rawPlanning = {}
-    const currentWeek = getWeek(new Date(), { weekStartsOn: 1 }).toString()
-
-    const matchSearchTerm = (val: string) =>
-      searchText
-        .trim()
-        .toLowerCase()
-        .split(" ")
-        .every((term) => val.toLowerCase().includes(term))
-
-    Object.entries(rawPlanning).forEach(([candidatNom, jours]) => {
-      const joursFiltres = jours.filter((j) => {
-        const semaineDuJour = getWeek(parseISO(j.date), { weekStartsOn: 1 }).toString()
-        const matchSecteur = secteurs.includes(j.secteur)
-        const matchCandidat = candidatSelect ? candidatNom === candidatSelect : true
-        const matchDispo = dispoFilter ? j.disponibilite?.statut === "Dispo" : true
-        const matchSemaine =
-          semaineSelect === "Toutes"
-            ? parseInt(semaineDuJour) >= parseInt(currentWeek)
-            : semaineSelect === semaineDuJour
-
-        return (
-          matchSecteur &&
-          matchCandidat &&
-          matchDispo &&
-          matchSemaine &&
-          (searchText.trim() === "" ||
-            matchSearchTerm(candidatNom) ||
-            matchSearchTerm(j.secteur) ||
-            matchSearchTerm(j.service || "") ||
-            (j.disponibilite?.statut && matchSearchTerm(j.disponibilite.statut)))
-        )
-      })
-
-      if (joursFiltres.length > 0) newFiltered[candidatNom] = joursFiltres
-    })
-
-    setFilteredPlanning(newFiltered)
-
-    let nr = 0, d = 0, nd = 0, p = 0
-    Object.values(newFiltered).forEach((jours) =>
-      jours.forEach((j) => {
-        const statut = j.commande?.statut
-        if (statut === "Validé") p++
-        else {
-          const s = j.disponibilite?.statut || "Non renseigné"
-          if (s === "Dispo") d++
-          else if (s === "Non Dispo") nd++
-          else nr++
-        }
-      })
-    )
-
-    setStats({
-      "Non renseigné": nr,
-      "Dispo": d,
-      "Non Dispo": nd,
-      "Planifié": p,
-    })
-  }, [])
-
-  // ——————————————— compose un JourPlanningCandidat (logique unique) ———————————————
-  const composeJour = useCallback((
-    dateISO: string,
-    dispoRow: DispoRow | null,
-    commandesRows: CommandeRow[]
-  ): { secteur: string; service: string | null; commande?: CommandeFull; autresCommandes: CommandeFull[]; disponibilite?: CandidatDispoWithNom } => {
-    const dispoFull = dispoRow ? buildDispoFull(dispoRow) : undefined
-
-    // ⬇️ REND LA DÉTECTION “Validé” ROBUSTE (casse/espaces)
-    const valides = commandesRows.filter((c) => (c.statut || "").trim().toLowerCase() === "validé")
-    const annexes = commandesRows.filter((c) =>
-      ["Annule Int", "Annule Client", "Annule ADA", "Absence"].includes(c.statut || "")
-    )
-
-    let principale: CommandeFull | undefined
-    let secondaires: CommandeFull[] = []
-    let secteur = dispoRow?.secteur || "Inconnu"
-    let service = (dispoRow?.service ?? null) as string | null
-
-    if (valides.length > 0) {
-      // priorité absolue -> matin/soir
-      const missionMatin = valides.find((c) => !!c.heure_debut_matin && !!c.heure_fin_matin)
-      const missionSoir  = valides.find((c) => !!c.heure_debut_soir  && !!c.heure_fin_soir)
-
-      if (missionMatin) {
-        principale = buildCommandeFull(missionMatin)
-        secteur = principale.secteur
-        service = (principale.service ?? service) ?? null
-        if (missionSoir) {
-          const soirFull = buildCommandeFull(missionSoir)
-          if (principale.client?.nom && soirFull.client?.nom && principale.client.nom !== soirFull.client.nom) {
-            secondaires.push(soirFull)
-          }
-        }
-      } else if (missionSoir) {
-        principale = buildCommandeFull(missionSoir)
-        secteur = principale.secteur
-        service = (principale.service ?? service) ?? null
-      } else {
-        // Validé sans heures (cas rare)
-        const lastValide = [...valides].sort((a, b) => ts(b) - ts(a))[0]
-        principale = buildCommandeFull(lastValide)
-        secteur = principale.secteur
-        service = (principale.service ?? service) ?? null
-      }
-    } else {
-      // arbitrage Annexe vs Dispo au timestamp
-      const lastAnnexe = annexes.length > 0 ? [...annexes].sort((a, b) => ts(b) - ts(a))[0] : null
-      if (lastAnnexe && (!dispoFull || ts(lastAnnexe) >= ts(dispoFull))) {
-        principale = buildCommandeFull(lastAnnexe)
-        secteur = principale.secteur
-        service = (principale.service ?? service) ?? null
-      } else {
-        principale = undefined
-      }
-    }
-
-    return {
-      secteur,
-      service,
-      commande: principale,
-      autresCommandes: secondaires,
-      disponibilite: dispoFull,
-    }
-  }, [buildCommandeFull, buildDispoFull, ts])
-
-  // ————————————————— Fetch initial —————————————————
-  const fetchPlanning = useCallback(async () => {
-    try {
-      const [{ data: commandesData, error: commandesError }, { data: dispoData, error: dispoError }] =
-        await Promise.all([
-          supabase
-            .from("commandes")
-            .select(`
-              id, date, statut, secteur, service, client_id, candidat_id,
-              heure_debut_matin, heure_fin_matin,
-              heure_debut_soir, heure_fin_soir,
-              heure_debut_nuit, heure_fin_nuit,
-              commentaire, created_at, updated_at, mission_slot,
-              client:client_id ( nom ),
-              candidat:candidat_id ( nom, prenom )
-            `),
-          supabase
-            .from("disponibilites")
-            .select(`
-              id, date, secteur, service, statut, commentaire, candidat_id,
-              dispo_matin, dispo_soir, dispo_nuit, created_at, updated_at,
-              candidats:candidat_id ( nom, prenom )
-            `),
-        ])
-
-      if (commandesError || dispoError) {
-        console.error("Erreurs:", commandesError || dispoError)
-        return
-      }
-
-      const nameCache: Record<string, string> = {}
-      ;(dispoData ?? []).forEach((d) => {
-        if (d.candidat_id && d.candidats?.nom) {
-          nameCache[d.candidat_id] = `${d.candidats.nom} ${d.candidats.prenom ?? ""}`.trim()
-        }
-      })
-      ;(commandesData ?? []).forEach((c) => {
-        if (c.candidat_id && c.candidat?.nom) {
-          nameCache[c.candidat_id] = `${c.candidat.nom} ${c.candidat.prenom ?? ""}`.trim()
-        }
-      })
-      setCandidateNames(nameCache)
-
-      const map: Record<string, JourPlanningCandidat[]> = {}
-      const semaines = new Set<string>()
-
-      // Regrouper par candidat + date
-      const candidatsSet = new Set<string>([
-        ...((commandesData ?? []).map((c) => c.candidat_id).filter(Boolean) as string[]),
-        ...((dispoData ?? []).map((d) => d.candidat_id) as string[]),
-      ])
-
-      for (const candId of candidatsSet) {
-        const label = nameCache[candId] ?? "Candidat inconnu"
-        const jours: Record<string, JourPlanningCandidat> = {}
-
-        const commandesCandidat = (commandesData ?? []).filter((c) => c.candidat_id === candId)
-        const dispoCandidat = (dispoData ?? []).filter((d) => d.candidat_id === candId)
-
-        const dates = Array.from(new Set([
-          ...commandesCandidat.map((c) => c.date),
-          ...dispoCandidat.map((d) => d.date),
-        ]))
-
-        for (const dt of dates) {
-          const cs = commandesCandidat.filter((c) => c.date === dt)
-          const dispoJour = dispoCandidat.find((d) => d.date === dt) ?? null
-
-          const composed = composeJour(dt, dispoJour as any, cs as any)
-
-          const semaine = getWeek(parseISO(dt), { weekStartsOn: 1 }).toString()
-          semaines.add(semaine)
-
-          jours[dt] = {
-            date: dt,
-            secteur: composed.secteur,
-            service: composed.service,
-            commande: composed.commande,
-            autresCommandes: composed.autresCommandes,
-            disponibilite: composed.disponibilite,
-          }
-        }
-
-        const arr = Object.values(jours)
-        if (arr.length > 0) map[label] = arr
-      }
-
-      setPlanning(map)
-
-      const semainesTriees = Array.from(semaines).sort((a, b) => parseInt(b) - parseInt(a))
-      setSemainesDisponibles(semainesTriees)
-
-      // ⚠️ Conserver la vue utilisateur
-      if (semaineEnCours) {
-        const currentWeek = getWeek(new Date(), { weekStartsOn: 1 }).toString()
-        setSelectedSemaine(currentWeek)
-      } else if (!semainesTriees.includes(selectedSemaine) && selectedSemaine !== "Toutes") {
-        setSelectedSemaine("Toutes")
-      }
-
-      // premier calcul filtré
-      applyFilters(
-        map,
-        selectedSecteurs,
-        semaineEnCours ? getWeek(new Date(), { weekStartsOn: 1 }).toString() : selectedSemaine,
-        candidat,
-        dispo,
-        search,
-        toutAfficher
-      )
-    } catch (e) {
-      console.error(e)
-    }
-  }, [
-    applyFilters,
-    composeJour,
-    selectedSecteurs,
-    selectedSemaine,
-    candidat,
-    dispo,
-    search,
-    toutAfficher,
-    semaineEnCours,
-  ])
-
-  // ———————————————— Refresh ciblé (1 candidat / 1 jour) ————————————————
-  const refreshOne = useCallback(async (candidatId: string, dateISO: string) => {
-    try {
-      const jour = dateISO.slice(0, 10)
-
-      const [{ data: dispoData, error: dErr }, { data: cmdData, error: cErr }, { data: candRow }] =
-        await Promise.all([
-          supabase
-            .from("disponibilites")
-            .select(`
-              id, date, secteur, service, statut, commentaire, candidat_id,
-              dispo_matin, dispo_soir, dispo_nuit, created_at, updated_at,
-              candidats:candidat_id ( nom, prenom )
-            `)
-            .eq("candidat_id", candidatId)
-            .eq("date", jour)
-            .limit(1)
-            .maybeSingle(),
-          supabase
-            .from("commandes")
-            .select(`
-              id, date, statut, secteur, service, client_id, candidat_id,
-              heure_debut_matin, heure_fin_matin,
-              heure_debut_soir, heure_fin_soir,
-              heure_debut_nuit, heure_fin_nuit,
-              commentaire, created_at, updated_at, mission_slot,
-              client:client_id ( nom ),
-              candidat:candidat_id ( nom, prenom )
-            `)
-            .eq("candidat_id", candidatId)
-            .eq("date", jour),
-          supabase
-            .from("candidats")
-            .select("nom, prenom")
-            .eq("id", candidatId)
-            .maybeSingle(),
-        ])
-
-      if (dErr || cErr) {
-        console.error("RefreshOne errors:", dErr || cErr)
-        return
-      }
-
-      // nom complet pour la clé
-      const label =
-        candidateNames[candidatId] ||
-        (candRow ? `${candRow.nom ?? ""} ${candRow.prenom ?? ""}`.trim() : "Candidat inconnu")
-
-      // compose l’entrée du jour
-      const composed = composeJour(jour, dispoData as any, (cmdData ?? []) as any)
-
-      setCandidateNames((prev) => ({ ...prev, [candidatId]: label }))
-
-      setPlanning((prev) => {
-        const next = { ...prev }
-        const line = next[label] ? [...next[label]] : []
-        const idx = line.findIndex((j) => j.date === jour)
-
-        const newJour: JourPlanningCandidat = {
-          date: jour,
-          secteur: composed.secteur,
-          service: composed.service,
-          commande: composed.commande,
-          autresCommandes: composed.autresCommandes,
-          disponibilite: composed.disponibilite,
-        }
-
-        if (idx >= 0) {
-          line[idx] = newJour
-        } else {
-          line.push(newJour)
-        }
-        next[label] = line
-        return next
-      })
-    } catch (e) {
-      console.error("refreshOne exception:", e)
-    }
-  }, [candidateNames, composeJour])
-
-  // ————————————————— Effets —————————————————
+  // ————————————————— Chargement minimal : 2 requêtes / semaine / secteur —————————————————
   useEffect(() => {
-    fetchPlanning()
-  }, [fetchPlanning])
+    let ignore = false
+    ;(async () => {
+      setLoading(true)
 
-  useEffect(() => {
-    applyFilters(planning, selectedSecteurs, selectedSemaine, candidat, dispo, search, toutAfficher)
-  }, [planning, selectedSecteurs, selectedSemaine, candidat, search, dispo, toutAfficher, applyFilters])
+      // 1) Commandes VALIDÉES de la semaine & du secteur (avec joint client + candidat pour éviter une 3e requête)
+      const { data: plan } = await supabase
+        .from("commandes")
+        .select(`
+          candidat_id,
+          date,
+          heure_debut_matin, heure_fin_matin,
+          heure_debut_soir,  heure_fin_soir,
+          client:client_id ( nom ),
+          candidat:candidat_id ( id, nom, prenom, vehicule )
+        `)
+        .eq("statut", "Validé")
+        .eq("secteur", selectedSecteur)
+        .in("date", weekDates)
 
-  // ————————————————— Persistance LS (sauvegarde) —————————————————
-  useEffect(() => { lsSet("planning.selectedSecteurs", selectedSecteurs) }, [selectedSecteurs])
-  useEffect(() => { lsSet("planning.semaineEnCours", semaineEnCours) }, [semaineEnCours])
-  useEffect(() => { lsSet("planning.semaine", semaine) }, [semaine])
-  useEffect(() => { lsSet("planning.selectedSemaine", selectedSemaine) }, [selectedSemaine])
-  useEffect(() => { lsSet("planning.candidat", candidat) }, [candidat])
-  useEffect(() => { lsSet("planning.search", search) }, [search])
-  useEffect(() => { lsSet("planning.toutAfficher", toutAfficher) }, [toutAfficher])
-  useEffect(() => { lsSet("planning.dispo", dispo) }, [dispo])
-  // ------------------------------------------------------------------------------------------------
+      // 2) Disponibilités de la semaine & du secteur (avec joint candidat)
+      const { data: disp } = await supabase
+        .from("disponibilites")
+        .select(`
+          candidat_id,
+          date,
+          statut,
+          dispo_matin, dispo_soir,
+          candidats:candidat_id ( id, nom, prenom, vehicule )
+        `)
+        .eq("secteur", selectedSecteur)
+        .in("date", weekDates)
 
-  const resetFiltres = () => {
-    setSelectedSecteurs(["Étages"])
-    setCandidat("")
-    setSearch("")
-    setDispo(false)
-    setToutAfficher(false)
-    setSemaineEnCours(true)
-    setSemaine(format(new Date(), "yyyy-MM-dd"))
-    const current = getWeek(new Date(), { weekStartsOn: 1 }).toString()
-    setSelectedSemaine(current)
+      if (ignore) return
+
+      const planRows = (plan as Planif[]) || []
+      const dispRows = (disp as Dispo[]) || []
+
+      setPlanifs(planRows)
+      setDispos(dispRows)
+
+      // Déduire la liste de candidats à afficher depuis les 2 datasets (pas de 3e requête)
+      const byId = new Map<string, Candidat>()
+      for (const p of planRows) {
+        const c = p.candidat
+        if (c && !byId.has(c.id)) byId.set(c.id, { id: c.id, nom: c.nom, prenom: c.prenom, vehicule: c.vehicule ?? null })
+      }
+      for (const d of dispRows) {
+        const c = d.candidats
+        if (c && !byId.has(c.id)) byId.set(c.id, { id: c.id, nom: c.nom, prenom: c.prenom, vehicule: c.vehicule ?? null })
+      }
+
+      const list = Array.from(byId.values()).sort((a, b) => (a.nom || "").localeCompare(b.nom || ""))
+      setCandidats(list)
+      setLoading(false)
+    })()
+    return () => { ignore = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSecteur, weekNum]) // change dès que la semaine affichée ou le secteur change
+
+  // ————————————————— Index pour accès O(1) —————————————————
+  const planIdx = useMemo(() => {
+    // key: `${candidat_id}|${date}`
+    const m = new Map<string, Planif[]>()
+    for (const p of planifs) {
+      const key = `${p.candidat_id}|${p.date}`
+      const arr = m.get(key)
+      if (arr) arr.push(p)
+      else m.set(key, [p])
+    }
+    return m
+  }, [planifs])
+
+  const dispoIdx = useMemo(() => {
+    const m = new Map<string, Dispo>()
+    for (const d of dispos) m.set(`${d.candidat_id}|${d.date}`, d)
+    return m
+  }, [dispos])
+
+  // ————————————————— Petits composants de rendu —————————————————
+  const compactClient = (raw?: string) => {
+    if (!raw) return "Client ?"
+    const words = raw.trim().split(/\s+/)
+    if (words.length <= 3) return raw
+    const cleaned: string[] = []
+    for (const w of words) {
+      const lw = w.toLowerCase().replace(/[’']/g, "'")
+      if (["le", "la", "les", "l'"].includes(lw)) continue
+      cleaned.push(w)
+    }
+    const limited = (cleaned.length >= 3 ? cleaned.slice(0, 3) : words.slice(0, 3)).join(" ")
+    return limited + " ..."
   }
 
-  // ————————————————— Realtime (PATCH DIRECT) —————————————————
-  useLiveRows<CommandeRow>({
-    table: "commandes",
-    onInsert: (row) => {
-      setPlanning((prev) => upsertCommande(prev, row))
-    },
-    onUpdate: (row) => {
-      setPlanning((prev) => upsertCommande(prev, row))
-    },
-    onDelete: (row) => {
-      if (!row?.id) return
-      setPlanning((prev) => removeCommandeEverywhere(prev, String(row.id)))
-    },
-  })
+  const VignettePlanifiee = ({
+    client, h1, h2, emphasize = false,
+  }: { client: string; h1?: string; h2?: string; emphasize?: boolean }) => (
+    <div
+      className="w-full h-full rounded-md px-2 pt-2 pb-1.5 flex flex-col items-start justify-center gap-1 overflow-hidden shadow-sm"
+      style={{
+        backgroundColor: statutColors["Validé"]?.bg,
+        color: statutColors["Validé"]?.text,
+        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)",
+      }}
+    >
+      <div className="w-full min-w-0">
+        <div className={emphasize ? "font-bold text-[12.75px] leading-[1.15] truncate" : "font-bold text-[12px] leading-[1.15] truncate"} title={client}>
+          {compactClient(client)}
+        </div>
+      </div>
+      <div className={emphasize ? "text-[12.5px] font-semibold opacity-95" : "text-[12px] font-semibold opacity-95"}>
+        {h1}{(h1 && h2) ? " " : ""}{h2}
+        {!h1 && !h2 ? <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3" />n.c.</span> : null}
+      </div>
+    </div>
+  )
 
-  useLiveRows<DispoRow>({
-    table: "disponibilites",
-    onInsert: (row) => {
-      setPlanning((prev) => upsertDispo(prev, row))
-    },
-    onUpdate: (row) => {
-      setPlanning((prev) => upsertDispo(prev, row))
-    },
-    onDelete: (row) => {
-      setPlanning((prev) => removeDispo(prev, row))
-    },
-  })
+  const VignetteColor = ({ color }: { color: string }) => (
+    <div className="w-full h-full rounded-md shadow-sm" style={{ backgroundColor: color, boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.25)" }} />
+  )
 
-  // ———————————————— Écoute les événements locaux pour actualiser 1 journée ————————————————
-  useEffect(() => {
-    const onDispoUpdated = (e: Event) => {
-      const ce = e as CustomEvent<{ candidatId?: string; date?: string }>
-      const { candidatId, date } = ce.detail || {}
-      if (candidatId && date) {
-        refreshOne(candidatId, date)
-      } else {
-        // fallback si pas de detail (sécurité)
-        fetchPlanning()
+  const VignetteEmpty = () => (
+    <div
+      className="w-full h-full rounded-md shadow-[inset_0_0_0_1px_rgba(203,213,225,0.9)]"
+      style={{
+        backgroundColor: "#ffffff",
+        backgroundImage: "repeating-linear-gradient(45deg, rgba(0,0,0,0.03) 0, rgba(0,0,0,0.03) 10px, transparent 10px, transparent 20px)",
+      }}
+      title="Non renseigné"
+    />
+  )
+
+  const DayCell = ({ candId, dateStr }: { candId: string; dateStr: string }) => {
+    const isEtages = selectedSecteur === "Étages"
+    const plansAll = (planIdx.get(`${candId}|${dateStr}`) || [])
+    const planMatin = plansAll.find(p => p.heure_debut_matin && p.heure_fin_matin)
+    const planSoir  = plansAll.find(p => p.heure_debut_soir  && p.heure_fin_soir)
+    const d = dispoIdx.get(`${candId}|${dateStr}`)
+
+    const colorDispo = disponibiliteColors["Dispo"]?.bg || "#d1d5db"
+    const colorNonDispo = disponibiliteColors["Non Dispo"]?.bg || "#6b7280"
+
+    // Étages : vignette pleine hauteur
+    if (isEtages) {
+      if (planMatin || planSoir) {
+        const h1 = planMatin ? `${fmt(planMatin.heure_debut_matin)} ${fmt(planMatin.heure_fin_matin)}` : ""
+        const h2 = planSoir  ? `${fmt(planSoir.heure_debut_soir)} ${fmt(planSoir.heure_fin_soir)}`   : ""
+        const client = (planMatin?.client?.nom || planSoir?.client?.nom || "Client ?")
+        return (
+          <div className="w-full h-full p-1">
+            <div className="w-full h-full">
+              <VignettePlanifiee client={client} h1={h1} h2={h2} emphasize />
+            </div>
+          </div>
+        )
       }
-    }
-    const onPlanifUpdated = (e: Event) => {
-      const ce = e as CustomEvent<{ candidatId?: string; date?: string }>
-      const { candidatId, date } = ce.detail || {}
-      if (candidatId && date) {
-        refreshOne(candidatId, date)
-      } else {
-        fetchPlanning()
+      if (d?.statut === "Non Dispo") {
+        return <div className="w-full h-full p-1"><div className="w-full h-full"><VignetteColor color={colorNonDispo} /></div></div>
       }
-    }
-    // ⬇️ nouvel écouteur (déjà émis par la modale)
-    const onAdaptelRefresh = (e: Event) => {
-      const ce = e as CustomEvent<{ candidatId?: string; date?: string }>
-      const { candidatId, date } = ce.detail || {}
-      if (candidatId && date) {
-        refreshOne(candidatId, date)
-      } else {
-        fetchPlanning()
+      if (d?.statut === "Dispo") {
+        return <div className="w-full h-full p-1"><div className="w-full h-full"><VignetteColor color={colorDispo} /></div></div>
       }
+      return <div className="w-full h-full p-1"><div className="w-full h-full"><VignetteEmpty /></div></div>
     }
-  
-    window.addEventListener("dispos:updated", onDispoUpdated as EventListener)
-    window.addEventListener("planif:updated", onPlanifUpdated as EventListener)
-    window.addEventListener("adaptel:refresh-planning-candidat", onAdaptelRefresh as EventListener)
-  
-    return () => {
-      window.removeEventListener("dispos:updated", onDispoUpdated as EventListener)
-      window.removeEventListener("planif:updated", onPlanifUpdated as EventListener)
-      window.removeEventListener("adaptel:refresh-planning-candidat", onAdaptelRefresh as EventListener)
+
+    // Autres secteurs : 2 demi-hauteurs fixes
+    const renderHalfMatin = () => {
+      if (planMatin) {
+        const h1 = `${fmt(planMatin.heure_debut_matin)} ${fmt(planMatin.heure_fin_matin)}`
+        return <VignettePlanifiee client={planMatin.client?.nom || "Client ?"} h1={h1} />
+      }
+      if (d?.statut === "Non Dispo") return <VignetteColor color={colorNonDispo} />
+      if (d?.statut === "Dispo" && d.dispo_matin) return <VignetteColor color={colorDispo} />
+      return <VignetteEmpty />
     }
-  }, [refreshOne, fetchPlanning])
-  
+
+    const renderHalfSoir = () => {
+      if (planSoir) {
+        const h2 = `${fmt(planSoir.heure_debut_soir)} ${fmt(planSoir.heure_fin_soir)}`
+        return <VignettePlanifiee client={planSoir.client?.nom || "Client ?"} h2={h2} />
+      }
+      if (d?.statut === "Non Dispo") return <VignetteColor color={colorNonDispo} />
+      if (d?.statut === "Dispo" && d.dispo_soir) return <VignetteColor color={colorDispo} />
+      return <VignetteEmpty />
+    }
+
+    return (
+      <div className="w-full h-full p-1">
+        <div className="grid h-full gap-1.5" style={{ gridTemplateRows: `repeat(2, minmax(42px, 42px))` }}>
+          {renderHalfMatin()}
+          {renderHalfSoir()}
+        </div>
+      </div>
+    )
+  }
 
   // ————————————————— Rendu —————————————————
-  const candidatsDisponibles = useMemo(() => Object.keys(planning), [planning])
+  const COL1_W = 200
+  const DAY_MIN_W = 132
+  const rowMinHeight = selectedSecteur === "Étages" ? 48 : (42 * 2 + 6)
+  const secteurInfo = useMemo(() => secteursList.find(s => s.label === selectedSecteur), [selectedSecteur])
 
   return (
-    <MainLayout>
-      <SectionFixeCandidates
-        selectedSecteurs={selectedSecteurs}
-        setSelectedSecteurs={setSelectedSecteurs}
-        stats={stats}
-        semaine={semaine}
-        setSemaine={setSemaine}
-        selectedSemaine={selectedSemaine}
-        setSelectedSemaine={setSelectedSemaine}
-        candidat={candidat}
-        setCandidat={setCandidat}
-        search={search}
-        setSearch={setSearch}
-        toutAfficher={toutAfficher}
-        setToutAfficher={setToutAfficher}
-        dispo={dispo}
-        setDispo={setDispo}
-        semaineEnCours={semaineEnCours}
-        setSemaineEnCours={setSemaineEnCours}
-        resetFiltres={resetFiltres}
-        semainesDisponibles={semainesDisponibles}
-        candidatsDisponibles={candidatsDisponibles}
-        setRefreshTrigger={() => {}} // plus de refresh global
-      />
+    <div className="w-full">
+      {/* Header (dans la modale) */}
+      <div className="px-4 pt-2 pb-3 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" onClick={() => setBaseDate(addDays(baseDate, -7))} title="Semaine précédente">
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <div className="inline-flex items-center gap-2 text-[13.5px] font-semibold">
+            <Calendar className="w-4 h-4 text-[#840404]" />
+            Semaine {weekNum}
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => setBaseDate(addDays(baseDate, +7))} title="Semaine suivante">
+            <ChevronRight className="w-4 h-4" />
+          </Button>
 
-      <PlanningCandidateTable
-        planning={filteredPlanning}
-        selectedSecteurs={selectedSecteurs}
-        selectedSemaine={selectedSemaine}
-        onRefresh={() => {}} // tout passe par Realtime + refreshOne()
-      />
-    </MainLayout>
+          <div className="ml-4 text-sm text-gray-600">
+            {format(days[0], "dd MMM", { locale: fr })} → {format(days[6], "dd MMM", { locale: fr })}
+          </div>
+        </div>
+
+        <div className="flex-1" />
+
+        {/* Boutons secteurs (exclusifs) */}
+        <div className="grid grid-cols-5 gap-2">
+          {secteursList.map(({ label, icon: Icon }) => {
+            const active = selectedSecteur === label
+            return (
+              <Button
+                key={label}
+                variant={active ? "default" : "outline"}
+                className={`h-9 px-3 text-sm font-medium rounded-lg flex items-center justify-center gap-2 transition-all ${
+                  active ? "bg-[#840404] hover:bg-[#840404]/90 text-white" : "hover:bg-gray-50"
+                }`}
+                onClick={() => setSelectedSecteur(label)}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </Button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Tableau synthèse */}
+      <div className="px-4 pb-4">
+        <div className="border rounded-lg bg-white overflow-hidden">
+          <div
+            className="relative max-h-[78vh] overflow-y-auto"
+            style={{ backgroundColor: PLANNING_BG }}
+          >
+            {/* Loader overlay */}
+            {loading && (
+              <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-20 flex items-center justify-center">
+                <div className="text-sm text-gray-700">Chargement…</div>
+              </div>
+            )}
+
+            {/* En-tête sticky */}
+            <div className="sticky top-0 z-10 bg-transparent">
+              <div
+                className="border-t border-b border-r border-gray-300 shadow-sm"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: `${COL1_W}px repeat(7, minmax(${DAY_MIN_W}px, 1fr))`,
+                  background: "linear-gradient(180deg, rgba(243,244,246,0.96), rgba(229,231,235,0.96))"
+                }}
+              >
+                {/* Col titre + secteur */}
+                <div className="px-3 py-3 border-r border-gray-300 flex flex-col items-center justify-center">
+                  <div className="text-[15px] font-bold text-gray-900 tracking-wide">Candidats</div>
+                  {secteurInfo && (
+                    <div className="mt-1 inline-flex items-center gap-1.5 text-gray-800">
+                      <secteurInfo.icon className="w-4 h-4" />
+                      <span className="text-[13px] font-semibold">{selectedSecteur}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 7 jours */}
+                {days.map((d, i) => (
+                  <div key={i} className="px-2 py-3 text-center border-r last:border-r-0 border-gray-300">
+                    <div className="capitalize text-[15px] font-semibold text-gray-900">
+                      {format(d, "EEEE d", { locale: fr })}
+                    </div>
+                    <div className="capitalize text-[13.5px] text-gray-700">
+                      {format(d, "LLLL", { locale: fr })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Lignes */}
+            <div className="p-2 space-y-2">
+              {(!loading && candidats.length === 0) ? (
+                <div className="p-4 text-sm italic text-gray-700 bg-gray-100 border rounded-md">
+                  Aucun candidat pour cette semaine / ce secteur.
+                </div>
+              ) : (
+                candidats.map((c) => (
+                  <div
+                    key={c.id}
+                    className="grid bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition"
+                    style={{ gridTemplateColumns: `${COL1_W}px repeat(7, minmax(${DAY_MIN_W}px, 1fr))` }}
+                  >
+                    {/* Col candidat */}
+                    <div className="px-3 py-2 border-r border-gray-200" style={{ minHeight: rowMinHeight }}>
+                      <div className="h-full w-full flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <div className="text-[14px] font-semibold leading-tight text-gray-900 truncate">{c.nom}</div>
+                            {c.vehicule ? (
+                              <span
+                                className="inline-flex items-center justify-center ml-1.5 p-1 rounded-full bg-gray-100 text-gray-700 border"
+                                title="Véhiculé"
+                                aria-label="Véhiculé"
+                              >
+                                <Car className="w-3.5 h-3.5" />
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="text-[12.5px] text-gray-700 leading-tight truncate">{c.prenom}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 7 jours */}
+                    {days.map((d, idx) => {
+                      const dateStr = format(d, "yyyy-MM-dd")
+                      return (
+                        <div
+                          key={idx}
+                          className="border-r last:border-r-0 border-gray-200"
+                          style={{
+                            minHeight: rowMinHeight,
+                            background: "linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.9))"
+                          }}
+                        >
+                          <DayCell candId={c.id} dateStr={dateStr} />
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }

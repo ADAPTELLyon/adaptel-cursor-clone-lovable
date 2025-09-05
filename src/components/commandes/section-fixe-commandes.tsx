@@ -196,10 +196,10 @@ export function SectionFixeCommandes({
             </select>
 
             <select
-              className="border rounded-lg px-3 py-2 text-sm"
-              value={client}
-              onChange={(e) => setClient(e.target.value)}
-            >
+  className="border rounded-lg px-3 py-2 text-sm w-[220px] min-w-[220px] max-w-[220px]"
+  value={client}
+  onChange={(e) => setClient(e.target.value)}
+>
               <option value="">Tous les clients</option>
               {clientsDisponibles.map((nom: string) => (
                 <option key={nom} value={nom}>{nom}</option>
@@ -282,7 +282,7 @@ export function SectionFixeCommandes({
             <Building2 size={18} />
           </Button>
 
-          {/* Bouton Planning : placeholder sans dépendre du dialog pour éviter l'erreur TS */}
+          {/* Bouton Planning : émet juste l’événement */}
           <Button
             variant="outline"
             title="Synthèse planning (15 jours)"
@@ -292,7 +292,6 @@ export function SectionFixeCommandes({
               "hover:bg-gray-50 hover:border-[#840404] hover:text-[#840404]"
             )}
             onClick={() => {
-              // on branchera le vrai dialog plus tard
               window.dispatchEvent(new CustomEvent("adaptel:open-synthese-candidat"))
             }}
           >

@@ -78,7 +78,6 @@ export function SectionFixeCandidates({
   const [openFicheClient, setOpenFicheClient] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
 
-
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 pb-4 border-b border-gray-100 space-y-6">
       <SectionStatutPlanning stats={stats} />
@@ -118,9 +117,14 @@ export function SectionFixeCandidates({
                 const monday = startOfWeek(today, { weekStartsOn: 1 })
                 const iso = monday.toISOString().slice(0, 10)
                 setSemaine(iso)
-                setSelectedSemaine(getWeekNumber(monday).toString())
+                // on bascule aussi la liste sur la semaine courante
+                const start = new Date(monday.getFullYear(), 0, 1)
+                const diff =
+                  (+monday - +start + (start.getTimezoneOffset() - monday.getTimezoneOffset()) * 60 * 1000) /
+                  86400000
+                const currentWeek = Math.floor((diff + start.getDay() + 6) / 7).toString()
+                setSelectedSemaine(currentWeek)
               } else {
-                setSemaineEnCours(false)
                 setSelectedSemaine("Toutes")
               }
             }}
@@ -156,27 +160,26 @@ export function SectionFixeCandidates({
       </div>
 
       <div className="flex flex-wrap gap-4 items-center">
-      <select
-  className="border rounded px-2 py-2 text-sm w-[160px]"
-  value={selectedSemaine}
-  onChange={(e) => {
-    const val = e.target.value
-    setSelectedSemaine(val)
-    if (val !== "Toutes") {
-      setSemaineEnCours(false)
-    }
-  }}
->
-  <option value="Toutes">Toutes les semaines</option>
-  {semainesDisponibles.map((s) => (
-    <option key={s} value={s}>
-      Semaine {s}
-    </option>
-  ))}
-</select>
+        <select
+          className="border rounded px-2 py-2 text-sm w-[160px]"
+          value={selectedSemaine}
+          onChange={(e) => {
+            const val = e.target.value
+            setSelectedSemaine(val)
+            // ✅ règle demandée : sélectionner via la liste “déconnecte” l’interrupteur
+            setSemaineEnCours(false)
+          }}
+        >
+          <option value="Toutes">Toutes les semaines</option>
+          {semainesDisponibles.map((s) => (
+            <option key={s} value={s}>
+              Semaine {s}
+            </option>
+          ))}
+        </select>
 
         <select
-          className="border rounded px-2 py-2 text-sm w-[200px]"
+          className="border rounded px-2 py-2 text-sm w[200px]"
           value={candidat}
           onChange={(e) => setCandidat(e.target.value)}
         >
@@ -244,27 +247,26 @@ export function SectionFixeCandidates({
 
         <Separator orientation="vertical" className="h-8" />
 
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setShowSelectCandidat(true)}
+          className="border border-gray-300 rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+          title="Infos candidat"
+        >
+          <User2 size={18} />
+        </Button>
 
-  <Button
-    variant="ghost"
-    size="icon"
-    onClick={() => setShowSelectCandidat(true)}
-    className="border border-gray-300 rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-    title="Infos candidat"
-  >
-    <User2 size={18} />
-  </Button>
-
-  <Button
-    variant="ghost"
-    size="icon"
-    onClick={() => setShowSelectClient(true)}
-    className="border border-gray-300 rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-700"
-    title="Infos client"
-  >
-    <Building2 size={18} />
-  </Button>
-</div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setShowSelectClient(true)}
+          className="border border-gray-300 rounded-full text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+          title="Infos client"
+        >
+          <Building2 size={18} />
+        </Button>
+      </div>
 
       <AjoutDispoCandidat
         open={openDispo}

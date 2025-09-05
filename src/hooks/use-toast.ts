@@ -5,14 +5,22 @@ import type {
   ToastProps,
 } from "@/components/ui/toast"
 
+// Affiche 1 toast à la fois (comportement existant)
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+
+// Délai de retrait du DOM après fermeture (pour l'animation de sortie)
+const TOAST_REMOVE_DELAY = 400
+
+// Durée d'affichage par défaut avant auto-fermeture
+export const DEFAULT_TOAST_DURATION = 2200
 
 type ToasterToast = ToastProps & {
   id: string
   title?: React.ReactNode
   description?: React.ReactNode
   action?: ToastActionElement
+  /** Durée d'affichage avant auto-dismiss ; si non défini => DEFAULT_TOAST_DURATION */
+  duration?: number
 }
 
 const actionTypes = {
@@ -53,7 +61,28 @@ interface State {
   toasts: ToasterToast[]
 }
 
-const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>() // timeouts de retrait (après dismiss)
+const autoDismissTimers = new Map<string, ReturnType<typeof setTimeout>>() // timeouts d’auto-dismiss
+
+const clearAutoDismiss = (toastId: string) => {
+  const t = autoDismissTimers.get(toastId)
+  if (t) {
+    clearTimeout(t)
+    autoDismissTimers.delete(toastId)
+  }
+}
+
+const scheduleAutoDismiss = (toastId: string, duration?: number) => {
+  // 0 ou valeur non finie => on ne programme pas l’auto-dismiss
+  const d = Number.isFinite(duration) ? (duration as number) : DEFAULT_TOAST_DURATION
+  if (!(d > 0)) return
+
+  clearAutoDismiss(toastId)
+  const timeout = setTimeout(() => {
+    dispatch({ type: "DISMISS_TOAST", toastId })
+  }, d)
+  autoDismissTimers.set(toastId, timeout)
+}
 
 const addToRemoveQueue = (toastId: string) => {
   if (toastTimeouts.has(toastId)) {
@@ -90,12 +119,14 @@ export const reducer = (state: State, action: Action): State => {
     case "DISMISS_TOAST": {
       const { toastId } = action
 
-      // ! Side effects ! - This could be extracted into a dismissToast() action,
-      // but I'll keep it here for simplicity
+      // Side effects tolérés comme dans la version d’origine
       if (toastId) {
+        // on annule l’auto-dismiss en cours, puis on programme le retrait
+        clearAutoDismiss(toastId)
         addToRemoveQueue(toastId)
       } else {
         state.toasts.forEach((toast) => {
+          clearAutoDismiss(toast.id)
           addToRemoveQueue(toast.id)
         })
       }
@@ -112,7 +143,11 @@ export const reducer = (state: State, action: Action): State => {
         ),
       }
     }
-    case "REMOVE_TOAST":
+
+    case "REMOVE_TOAST": {
+      // nettoyage défensif des timers d’auto-dismiss
+      if (action.toastId) clearAutoDismiss(action.toastId)
+
       if (action.toastId === undefined) {
         return {
           ...state,
@@ -123,6 +158,7 @@ export const reducer = (state: State, action: Action): State => {
         ...state,
         toasts: state.toasts.filter((t) => t.id !== action.toastId),
       }
+    }
   }
 }
 
@@ -142,13 +178,15 @@ type Toast = Omit<ToasterToast, "id">
 function toast({ ...props }: Toast) {
   const id = genId()
 
-  const update = (props: ToasterToast) =>
+  const update = (next: ToasterToast) =>
     dispatch({
       type: "UPDATE_TOAST",
-      toast: { ...props, id },
+      toast: { ...next, id },
     })
+
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id })
 
+  // Création
   dispatch({
     type: "ADD_TOAST",
     toast: {
@@ -161,8 +199,11 @@ function toast({ ...props }: Toast) {
     },
   })
 
+  // Auto-fermeture programmée (durée spécifique > défaut si non fournie)
+  scheduleAutoDismiss(id, props.duration)
+
   return {
-    id: id,
+    id,
     dismiss,
     update,
   }
