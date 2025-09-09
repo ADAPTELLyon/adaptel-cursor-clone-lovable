@@ -1,157 +1,76 @@
 // @ts-nocheck
 // supabase/functions/agent-chat/index.ts
-// Agent ADAPTEL — Rappels (inchangé) + Candidats (résolution + attributs)
+// Agent ADAPTEL — Rappels fiables (relatifs, dates FR, heures FR, audiences users/all/list) + smalltalk heure/date.
+// Groq est TOLÉRÉ mais NON-BLOQUANT : la logique locale prime pour fiabilité.
 
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
-// ------------------------------ CORS ------------------------------
-const CORS = {
+// ---------------- CORS ----------------
+const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-agent-tz",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
-// ------------------------------ TZ utils ------------------------------
-function partsFromTZ(dateUTC: Date, tz: string) {
-  const dtf = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-    hour12: false,
-  })
-  const parts = Object.fromEntries(dtf.formatToParts(dateUTC).map((p) => [p.type, p.value])) as any
-  return {
-    year: +parts.year, month: +parts.month, day: +parts.day,
-    hour: +parts.hour, minute: +parts.minute, second: +parts.second,
-  }
-}
-function tzOffsetMsAt(guessUTC: Date, tz: string) {
-  const p = partsFromTZ(guessUTC, tz)
-  const asUTC = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)
-  return asUTC - guessUTC.getTime()
-}
-function makeDateInTZ(tz: string, year: number, month: number, day: number, hour = 0, minute = 0, second = 0) {
-  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, second))
-  const offset = tzOffsetMsAt(guess, tz)
-  return new Date(guess.getTime() - offset)
-}
-function getTZYMD(date: Date, tz: string) {
-  const p = partsFromTZ(date, tz)
-  return { y: p.year, m: p.month, d: p.day }
-}
-function formatFrDateTime(d: Date | string, tz: string) {
-  return new Date(d).toLocaleString("fr-FR", {
-    timeZone: tz, weekday: "long", day: "2-digit", month: "long", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  })
-}
-function formatFrDate(d: Date | string, tz: string) {
-  return new Date(d).toLocaleDateString("fr-FR", {
-    timeZone: tz, weekday: "long", day: "2-digit", month: "long", year: "numeric",
-  })
-}
+// ---------------- TZ helpers ----------------
 function pickTZ(req: Request) {
   const h = req.headers.get("x-agent-tz")
   return h && h.trim() ? h.trim() : "Europe/Paris"
 }
-
-// ------------------------------ Parsing dates/heures (rappels) ------------------------------
-const WEEKDAYS = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"]
-
-function parseHourMinuteFR(s?: string | null) {
-  if (!s) return null
-  const m = s.trim().toLowerCase().match(/^([0-2]?\d)(?:[:hH]([0-5]?\d))?$/)
-  if (!m) return null
-  const h = Math.min(23, parseInt(m[1], 10))
-  const min = m[2] ? Math.min(59, parseInt(m[2], 10)) : 0
-  return { h, min }
+function nowInTZ(tz: string) {
+  // Crée un "now" en horloge locale du TZ, puis re-crée un Date réel
+  return new Date(new Date().toLocaleString("en-US", { timeZone: tz }))
 }
-function parseHourFromText(raw?: string | null) {
-  if (!raw) return null
-  const t = raw.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase()
-  const re = /(^|[^\d])([01]?\d|2[0-3])(?:[:hH]([0-5]\d))?([^\d]|$)/gu
-  let match: RegExpExecArray | null = null
-  let last: {h:number,min:number} | null = null
-  while ((match = re.exec(t)) !== null) {
-    const h = parseInt(match[2], 10)
-    const mm = match[3] ? parseInt(match[3], 10) : 0
-    last = { h, min: mm }
-  }
-  return last
+function toISO(d: Date | string | number) {
+  return new Date(d).toISOString() // UTC ISO pour stockage
 }
-function parseRelativeFR(text: string | null | undefined): number | null {
-  if (!text) return null
-  const t = text.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim()
-  if (/\b(maintenant|tout\s*de\s*suite)\b/.test(t)) return 60_000
-  let m = t.match(/\bdans\s+(\d{1,3})\s*(minutes?|mins?|mn|m)\b/)
-  if (m) return Math.max(1, parseInt(m[1], 10)) * 60_000
-  m = t.match(/\bdans\s+(\d{1,2})\s*(heures?|h)\b/)
-  if (m) return Math.max(1, parseInt(m[1], 10)) * 3_600_000
-  m = t.match(/\bdans\s+(\d{1,2})h(\d{1,2})\b/)
-  if (m) return (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) * 60_000
-  return null
+function formatFrDateTime(d: Date, tz: string) {
+  return new Date(d).toLocaleString("fr-FR", {
+    timeZone: tz, weekday: "long", day: "2-digit", month: "long", year: "numeric",
+    hour: "2-digit", minute: "2-digit"
+  })
 }
-function nextWeekdayDate(name: string, baseUTC: Date, tz: string) {
-  const p = partsFromTZ(baseUTC, tz)
-  const baseWeekday = new Date(Date.UTC(p.year, p.month - 1, p.day)).getDay()
-  const idx = WEEKDAYS.indexOf(name)
-  if (idx < 0) return null
-  let diff = idx - baseWeekday
-  if (diff <= 0) diff += 7
-  const dYMD = new Date(Date.UTC(p.year, p.month - 1, p.day))
-  dYMD.setUTCDate(dYMD.getUTCDate() + diff)
-  return { y: dYMD.getUTCFullYear(), m: dYMD.getUTCMonth() + 1, d: dYMD.getUTCDate() }
+function formatFrDate(d: Date, tz: string) {
+  return new Date(d).toLocaleDateString("fr-FR", {
+    timeZone: tz, weekday: "long", day: "2-digit", month: "long", year: "numeric"
+  })
 }
-function parseDateTextFR(dateText: string | null | undefined, tz: string):
-  | { mode: "relative", deltaMs: number }
-  | { mode: "ymd", y: number, m: number, d: number }
-  | null {
-  if (!dateText) return null
-  const baseUTC = new Date()
-  const t = dateText.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase()
-
-  const rel = parseRelativeFR(t)
-  if (rel != null) return { mode: "relative", deltaMs: rel }
-
-  if (/\baujourdhui\b/.test(t) || /\baujourd'hui\b/.test(t)) {
-    const { y, m, d } = getTZYMD(baseUTC, tz)
-    return { mode: "ymd", y, m, d }
-  }
-  if (/\bdemain\b/.test(t)) {
-    const { y, m, d } = getTZYMD(baseUTC, tz)
-    const d0 = new Date(Date.UTC(y, m - 1, d))
-    d0.setUTCDate(d0.getUTCDate() + 1)
-    return { mode: "ymd", y: d0.getUTCFullYear(), m: d0.getUTCMonth() + 1, d: d0.getUTCDate() }
-  }
-  for (const w of WEEKDAYS) {
-    const re = new RegExp(`\\b${w}(?:\\s+prochain)?\\b`)
-    const m = t.match(re)
-    if (m) {
-      let target = nextWeekdayDate(w, baseUTC, tz)!
-      if (/prochain/.test(m[0])) {
-        const d0 = new Date(Date.UTC(target.y, target.m - 1, target.d))
-        d0.setUTCDate(d0.getUTCDate() + 7)
-        target = { y: d0.getUTCFullYear(), m: d0.getUTCMonth() + 1, d: d0.getUTCDate() }
-      }
-      return { mode: "ymd", ...target }
-    }
-  }
-  const fr = t.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\b/)
-  if (fr) {
-    const { y:cy } = getTZYMD(baseUTC, tz)
-    return { mode: "ymd", y: fr[3] ? +fr[3] : cy, m: +fr[2], d: +fr[1] }
-  }
-  const iso = t.match(/\b(20\d{2})-(0?\d|1[0-2])-(0?\d|[12]\d|3[01])\b/)
-  if (iso) return { mode: "ymd", y: +iso[1], m: +iso[2], d: +iso[3] }
-  return null
+function ymdFromTZ(d: Date, tz: string) {
+  return new Date(d).toLocaleDateString("fr-CA", { timeZone: tz }) // yyyy-mm-dd
+}
+function cloneInTZ(base: Date, tz: string) {
+  const d = nowInTZ(tz)
+  d.setFullYear(base.getFullYear(), base.getMonth(), base.getDate())
+  d.setHours(base.getHours(), base.getMinutes(), base.getSeconds(), base.getMilliseconds())
+  return d
+}
+function addMinutesTZ(base: Date, minutes: number, tz: string) {
+  const d = cloneInTZ(base, tz)
+  d.setMinutes(d.getMinutes() + minutes)
+  return d
+}
+function addHoursTZ(base: Date, hours: number, tz: string) {
+  const d = cloneInTZ(base, tz)
+  d.setHours(d.getHours() + hours)
+  return d
+}
+function addDaysTZ(base: Date, days: number, tz: string) {
+  const d = cloneInTZ(base, tz)
+  d.setDate(d.getDate() + days)
+  return d
+}
+function addWeeksTZ(base: Date, w: number, tz: string) {
+  return addDaysTZ(base, 7 * w, tz)
 }
 
-// ------------------------------ Supabase helpers ------------------------------
+// ---------------- Supabase ----------------
 function supaFromReq(req: Request) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!
   const supabaseAnon = Deno.env.get("SUPABASE_ANON_KEY")!
   const authHeader = req.headers.get("Authorization") ?? ""
-  return createClient(supabaseUrl, supabaseAnon, { global: { headers: { Authorization: authHeader } } })
+  return createClient(supabaseUrl, supabaseAnon, {
+    global: { headers: { Authorization: authHeader } },
+  })
 }
 async function getMe(supabase: any) {
   try {
@@ -160,90 +79,208 @@ async function getMe(supabase: any) {
     if (!email) return null
     const { data } = await supabase.from("utilisateurs")
       .select("id, prenom, nom, email, actif")
-      .eq("email", email).eq("actif", true)
+      .eq("email", email)
       .maybeSingle()
     return data ?? null
-  } catch { return null }
-}
-async function getAllUsers(supabase: any) {
-  const { data } = await supabase.from("utilisateurs")
-    .select("id, prenom, nom, email, actif")
-    .eq("actif", true)
-  return (data || []) as Array<{id:string, prenom:string, nom:string, email:string, actif:boolean}>
-}
-
-// ------------------------------ Groq intents ------------------------------
-const GROQ_API = "https://api.groq.com/openai/v1/chat/completions"
-const GROQ_MODELS = ["llama-3.1-70b-versatile", "llama-3.1-8b-instant"] as const
-
-async function groqParse(message: string, tz: string, me: any) {
-  const key = Deno.env.get("GROQ_API_KEY")
-  if (!key) return { intent: "unknown" }
-
-  const system = `
-Tu es un parseur strict pour l'agent ADAPTEL Lyon. Retourne UNIQUEMENT un JSON valide en une ligne.
-Intents autorisés:
-- "reminder.create"  // créer un rappel
-- "candidate.resolve" // je cherche un candidat (retourner candidateName, secteur?)
-- "candidate.attribute" // question d'attribut candidat, ex: vehicule, age, secteurs, telephone, email, ville
-- "smalltalk.date_today" | "smalltalk.time_now" | "unknown"
-
-Champs possibles:
-- candidateName: string
-- secteur: "etages"|"cuisine"|"salle"|"plonge"|"reception"
-- attribute: "vehicule"|"age"|"secteurs"|"telephone"|"email"|"ville"
-- dateText: string
-- timeText: string
-- title: string
-- note: string
-Exemples valides:
-{"intent":"candidate.attribute","candidateName":"Dupont","attribute":"vehicule"}
-{"intent":"candidate.resolve","candidateName":"Jean Dupont","secteur":"cuisine"}
-{"intent":"reminder.create","title":"appeler Paul","dateText":"demain","timeText":"11h"}`
-  const user = `TZ=${tz}; User=${me?.prenom || ""} ${me?.nom || ""} (${me?.email || ""})
-Message: ${message}`
-
-  for (const model of GROQ_MODELS) {
-    const payload = { model, temperature: 0.1, response_format: { type: "json_object" as const }, messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ] }
-    const res = await fetch(GROQ_API, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }).catch(() => null)
-    if (!res || !res.ok) continue
-    const j = await res.json().catch(() => null)
-    const txt = j?.choices?.[0]?.message?.content?.trim() || "{}"
-    try { const obj = JSON.parse(txt); if (obj && typeof obj.intent === "string") return obj } catch {}
+  } catch {
+    return null
   }
-  return { intent: "unknown" }
 }
 
-// ------------------------------ Rappels (DB) ------------------------------
-async function createReminder(
-  supabase: any,
-  userId: string | null,
-  args: { title: string, body?: string | null, due_at: string, audience: "all"|"user"|"list", user_ids: string[] }
-) {
-  const { title, body = null, due_at, audience, user_ids } = args
-  const write_user_ids = audience === "all" ? [] : user_ids
-  const ins = await supabase
-    .from("agent_reminders")
-    .insert({
-      created_by: userId,
-      title, body, due_at, audience,
-      user_ids: write_user_ids,
-      status: "pending", urgent: false,
-    })
-    .select("*")
-    .single()
-  if (ins.error) return { ok: false, error: ins.error.message, reminders: [] }
-  return { ok: true, reminders: [ins.data] }
+// ---------------- Smalltalk shortcuts (fiabilité UX immédiate) ----------------
+function normalize(s: string) {
+  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim()
+}
+const WEEKDAYS = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"]
+
+// ---------------- Parsing FR: heure ----------------
+function parseHourMinuteFR(input: string | null | undefined): {h:number,min:number}|null {
+  if (!input) return null
+  const t = normalize(input).replace(/\s+/g, "")
+  // Ex: 14h, 14H, 14h30, 14:30, 14 30, 9h, 9
+  const m = t.match(/^([0-2]?\d)(?:[:h]?([0-5]?\d))?$/)
+  if (!m) return null
+  const h = Math.min(23, parseInt(m[1], 10))
+  const min = m[2] ? Math.min(59, parseInt(m[2], 10)) : 0
+  return { h, min }
+}
+// tente d'extraire une heure quelque part dans la phrase
+function findHourInTextFR(text: string): {h:number,min:number}|null {
+  const t = normalize(text)
+  // capture la 1re occurrence d'heure
+  const m = t.match(/\b([01]?\d|2[0-3])(?:[:h ]?([0-5]\d))?\b/)
+  if (!m) return null
+  const h = parseInt(m[1],10)
+  const min = m[2] ? parseInt(m[2],10) : 0
+  return { h, min }
 }
 
-// ------------------------------ Replies ------------------------------
+// ---------------- Parsing FR: relatif ----------------
+function parseRelativeFR(text: string, tz: string): Date | null {
+  const t = normalize(text)
+  const now = nowInTZ(tz)
+
+  // minutes
+  let m = t.match(/\bdans\s+(\d+)\s*minutes?\b/)
+  if (m) return addMinutesTZ(now, parseInt(m[1],10), tz)
+
+  // heures
+  m = t.match(/\bdans\s+(\d+)\s*heures?\b/)
+  if (m) return addHoursTZ(now, parseInt(m[1],10), tz)
+
+  // jours
+  m = t.match(/\bdans\s+(\d+)\s*jours?\b/)
+  if (m) return addDaysTZ(now, parseInt(m[1],10), tz)
+
+  // semaines
+  m = t.match(/\bdans\s+(\d+)\s*semaines?\b/)
+  if (m) return addWeeksTZ(now, parseInt(m[1],10), tz)
+
+  return null
+}
+
+// ---------------- Parsing FR: date nommée/explicite ----------------
+function nextWeekdayDate(name: string, from: Date) {
+  const idx = WEEKDAYS.indexOf(name)
+  if (idx < 0) return null
+  const cur = from.getDay()
+  let diff = idx - cur
+  if (diff <= 0) diff += 7
+  const d = new Date(from)
+  d.setDate(d.getDate() + diff)
+  d.setHours(0,0,0,0)
+  return d
+}
+function parseDateTextFR(text: string, tz: string): Date | null {
+  const base = nowInTZ(tz)
+  const t = normalize(text)
+
+  if (/\baujourdhui\b/.test(t) || /\baujourd'hui\b/.test(t)) {
+    const d = new Date(base); d.setHours(0,0,0,0); return d
+  }
+  if (/\bdemain\b/.test(t)) {
+    const d = new Date(base); d.setDate(d.getDate()+1); d.setHours(0,0,0,0); return d
+  }
+  // mercredi prochain etc.
+  for (const w of WEEKDAYS) {
+    const re = new RegExp(`\\b${w}(?:\\s+prochain)?\\b`)
+    const m = t.match(re)
+    if (m) {
+      let d = nextWeekdayDate(w, base)!
+      if (/prochain/.test(m[0])) d.setDate(d.getDate() + 7)
+      return d
+    }
+  }
+  // dd/mm[/yyyy]
+  const fr = t.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\b/)
+  if (fr) {
+    const day = parseInt(fr[1], 10)
+    const mon = parseInt(fr[2], 10)
+    const year = fr[3] ? parseInt(fr[3], 10) : base.getFullYear()
+    const d = new Date(base); d.setFullYear(year, mon-1, day); d.setHours(0,0,0,0); return d
+  }
+  // yyyy-mm-dd
+  const iso = t.match(/\b(20\d{2})-(0?\d|1[0-2])-(0?\d|[12]\d|3[01])\b/)
+  if (iso) {
+    const y = parseInt(iso[1],10), m = parseInt(iso[2],10), da = parseInt(iso[3],10)
+    const d = new Date(base); d.setFullYear(y, m-1, da); d.setHours(0,0,0,0); return d
+  }
+  return null
+}
+
+// ---------------- Utilisateurs (audience) ----------------
+async function searchUsersFromMessage(supabase: any, message: string) {
+  // Renvoie la liste des utilisateurs dont prénom/nom matchent (ilike) la phrase
+  const { data: users } = await supabase
+    .from("utilisateurs")
+    .select("id, prenom, nom, actif")
+    .eq("actif", true)
+  const t = normalize(message)
+  const hits: any[] = []
+  for (const u of users || []) {
+    const full = normalize(`${u.prenom} ${u.nom}`)
+    const prenom = normalize(u.prenom)
+    const nom = normalize(u.nom)
+    // match si au moins prénom ou nom présent (ou proche)
+    if (t.includes(prenom) || t.includes(nom) || t.includes(full)) {
+      hits.push(u)
+      continue
+    }
+    // légère tolérance sur 1 faute simple (levenshtein light = présence de 80% des bigrams)
+    if (isLooseMatch(t, prenom) || isLooseMatch(t, nom)) hits.push(u)
+  }
+  // dédoublonnage par id
+  const uniq = Array.from(new Map(hits.map(u => [u.id, u])).values())
+  return uniq
+}
+function bigrams(s: string) {
+  const t = s.replace(/[^a-z0-9]/g, "")
+  const arr: string[] = []
+  for (let i=0;i<t.length-1;i++) arr.push(t.slice(i,i+2))
+  return arr
+}
+function isLooseMatch(hay: string, needle: string) {
+  const b1 = new Set(bigrams(hay))
+  const b2 = bigrams(needle)
+  if (!b2.length) return false
+  let ok=0
+  for (const b of b2) if (b1.has(b)) ok++
+  return ok / b2.length >= 0.6 // 60% de recouvrement bigram
+}
+
+// ---------------- Extraction Titre ----------------
+function extractTitle(message: string) {
+  const parts = message.split(":")
+  if (parts.length > 1) {
+    const last = parts.slice(1).join(":").trim()
+    if (last.length > 1) return last
+  }
+  // fallback: après "pour ..."
+  const m = message.match(/\b(?:pour|:)\s*(.+)$/i)
+  if (m && m[1].trim()) return m[1].trim()
+  return "Rappel"
+}
+
+// ---------------- Audience detection ----------------
+function detectAudienceKind(text: string): "all"|"list"|"user" {
+  const t = normalize(text)
+  if (
+    /\ba tout le monde\b/.test(t) ||
+    /\bà tout le monde\b/.test(text) ||
+    /\ba tous\b/.test(t) || /\bà tous\b/.test(text) ||
+    /\btous les utilisateurs\b/.test(t) ||
+    /\btoute l(e|a)quipe\b/.test(t)
+  ) return "all"
+  // "à Céline / pour Céline / pour Hélène" etc. => on traitera comme "list" si des users trouvés
+  return "user"
+}
+
+// ---------------- DB: create reminder ----------------
+async function createReminder(supabase: any, args: {
+  created_by: string|null,
+  title: string,
+  due_at_iso: string,
+  audience: "user"|"list"|"all",
+  user_ids: string[],
+}) {
+  const payload = {
+    created_by: args.created_by,
+    title: args.title,
+    body: null,
+    due_at: args.due_at_iso,
+    audience: args.audience,
+    user_ids: args.audience === "list" ? args.user_ids : [],
+    status: "pending",
+    urgent: false,
+  }
+  const ins = await supabase.from("agent_reminders").insert(payload).select("*").single()
+  if (ins.error) {
+    return { ok: false, error: ins.error.message }
+  }
+  return { ok: true, reminder: ins.data }
+}
+
+// ---------------- Reply wrapper (compatible widget) ----------------
 function wrapReply(text: string, extras?: any) {
   const msg = { id: crypto.randomUUID(), text }
   const out: any = { ok: true, reply: text, replies: [msg] }
@@ -251,411 +288,133 @@ function wrapReply(text: string, extras?: any) {
   return out
 }
 
-// ------------------------------ Smalltalk local ------------------------------
-function localSmalltalk(low: string, tz: string) {
-  if (/quel(le)?\s+jour\s+(on|sommes\-?nous|est\-?on)\s*(aujourd.?hui)?\s*\??/.test(low)) {
-    return `On est ${formatFrDate(new Date(), tz)}.`
-  }
-  if (/quelle?\s+heure\s+est\-?il\??/.test(low)) {
-    return `Il est ${new Date().toLocaleTimeString("fr-FR", { timeZone: tz, hour: "2-digit", minute: "2-digit" })}.`
-  }
-  return null
-}
-
-// ------------------------------ Audience & Titre (rappels) ------------------------------
-function normalize(s: string) { return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase() }
-function detectAudienceAll(raw: string): boolean {
-  const t = normalize(raw)
-  if (/\ba\s*tous(\s+les)?\s+utilisateurs?\b/.test(t)) return true
-  if (/\ba\s*toute?\s+l[' ]?equipe\b/.test(t)) return true
-  if (/\b(?:a|à)\s*tous\b/.test(t)) return true
-  if (/\b(?:a|à)\s*tout\s+le\s+monde\b/.test(t)) return true
-  if (/\bpour\s+tous\b/.test(t)) return true
-  if (/\bpour\s+tout\s+le\s+monde\b/.test(t)) return true
-  return false
-}
-function textHasAlias(t: string, alias: string) {
-  const re = new RegExp(`(^|[^\\p{L}])${alias}([^\\p{L}]|$)`, "u")
-  return re.test(t)
-}
-function findMentionedUsers(raw: string, users: Array<{id:string, prenom:string, nom:string, email:string}>) {
-  const t = normalize(raw)
-  const hits: Array<{id:string, label:string}> = []
-  for (const u of users) {
-    const pn = normalize(u.prenom)
-    const nn = normalize(u.nom)
-    const aliases = [pn, nn, `${pn} ${nn}`, `${nn} ${pn}`]
-    if (aliases.some(a => textHasAlias(t, a))) {
-      hits.push({ id: u.id, label: `${u.prenom} ${u.nom}`.trim() })
-    }
-  }
-  return hits
-}
-function extractTitleFromMessage(raw: string, fallback: string) {
-  const lastColon = raw.lastIndexOf(":")
-  if (lastColon >= 0 && lastColon < raw.length - 1) {
-    const tail = raw.slice(lastColon + 1).trim()
-    if (tail.length >= 2) return tail
-  }
-  const m = raw.match(/(?:\bde\b|\bpour\b)\s+(.{3,})$/i)
-  if (m) {
-    const tail = m[1].trim()
-    if (tail.length >= 2) return tail
-  }
-  return fallback
-}
-
-// ------------------------------ Candidats: helpers ------------------------------
-function normalizeLike(s: string) { return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim() }
-
-async function findCandidates(
-  supabase: any,
-  rawQuery: string,
-  secteur?: string | null
-) {
-  const q = normalizeLike(rawQuery)
-  if (!q) return []
-
-  // découpage éventuel (ex: "jean dupont")
-  const parts = q.split(/\s+/).filter(Boolean)
-  let data: any[] = []
-
-  if (parts.length >= 2) {
-    const a = parts[0], b = parts.slice(1).join(" ")
-    // nom=a prenom=b
-    let r1 = await supabase.from("candidats")
-      .select("id, nom, prenom, secteurs, vehicule, actif, ville, email, telephone, date_naissance")
-      .eq("actif", true)
-      .ilike("nom", a + "%")
-      .ilike("prenom", b + "%")
-      .limit(10)
-    data = r1.data || []
-    if (!data.length) {
-      // inversé
-      let r2 = await supabase.from("candidats")
-        .select("id, nom, prenom, secteurs, vehicule, actif, ville, email, telephone, date_naissance")
-        .eq("actif", true)
-        .ilike("nom", b + "%")
-        .ilike("prenom", a + "%")
-        .limit(10)
-      data = r2.data || []
-    }
-  }
-
-  // fallback: contient q dans nom OU prenom
-  if (!data.length) {
-    const r3 = await supabase.from("candidats")
-      .select("id, nom, prenom, secteurs, vehicule, actif, ville, email, telephone, date_naissance")
-      .eq("actif", true)
-      .or(`nom.ilike.%${q}%,prenom.ilike.%${q}%`)
-      .limit(10)
-    data = r3.data || []
-  }
-
-  // si secteur mentionné → on met en tête ceux qui matchent ce secteur
-  if (secteur && ["etages","cuisine","salle","plonge","reception"].includes(secteur)) {
-    const yes = data.filter(c => Array.isArray(c.secteurs) && c.secteurs.includes(secteur))
-    const no  = data.filter(c => !Array.isArray(c.secteurs) || !c.secteurs.includes(secteur))
-    data = [...yes, ...no]
-  }
-
-  return data
-}
-
-function humanVehicule(v?: boolean | null) {
-  if (v === true) return "oui"
-  if (v === false) return "non"
-  return "inconnu"
-}
-function calcAge(date_naissance?: string | null): number | null {
-  if (!date_naissance) return null
-  const d = new Date(date_naissance + "T00:00:00Z")
-  if (isNaN(d.getTime())) return null
-  const today = new Date()
-  let age = today.getUTCFullYear() - d.getUTCFullYear()
-  const m = today.getUTCMonth() - d.getUTCMonth()
-  if (m < 0 || (m === 0 && today.getUTCDate() < d.getUTCDate())) age--
-  return age
-}
-async function getCandidateById(supabase: any, id: string) {
-  const { data } = await supabase.from("candidats")
-    .select("id, nom, prenom, secteurs, vehicule, actif, ville, email, telephone, date_naissance")
-    .eq("id", id).maybeSingle()
-  return data || null
-}
-
-// ------------------------------ Route ------------------------------
+// ---------------- Route ----------------
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS })
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ ok: false, reply: "Méthode non autorisée." }), {
-      status: 405, headers: { ...CORS, "Content-Type": "application/json" }
+    return new Response(JSON.stringify({ ok:false, reply:"Méthode non autorisée." }), {
+      status:405, headers:{...corsHeaders,"Content-Type":"application/json"}
     })
   }
 
   const tz = pickTZ(req)
   const supabase = supaFromReq(req)
   const me = await getMe(supabase)
-  const users = await getAllUsers(supabase)
   const prenom = me?.prenom || "OK"
 
-  const body = await req.json().catch(() => ({}))
+  const body = await req.json().catch(()=>({}))
   const message: string = body?.message ?? ""
-  const fill = body?.fill ?? null
-
-  // ---------- FILL: rappels (inchangé) ----------
-  if (fill?.action === "set_time_from_base" && fill?.base_date_iso && fill?.time && fill?.title) {
-    const base = new Date(fill.base_date_iso)
-    const baseParts = partsFromTZ(base, tz)
-    const hm = String(fill.time).match(/^([0-2]?\d):?([0-5]\d)?$/)
-    const H = hm ? parseInt(hm[1], 10) : 9
-    const M = hm && hm[2] ? parseInt(hm[2], 10) : 0
-    const dueAt = makeDateInTZ(tz, baseParts.year, baseParts.month, baseParts.day, H, M, 0)
-
-    const audience: "all"|"user"|"list" = fill.audience === "all" || fill.audience === "list" ? fill.audience : "user"
-    let user_ids: string[] = []
-    if (audience === "user") user_ids = me?.id ? [me.id] : []
-    if (audience === "list" && Array.isArray(fill.user_ids)) user_ids = fill.user_ids
-
-    const crt = await createReminder(supabase, me?.id ?? null, {
-      title: fill.title, due_at: dueAt.toISOString(), audience, user_ids
-    })
-    if (!crt.ok) {
-      return new Response(JSON.stringify(wrapReply("Erreur lors de la création du rappel.")), {
-        headers: { ...CORS, "Content-Type": "application/json" }
-      })
-    }
-    const who = audience === "all"
-      ? " (à tous les utilisateurs)"
-      : audience === "list"
-        ? ` (${user_ids.map(id => users.find(u => u.id === id)?.prenom || "sélection").join(", ")})`
-        : ""
-    const txt = `C’est noté, ${prenom} : rappel « ${fill.title} » le ${formatFrDateTime(dueAt, tz)}${who}.`
-    return new Response(JSON.stringify(wrapReply(txt, { reminders: crt.reminders })), {
-      headers: { ...CORS, "Content-Type": "application/json" }
-    })
-  }
-  if (fill?.action === "set_recipients" && Array.isArray(fill.user_ids) && fill.title) {
-    const audience: "list" = "list"
-    if (fill.base_date_iso && fill.time) {
-      const base = new Date(fill.base_date_iso)
-      const baseParts = partsFromTZ(base, tz)
-      const hm = String(fill.time).match(/^([0-2]?\d):?([0-5]\d)?$/)
-      const H = hm ? parseInt(hm[1], 10) : 9
-      const M = hm && hm[2] ? parseInt(hm[2], 10) : 0
-      const dueAt = makeDateInTZ(tz, baseParts.year, baseParts.month, baseParts.day, H, M, 0)
-      const crt = await createReminder(supabase, me?.id ?? null, {
-        title: fill.title, due_at: dueAt.toISOString(), audience, user_ids: fill.user_ids
-      })
-      if (!crt.ok) {
-        return new Response(JSON.stringify(wrapReply("Erreur lors de la création du rappel.")), {
-          headers: { ...CORS, "Content-Type": "application/json" }
-        })
-      }
-      const who = ` (${fill.user_ids.map(id => users.find(u => u.id === id)?.prenom || "sélection").join(", ")})`
-      const txt = `C’est noté, ${prenom} : rappel « ${fill.title} » le ${formatFrDateTime(dueAt, tz)}${who}.`
-      return new Response(JSON.stringify(wrapReply(txt, { reminders: crt.reminders })), {
-        headers: { ...CORS, "Content-Type": "application/json" }
-      })
-    }
-    if (fill.base_date_iso) {
-      const need = { title: fill.title, base_date_iso: fill.base_date_iso }
-      const text = `Il me manque l’heure, ${prenom}. Tu veux planifier « ${fill.title} » à quel horaire ?`
-      const choices = [
-        { label: "09:00", payload: { action: "set_time_from_base", time: "09:00", title: fill.title, base_date_iso: need.base_date_iso, audience: "list", user_ids: fill.user_ids } },
-        { label: "15:00", payload: { action: "set_time_from_base", time: "15:00", title: fill.title, base_date_iso: need.base_date_iso, audience: "list", user_ids: fill.user_ids } },
-        { label: "18:00", payload: { action: "set_time_from_base", time: "18:00", title: fill.title, base_date_iso: need.base_date_iso, audience: "list", user_ids: fill.user_ids } },
-      ]
-      return new Response(JSON.stringify(wrapReply(text, { choices, meta: { need_time: need } })), {
-        headers: { ...CORS, "Content-Type": "application/json" }
-      })
-    }
-  }
-
-  // ---------- Vide ----------
   if (!message.trim()) {
-    return new Response(JSON.stringify(wrapReply("Message vide.")), {
-      headers: { ...CORS, "Content-Type": "application/json" }
-    })
+    return new Response(JSON.stringify(wrapReply("Message vide.")), { headers:{...corsHeaders,"Content-Type":"application/json"} })
   }
 
-  // ---------- Smalltalk local ----------
   const low = normalize(message)
-  const small = localSmalltalk(low, tz)
-  if (small) {
-    return new Response(JSON.stringify(wrapReply(small)), {
-      headers: { ...CORS, "Content-Type": "application/json" }
+
+  // ---------- Smalltalk fixes ----------
+  if (/quel(le)?\s+jour/.test(low) || /date\s+d['e]?\s*aujourd/.test(low)) {
+    const txt = `On est ${formatFrDate(nowInTZ(tz), tz)}.`
+    return new Response(JSON.stringify(wrapReply(txt)), { headers:{...corsHeaders,"Content-Type":"application/json"} })
+  }
+  if (/quelle?\s+heure\s+est.?il/.test(low) || /\bheure\?$/.test(low)) {
+    const txt = `Il est ${new Date().toLocaleTimeString("fr-FR",{ timeZone: tz, hour:"2-digit", minute:"2-digit" })}.`
+    return new Response(JSON.stringify(wrapReply(txt)), { headers:{...corsHeaders,"Content-Type":"application/json"} })
+  }
+
+  // ---------- Détection "rappel" ----------
+  const isReminder = /\brappel(e|)\b/.test(low) || /\bnote\s+.*rappel\b/.test(low) || /\bmet(s)?\s+.*rappel\b/.test(low)
+                 || /\bdans\s+\d+\s*(minutes?|heures?|jours?|semaines?)\b/.test(low)
+                 || /\bdemain\b/.test(low) || /\baujourdhui\b/.test(low) || /\bprochain\b/.test(low)
+  if (!isReminder) {
+    // Pour l’instant on fige sur rappels uniquement, tant que la partie candidats/clients n’est pas réactivée.
+    const help = [
+      "Je peux t’aider avec tes rappels ⏰",
+      "Exemples :",
+      "• « Rappelle-moi dans 5 minutes : envoyer le mail »",
+      "• « Fais un rappel demain à 10h30 : appeler la gouvernante »",
+      "• « Rappel à Hélène dans 15 minutes : contacter Y »",
+      "• « Rappel à tout le monde lundi prochain à 11h : mettre vos CP à jour »",
+    ].join("\n")
+    return new Response(JSON.stringify(wrapReply(help)), { headers:{...corsHeaders,"Content-Type":"application/json"} })
+  }
+
+  // ---------- Parsing date/heure ----------
+  // 1) relatif prioritaire ("dans 5 minutes")
+  let due = parseRelativeFR(message, tz)
+
+  // 2) sinon date explicite ("demain", "lundi", "03/09"), + heure si précisée
+  if (!due) {
+    const baseDay = parseDateTextFR(message, tz) || nowInTZ(tz)
+    // heure si présente
+    const hm = findHourInTextFR(message)
+    if (hm) {
+      const d = cloneInTZ(baseDay, tz)
+      d.setHours(hm.h, hm.min, 0, 0)
+      due = d
+    } else {
+      // pas d'heure → par défaut: 10:00 (heure bureau)
+      const d = cloneInTZ(baseDay, tz)
+      d.setHours(10, 0, 0, 0)
+      due = d
+    }
+  }
+
+  // Sécurité : si malgré tout due null → 30 min plus tard
+  if (!due) due = addMinutesTZ(nowInTZ(tz), 30, tz)
+
+  // ---------- Titre ----------
+  const title = extractTitle(message)
+
+  // ---------- Audience ----------
+  let audience: "user"|"list"|"all" = detectAudienceKind(message)
+  let user_ids: string[] = []
+
+  if (audience === "all") {
+    // rien à faire, user_ids vide
+  } else {
+    // Cherche des personnes nommées dans la phrase
+    const found = await searchUsersFromMessage(supabase, message)
+    if (found.length > 0) {
+      audience = "list"
+      user_ids = found.map(u => u.id)
+    } else {
+      // par défaut: l’émetteur
+      audience = "user"
+      if (me?.id) user_ids = [me.id]
+    }
+  }
+
+  // ---------- Écriture BD ----------
+  const { ok, error, reminder } = await createReminder(supabase, {
+    created_by: me?.id ?? null,
+    title,
+    due_at_iso: toISO(due),
+    audience,
+    user_ids,
+  })
+  if (!ok) {
+    return new Response(JSON.stringify(wrapReply("Erreur lors de la création du rappel.")), {
+      headers:{...corsHeaders,"Content-Type":"application/json"}
     })
   }
 
-  // ---------- Groq prioritaire ----------
-  let intent: any = null
-  try { intent = await groqParse(message, tz, me) } catch { intent = { intent: "unknown" } }
-
-  // =======================
-  // Rappels (existants)
-  // =======================
-  if (intent.intent === "reminder.create") {
-    let title = extractTitleFromMessage(message, (intent.title || intent.note || "Rappel").toString().trim() || "Rappel")
-    // audience
-    let audience: "all"|"user"|"list" = "user"
-    let user_ids: string[] = me?.id ? [me.id] : []
-    const isAll = detectAudienceAll(message)
-    if (isAll) { audience = "all"; user_ids = [] }
-    else {
-      const hits = findMentionedUsers(message, users).filter(u => !me || u.id !== me.id)
-      if (hits.length === 1) { audience = "list"; user_ids = [hits[0].id] }
-      else if (hits.length > 1) {
-        // choix destinataires…
-        let parsed = parseDateTextFR(intent.dateText || "", tz)
-        if (!parsed) parsed = parseDateTextFR(message, tz)
-        let ymd = parsed && parsed.mode === "ymd" ? parsed : null
-        if (!ymd) { const p = partsFromTZ(new Date(), tz); ymd = { mode: "ymd", y: p.year, m: p.month, d: p.day } as any }
-        const baseDate = makeDateInTZ(tz, (ymd as any).y, (ymd as any).m, (ymd as any).d, 0, 0, 0)
-        const text = `Tu veux l’envoyer à qui exactement ?`
-        const choices = hits.slice(0,5).map(h => ({
-          label: h.label,
-          payload: { action: "set_recipients", user_ids: [h.id], title, base_date_iso: baseDate.toISOString() }
-        }))
-        return new Response(JSON.stringify(wrapReply(text, { choices })), {
-          headers: { ...CORS, "Content-Type": "application/json" }
-        })
-      }
-    }
-    // relatifs ?
-    const relA = parseRelativeFR(intent.dateText || "")
-    const relB = relA == null ? parseRelativeFR(message) : null
-    const relDelta = relA ?? relB
-    if (relDelta != null) {
-      const dueAt = new Date(Date.now() + relDelta)
-      const crt = await createReminder(supabase, me?.id ?? null, { title, due_at: dueAt.toISOString(), audience, user_ids })
-      if (!crt.ok) return new Response(JSON.stringify(wrapReply("Erreur lors de la création du rappel.")), { headers: { ...CORS, "Content-Type": "application/json" } })
-      const who = audience === "all" ? " (à tous les utilisateurs)" : audience === "list" ? ` (${user_ids.map(id => users.find(u => u.id === id)?.prenom || "sélection").join(", ")})` : ""
-      const nice = `C’est noté, ${prenom} : rappel « ${title} » le ${formatFrDateTime(dueAt, tz)}${who}.`
-      return new Response(JSON.stringify(wrapReply(nice, { reminders: crt.reminders })), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    // calendaire
-    let parsed = parseDateTextFR(intent.dateText || "", tz); if (!parsed) parsed = parseDateTextFR(message, tz)
-    let ymd = parsed && parsed.mode === "ymd" ? parsed : null
-    if (!ymd) { const p = partsFromTZ(new Date(), tz); ymd = { mode: "ymd", y: p.year, m: p.month, d: p.day } as any }
-    let hm = parseHourMinuteFR(intent.timeText || ""); if (!hm) hm = parseHourFromText(message)
-    if (!hm) {
-      const baseDate = makeDateInTZ(tz, (ymd as any).y, (ymd as any).m, (ymd as any).d, 0, 0, 0)
-      const need = { title, base_date_iso: baseDate.toISOString() }
-      const text = `Il me manque l’heure, ${prenom}. Tu veux planifier « ${title} » à quel horaire ?`
-      const choices = [
-        { label: "09:00", payload: { action: "set_time_from_base", time: "09:00", title, base_date_iso: need.base_date_iso, audience, user_ids } },
-        { label: "15:00", payload: { action: "set_time_from_base", time: "15:00", title, base_date_iso: need.base_date_iso, audience, user_ids } },
-        { label: "18:00", payload: { action: "set_time_from_base", time: "18:00", title, base_date_iso: need.base_date_iso, audience, user_ids } },
-      ]
-      return new Response(JSON.stringify(wrapReply(text, { choices, meta: { need_time: need } })), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    const dueAt = makeDateInTZ(tz, (ymd as any).y, (ymd as any).m, (ymd as any).d, hm.h, hm.min, 0)
-    const crt = await createReminder(supabase, me?.id ?? null, { title, due_at: dueAt.toISOString(), audience, user_ids })
-    if (!crt.ok) return new Response(JSON.stringify(wrapReply("Erreur lors de la création du rappel.")), { headers: { ...CORS, "Content-Type": "application/json" } })
-    const who = audience === "all" ? " (à tous les utilisateurs)" : audience === "list" ? ` (${user_ids.map(id => users.find(u => u.id === id)?.prenom || "sélection").join(", ")})` : ""
-    const nice = `C’est noté, ${prenom} : rappel « ${title} » le ${formatFrDateTime(dueAt, tz)}${who}.`
-    return new Response(JSON.stringify(wrapReply(nice, { reminders: crt.reminders })), { headers: { ...CORS, "Content-Type": "application/json" } })
+  // ---------- Accusé de réception ----------
+  let cible = ""
+  if (audience === "all") cible = " (à tous les utilisateurs)"
+  else if (audience === "list") {
+    // Affiche prénoms trouvés (limite 3)
+    const labels = await (async ()=>{
+      if (!user_ids.length) return []
+      const { data } = await supabase.from("utilisateurs").select("prenom,nom").in("id", user_ids)
+      return (data||[]).map(u => u.prenom || u.nom ? `${u.prenom ?? ""} ${u.nom ?? ""}`.trim() : "Utilisateur").slice(0,3)
+    })()
+    if (labels.length === 1) cible = ` (${labels[0]})`
+    else if (labels.length > 1) cible = ` (${labels.join(", ")}${user_ids.length>3?", …":""})`
+  } else if (audience === "user") {
+    // rien de spécial (toi)
   }
 
-  // =======================
-  // CANDIDATS — résolution & attributs
-  // =======================
-
-  // FILL: action déclenchée par un bouton de choix candidat
-  if (fill?.action === "candidate_info" && fill?.candidate_id && fill?.attribute) {
-    const c = await getCandidateById(supabase, fill.candidate_id)
-    if (!c) {
-      return new Response(JSON.stringify(wrapReply("Candidat introuvable.")), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    const full = `${c.nom} ${c.prenom}`.trim()
-    const attr = String(fill.attribute)
-    if (attr === "vehicule") {
-      return new Response(JSON.stringify(wrapReply(`${full} est-il véhiculé ? → ${humanVehicule(c.vehicule)}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attr === "age") {
-      const age = calcAge(c.date_naissance)
-      return new Response(JSON.stringify(wrapReply(`${full} a ${age ?? "un âge inconnu"}${age ? " ans" : ""}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attr === "secteurs") {
-      const list = Array.isArray(c.secteurs) && c.secteurs.length ? c.secteurs.join(", ") : "aucun secteur renseigné"
-      return new Response(JSON.stringify(wrapReply(`Secteurs de ${full} : ${list}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attr === "telephone") {
-      return new Response(JSON.stringify(wrapReply(`Téléphone de ${full} : ${c.telephone || "non renseigné"}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attr === "email") {
-      return new Response(JSON.stringify(wrapReply(`Email de ${full} : ${c.email || "non renseigné"}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attr === "ville") {
-      return new Response(JSON.stringify(wrapReply(`Ville de ${full} : ${c.ville || "non renseignée"}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    // fallback
-    return new Response(JSON.stringify(wrapReply(`Attribut « ${attr} » non pris en charge (encore).`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-  }
-
-  if (intent.intent === "candidate.attribute" || intent.intent === "candidate.resolve") {
-    const name = (intent.candidateName || "").trim()
-    const secteur = (intent.secteur || null) as (null | "etages"|"cuisine"|"salle"|"plonge"|"reception")
-    const attribute = intent.attribute || null
-
-    if (!name) {
-      return new Response(JSON.stringify(wrapReply(`Tu parles de quel·le candidat·e, ${prenom} ?`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    const matches = await findCandidates(supabase, name, secteur)
-
-    if (!matches.length) {
-      return new Response(JSON.stringify(wrapReply(`Je ne trouve aucun·e candidat·e proche de « ${name} ».`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (matches.length > 1) {
-      const choices = matches.slice(0, 6).map((c: any) => {
-        const label = `${c.nom} ${c.prenom}`.trim()
-        // si demande d’attribut → payload pour réponse directe après clic
-        if (attribute) {
-          return { label, payload: { action: "candidate_info", candidate_id: c.id, attribute } }
-        }
-        // sinon, simple “sélection”
-        return { label, payload: { action: "candidate_info", candidate_id: c.id, attribute: "secteurs" } }
-      })
-      const text = `J’ai plusieurs correspondances. De qui parlais-tu ?`
-      return new Response(JSON.stringify(wrapReply(text, { choices })), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-
-    // un seul match
-    const c = matches[0]
-    const full = `${c.nom} ${c.prenom}`.trim()
-    if (!attribute || intent.intent === "candidate.resolve") {
-      // simple confirmation de résolution
-      const list = Array.isArray(c.secteurs) && c.secteurs.length ? c.secteurs.join(", ") : "—"
-      const text = `Trouvé : ${full} (secteurs: ${list}).`
-      return new Response(JSON.stringify(wrapReply(text, { entity: { type: "candidate", id: c.id, label: full } })), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attribute === "vehicule") {
-      return new Response(JSON.stringify(wrapReply(`${full} est-il véhiculé ? → ${humanVehicule(c.vehicule)}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attribute === "age") {
-      const age = calcAge(c.date_naissance)
-      return new Response(JSON.stringify(wrapReply(`${full} a ${age ?? "un âge inconnu"}${age ? " ans" : ""}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attribute === "secteurs") {
-      const list = Array.isArray(c.secteurs) && c.secteurs.length ? c.secteurs.join(", ") : "aucun secteur renseigné"
-      return new Response(JSON.stringify(wrapReply(`Secteurs de ${full} : ${list}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attribute === "telephone") {
-      return new Response(JSON.stringify(wrapReply(`Téléphone de ${full} : ${c.telephone || "non renseigné"}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attribute === "email") {
-      return new Response(JSON.stringify(wrapReply(`Email de ${full} : ${c.email || "non renseigné"}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    if (attribute === "ville") {
-      return new Response(JSON.stringify(wrapReply(`Ville de ${full} : ${c.ville || "non renseignée"}.`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-    }
-    return new Response(JSON.stringify(wrapReply(`Attribut « ${attribute} » non pris en charge (encore).`)), { headers: { ...CORS, "Content-Type": "application/json" } })
-  }
-
-  // ---------- Fallback ----------
-  const txt = `Pour l’instant, je gère les rappels ⏰ et la recherche candidats 👤 (véhicule, âge, secteurs, téléphone, email, ville).`
-  return new Response(JSON.stringify(wrapReply(txt)), {
-    headers: { ...CORS, "Content-Type": "application/json" }
+  const txt = `C’est noté, ${prenom} : rappel « ${title} » le ${formatFrDateTime(due, tz)}${cible}.`
+  return new Response(JSON.stringify(wrapReply(txt, { reminders: [reminder] })), {
+    headers:{...corsHeaders,"Content-Type":"application/json"}
   })
 })

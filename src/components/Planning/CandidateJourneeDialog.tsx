@@ -1,3 +1,4 @@
+// CandidateJourneeDialog.tsx
 import { useEffect, useMemo, useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -10,6 +11,9 @@ import type { CandidatDispoWithNom } from "@/types/types-front"
 import { format, startOfWeek, endOfWeek, addDays } from "date-fns"
 import { fr } from "date-fns/locale"
 
+// —————————————————————————————————————————————————————
+// Types
+// —————————————————————————————————————————————————————
 type Statut = "Dispo" | "Non Dispo" | "Non Renseigné"
 
 interface Props {
@@ -40,6 +44,11 @@ type DispoInsert = {
   dispo_nuit?: boolean | null
 }
 
+// —————————————————————————————————————————————————————
+// Utils
+// —————————————————————————————————————————————————————
+
+/** Secteur "Étages" (tolérant aux accents/espaces) */
 const isEtagesSecteur = (s?: string | null) =>
   !!(s || "")
     .normalize("NFD")
@@ -47,6 +56,35 @@ const isEtagesSecteur = (s?: string | null) =>
     .trim()
     .toLowerCase()
     .includes("etages")
+
+/** Lit le 1er secteur actif choisi dans la page Planning (persisté par ta page) */
+const readActiveSecteurFromLS = (): string | null => {
+  try {
+    const raw = localStorage.getItem("planning.selectedSecteurs")
+    if (!raw) return null
+    const arr = JSON.parse(raw)
+    if (Array.isArray(arr) && arr[0] && typeof arr[0] === "string") {
+      return arr[0]
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** Retourne un secteur fiable pour l’enregistrement (évite "Inconnu") */
+const normalizeSecteurForSave = (incoming: string): string => {
+  const s = (incoming || "").trim()
+  if (s && s.toLowerCase() !== "inconnu") return s
+  const fromLS = readActiveSecteurFromLS()
+  if (fromLS) return fromLS
+  // valeur par défaut raisonnable si vraiment rien d’autre
+  return "Étages"
+}
+
+// —————————————————————————————————————————————————————
+// Composant
+// —————————————————————————————————————————————————————
 
 export function CandidateJourneeDialog({
   open,
@@ -61,7 +99,9 @@ export function CandidateJourneeDialog({
   creneauVerrouille,
   onSaved,
 }: Props) {
-  const isEtages = isEtagesSecteur(secteur)
+  // ✅ Normalisation secteur pour toutes les requêtes & payloads
+  const secteurToUse = useMemo(() => normalizeSecteurForSave(secteur), [secteur])
+  const isEtages = isEtagesSecteur(secteurToUse)
 
   const [modeJournee, setModeJournee] = useState<boolean>(false)
   const [journee, setJournee] = useState<Tri>("Non Renseigné")
@@ -104,6 +144,7 @@ export function CandidateJourneeDialog({
       setSoir("Non Dispo")
       return
     }
+
     if (dMatin === true && dSoir === true) {
       setModeJournee(true)
       setJournee("Dispo")
@@ -118,30 +159,47 @@ export function CandidateJourneeDialog({
   }
 
   useEffect(() => {
-    if (!open) return
-    initFromRow()
+    if (!open) return initFromRow()
     ;(async () => {
       const { data } = await supabase
         .from("disponibilites")
         .select("statut, dispo_matin, dispo_soir, commentaire")
         .eq("candidat_id", candidatId)
         .eq("date", date)
-        .eq("secteur", secteur)
+        .eq("secteur", secteurToUse) // ✅ utiliser secteur normalisé
         .maybeSingle()
       if (data) initFromRow(data as any)
+      else initFromRow()
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, candidatId, date, secteur])
+  }, [open, candidatId, date, secteurToUse])
 
   const selectJournee = (s: Tri) => {
     setModeJournee(true)
     setJournee(s)
-    if (s === "Dispo") { setMatin("Dispo"); setSoir("Dispo") }
-    else if (s === "Non Dispo") { setMatin("Non Dispo"); setSoir("Non Dispo") }
-    else { setMatin("Non Renseigné"); setSoir("Non Renseigné") }
+    if (s === "Dispo") {
+      setMatin("Dispo")
+      setSoir("Dispo")
+    } else if (s === "Non Dispo") {
+      setMatin("Non Dispo")
+      setSoir("Non Dispo")
+    } else {
+      setMatin("Non Renseigné")
+      setSoir("Non Renseigné")
+    }
   }
-  const selectMatin = (s: Tri) => { setModeJournee(false); setJournee("Non Renseigné"); setMatin(s) }
-  const selectSoir  = (s: Tri)  => { setModeJournee(false); setJournee("Non Renseigné"); setSoir(s) }
+
+  const selectMatin = (s: Tri) => {
+    setModeJournee(false)
+    setJournee("Non Renseigné")
+    setMatin(s)
+  }
+
+  const selectSoir = (s: Tri) => {
+    setModeJournee(false)
+    setJournee("Non Renseigné")
+    setSoir(s)
+  }
 
   const triToBool = (t: Tri): boolean | null =>
     t === "Dispo" ? true : t === "Non Dispo" ? false : null
@@ -157,8 +215,8 @@ export function CandidateJourneeDialog({
       return { statut, matin: m, soir: null, commentaire: commentaire || null }
     }
     if (modeJournee) {
-      if (journee === "Dispo")     return { statut: "Dispo",       matin: true,  soir: true,  commentaire: commentaire || null }
-      if (journee === "Non Dispo") return { statut: "Non Dispo",   matin: false, soir: false, commentaire: commentaire || null }
+      if (journee === "Dispo") return { statut: "Dispo", matin: true, soir: true, commentaire: commentaire || null }
+      if (journee === "Non Dispo") return { statut: "Non Dispo", matin: false, soir: false, commentaire: commentaire || null }
       return { statut: "Non Renseigné", matin: null, soir: null, commentaire: commentaire || null }
     }
     const m = triToBool(matin)
@@ -175,12 +233,13 @@ export function CandidateJourneeDialog({
       built.matin === null &&
       (isEtages ? true : built.soir === null)
 
+    // ✅ on recherche/écrit toujours avec secteurToUse
     const { data: existing } = await supabase
       .from("disponibilites")
       .select("id")
       .eq("candidat_id", candidatId)
       .eq("date", dateISO)
-      .eq("secteur", secteur)
+      .eq("secteur", secteurToUse)
       .limit(1)
       .maybeSingle()
 
@@ -192,7 +251,7 @@ export function CandidateJourneeDialog({
     const payload: DispoInsert = {
       candidat_id: candidatId,
       date: dateISO,
-      secteur,
+      secteur: secteurToUse, // ✅ normalisé
       service: service || null,
       statut: built.statut,
       commentaire: built.commentaire,
@@ -214,25 +273,23 @@ export function CandidateJourneeDialog({
 
       if (!applyWeek) {
         await upsertOne(date, built)
+        try {
+          window.dispatchEvent(new CustomEvent("dispos:updated", { detail: { candidatId, date } }))
+          window.dispatchEvent(new CustomEvent("adaptel:refresh-planning-candidat", { detail: { candidatId, date, secteur: secteurToUse } }))
+        } catch {}
       } else {
         const monday = startOfWeek(new Date(date), { weekStartsOn: 1 })
         const sunday = endOfWeek(new Date(date), { weekStartsOn: 1 })
         for (let d = new Date(monday); d <= sunday; d = addDays(d, 1)) {
-          await upsertOne(format(d, "yyyy-MM-dd"), built)
+          const di = format(d, "yyyy-MM-dd")
+          await upsertOne(di, built)
           try {
-            window.dispatchEvent(new CustomEvent("dispos:updated", {
-              detail: { candidatId, date: format(d, "yyyy-MM-dd") }
-            }))
+            window.dispatchEvent(new CustomEvent("dispos:updated", { detail: { candidatId, date: di } }))
           } catch {}
         }
       }
 
       toast({ title: "Disponibilité enregistrée" })
-      try {
-        window.dispatchEvent(new CustomEvent("dispos:updated", { detail: { candidatId, date } }))
-        window.dispatchEvent(new CustomEvent("adaptel:refresh-planning-candidat", { detail: { candidatId, date, secteur } }))
-        window.dispatchEvent(new CustomEvent("dispos:updated", { detail: {} as any }))
-      } catch {}
 
       onSaved?.({
         statut: built.statut,
@@ -291,13 +348,27 @@ export function CandidateJourneeDialog({
           <div className="space-y-4">
             <div>
               <Label className="text-sm font-medium">{isEtages ? "Créneau" : "Créneaux"}</Label>
-
               <div className="mt-2 grid grid-cols-[140px_1fr] items-center gap-3">
                 <div className="text-[13px] text-gray-700">Matin / Midi</div>
                 <div className="grid grid-cols-3 gap-2">
-                  <Btn active={(!isEtages && !modeJournee && matin === "Dispo") || (isEtages && matin === "Dispo")} onClick={() => selectMatin("Dispo")}>Dispo</Btn>
-                  <Btn active={(!isEtages && !modeJournee && matin === "Non Dispo") || (isEtages && matin === "Non Dispo")} onClick={() => selectMatin("Non Dispo")}>Non Dispo</Btn>
-                  <Btn active={(!isEtages && !modeJournee && matin === "Non Renseigné") || (isEtages && matin === "Non Renseigné")} onClick={() => selectMatin("Non Renseigné")}>Non renseigné</Btn>
+                  <Btn
+                    active={(!isEtages && !modeJournee && matin === "Dispo") || (isEtages && matin === "Dispo")}
+                    onClick={() => selectMatin("Dispo")}
+                  >
+                    Dispo
+                  </Btn>
+                  <Btn
+                    active={(!isEtages && !modeJournee && matin === "Non Dispo") || (isEtages && matin === "Non Dispo")}
+                    onClick={() => selectMatin("Non Dispo")}
+                  >
+                    Non Dispo
+                  </Btn>
+                  <Btn
+                    active={(!isEtages && !modeJournee && matin === "Non Renseigné") || (isEtages && matin === "Non Renseigné")}
+                    onClick={() => selectMatin("Non Renseigné")}
+                  >
+                    Non renseigné
+                  </Btn>
                 </div>
               </div>
 
