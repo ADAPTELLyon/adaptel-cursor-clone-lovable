@@ -132,10 +132,15 @@ export function CellulePlanning({
     return (
       <>
         <div
-          className="h-full bg-gray-100 rounded flex items-center justify-center cursor-pointer hover:bg-gray-200"
+          className="h-full rounded relative shadow-[inset_0_0_0_1px_rgba(203,213,225,0.9)] hover:shadow-md overflow-hidden cursor-pointer flex items-center justify-center"
+          style={{
+            backgroundColor: "#ffffff",
+            backgroundImage:
+              "repeating-linear-gradient(45deg, rgba(0,0,0,0.03) 0, rgba(0,0,0,0.03) 10px, transparent 10px, transparent 20px)",
+          }}
           onClick={() => setOpenDialog(true)}
         >
-          <Plus className="h-4 w-4 text-gray-400" />
+          <Plus className="h-4 w-4 text-gray-500" />
         </div>
         <CommandeJourneeDialog
           open={openDialog}
@@ -150,6 +155,7 @@ export function CellulePlanning({
       </>
     )
   }
+ 
 
   const statutColor = statutColors[commande.statut] || { bg: "#e5e7eb", text: "#000000" }
   const borderColor = statutBorders[commande.statut] || "#d1d5db"

@@ -3,7 +3,7 @@ import MainLayout from "@/components/main-layout"
 import { SectionFixeCandidates } from "@/components/Planning/section-fixe-candidates"
 import { PlanningCandidateTable } from "@/components/Planning/PlanningCandidateTable"
 import { supabase } from "@/lib/supabase"
-import { addDays, endOfWeek, format, getWeek, parseISO, startOfWeek, addWeeks, subDays } from "date-fns"
+import { addDays, endOfWeek, format, getISOWeek, parseISO, startOfWeek, addWeeks, subDays } from "date-fns"
 import type {
   JourPlanningCandidat,
   CommandeFull,
@@ -206,7 +206,7 @@ export default function Planning() {
   const computeDateRange = useCallback((): { from: string; to: string; includePrev: boolean } => {
     const today = new Date()
     const mondayBase = startOfWeek(today, { weekStartsOn: 1 })
-    const currentWeek = getWeek(today, { weekStartsOn: 1 })
+    const currentWeek = getISOWeek(today)
     const allWeeks = selectedSemaine === "Toutes"
 
     if (allWeeks) {
@@ -395,7 +395,7 @@ export default function Planning() {
     _toutAfficherBool: boolean
   ) => {
     const newFiltered: typeof rawPlanning = {}
-    const currentWeekStr = getWeek(new Date(), { weekStartsOn: 1 }).toString()
+    const currentWeekStr = getISOWeek(new Date()).toString()
 
     const matchSearchTerm = (val: string) =>
       searchText.trim().toLowerCase().split(" ").every((term) => val.toLowerCase().includes(term))
@@ -413,7 +413,7 @@ export default function Planning() {
     if (!isToutes && selectedWeekNum) {
       outer: for (const jours of Object.values(rawPlanning)) {
         for (const j of jours) {
-          const w = getWeek(parseISO(j.date), { weekStartsOn: 1 })
+          const w = getISOWeek(parseISO(j.date))
           if (w === selectedWeekNum) {
             mondayOfSelectedWeek = startOfWeek(parseISO(j.date), { weekStartsOn: 1 })
             break outer
@@ -424,12 +424,12 @@ export default function Planning() {
     }
 
     const weekMatch = (dateISO: string) => {
-      const w = getWeek(parseISO(dateISO), { weekStartsOn: 1 }).toString()
+      const w = getISOWeek(parseISO(dateISO)).toString()
       return isToutes ? parseInt(w) >= parseInt(currentWeekStr) : w === String(selectedWeekNum)
     }
     const weekInPrev2 = (dateISO: string) => {
       if (isToutes) return false
-      const w = getWeek(parseISO(dateISO), { weekStartsOn: 1 }).toString()
+      const w = getISOWeek(parseISO(dateISO)).toString()
       return prevWeeks.has(w)
     }
 
@@ -601,7 +601,7 @@ export default function Planning() {
           const dispoJour = dispoCandidat.find((d) => d.date === dt) ?? null
           const composed = composeJour(dt, dispoJour as any, cs as any)
 
-          const w = getWeek(parseISO(dt), { weekStartsOn: 1 }).toString()
+          const w = getISOWeek(parseISO(dt)).toString()
           semaines.add(w)
 
           jours[dt] = {
@@ -711,7 +711,7 @@ export default function Planning() {
   }, [candidateNames])
 
   /* --------- Effects --------- */
-  useEffect(() => { if (semaineEnCours) setSelectedSemaine(getWeek(new Date(), { weekStartsOn: 1 }).toString()) }, [semaineEnCours])
+  useEffect(() => { if (semaineEnCours) setSelectedSemaine(getISOWeek(new Date()).toString()) }, [semaineEnCours])
 
   useEffect(() => { fetchPlanning() }, [fetchPlanning, selectedSemaine, selectedSecteurs])
 
@@ -737,7 +737,7 @@ export default function Planning() {
     setToutAfficher(false)
     setSemaineEnCours(true)
     setSemaine(format(new Date(), "yyyy-MM-dd"))
-    setSelectedSemaine(getWeek(new Date(), { weekStartsOn: 1 }).toString())
+    setSelectedSemaine(getISOWeek(new Date()).toString())
   }
 
   /* --------- Realtime (inchangé) --------- */
