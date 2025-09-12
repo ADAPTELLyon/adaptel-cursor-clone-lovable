@@ -1,3 +1,4 @@
+// src/pages/Parametrages.tsx
 import MainLayout from "@/components/main-layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import OngletServices from "@/components/parametrages/OngletServices";
@@ -8,6 +9,9 @@ import OngletPostes from "@/components/parametrages/OngletPostes";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { Settings, BarChart3 } from "lucide-react";
+
+// ✅ Bouton + pop-up de génération PDF (test)
+import PlanningClientExportDialog from "@/components/PlanningClientExportDialog";
 
 export default function Parametrages() {
   const navigate = useNavigate();
@@ -47,17 +51,24 @@ export default function Parametrages() {
             <TabsContent value="postes">
               <OngletPostes />
             </TabsContent>
+
             <TabsContent value="admin">
               <div className="space-y-4">
                 <p className="text-muted-foreground text-sm">
                   Zone d’administration avancée pour vos indicateurs et analyses.
                 </p>
-                <Button
-                  onClick={() => navigate("/reporting")}
-                  className="bg-[#840404] hover:bg-[#750303] text-white flex items-center gap-2"
-                >
-                  <BarChart3 className="w-4 h-4" /> Accéder au reporting
-                </Button>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    onClick={() => navigate("/reporting")}
+                    className="bg-[#840404] hover:bg-[#750303] text-white flex items-center gap-2"
+                  >
+                    <BarChart3 className="w-4 h-4" /> Accéder au reporting
+                  </Button>
+
+                  {/* ✅ Nouveau bouton de test : ouvre le pop-up secteur/semaine/client puis génère le PDF local */}
+                  <PlanningClientExportDialog />
+                </div>
               </div>
             </TabsContent>
           </div>
