@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState } from "react"
 import { Plus } from "lucide-react"
 import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns"
 import { statutColors, disponibiliteColors } from "@/lib/colors"
@@ -40,11 +40,14 @@ export function PlanningCandidateTable({
   selectedSecteurs,
   selectedSemaine,
   onRefresh,
+  /** 👇 nouveau : mapping "Nom Prénom" -> candidat_id pour fiabiliser les lignes synthétiques */
+  candidateIdsByLabel,
 }: {
   planning: Record<string, JourPlanningCandidat[]>
   selectedSecteurs: string[]
   selectedSemaine: string
   onRefresh: () => void
+  candidateIdsByLabel: Record<string, string>
 }) {
   const [heuresParCandidat, setHeuresParCandidat] = useState<Record<string, string>>({})
 
@@ -115,11 +118,16 @@ export function PlanningCandidateTable({
       const heures: Record<string, string> = {}
 
       for (const candidatNom of Object.keys(planning)) {
-        let candidatId: string | null = null
-        for (const jour of planning[candidatNom]) {
-          candidatId = jour.disponibilite?.candidat_id || jour.commande?.candidat_id
-          if (candidatId) break
+        // 🔧 IMPORTANT : on récupère l'id fiable depuis le mapping label->id,
+        // et on fallback sur l’ancienne heuristique si besoin.
+        let candidatId: string | null = candidateIdsByLabel[candidatNom] || null
+        if (!candidatId) {
+          for (const jour of planning[candidatNom]) {
+            candidatId = jour.disponibilite?.candidat_id || jour.commande?.candidat_id || null
+            if (candidatId) break
+          }
         }
+
         if (!candidatId) {
           heures[candidatNom] = "00:00"
           continue
@@ -167,7 +175,7 @@ export function PlanningCandidateTable({
     }
 
     fetchHeures()
-  }, [planning, selectedSemaine])
+  }, [planning, selectedSemaine, candidateIdsByLabel])
 
   const groupesParSemaine: Record<string, Record<string, Record<string, JourPlanningCandidat[]>>> = {}
 
@@ -192,7 +200,6 @@ export function PlanningCandidateTable({
   })
 
   /** ——— vignettes ——— */
-  // IMPORTANT: centrage vertical + monoligne + ellipses, pas de croissance
   const VignettePlanifiee = ({ client, hours }: { client: string; hours: string }) => (
     <div
       className="w-full h-full rounded-md px-2 py-2 flex flex-col items-start justify-center gap-1 overflow-hidden shadow-sm min-w-0"
@@ -315,15 +322,15 @@ export function PlanningCandidateTable({
 
                       const premierJour = ligne.find((j) => j)
                       const secteur = premierJour?.secteur || ""
+                      // ✅ ID FIABLE via mapping (sinon fallback)
+                      const candidatIdFromLabel = candidateIdsByLabel[key]
                       const candidatId =
-                        premierJour?.disponibilite?.candidat_id || premierJour?.commande?.candidat_id || ""
-                      const nomPrenom =
-                        premierJour?.disponibilite?.candidat
-                          ? `${premierJour.disponibilite.candidat.nom} ${premierJour.disponibilite.candidat.prenom}`
-                          : premierJour?.commande?.candidat
-                          ? `${premierJour.commande.candidat.nom} ${premierJour.commande.candidat.prenom}`
-                          : key
+                        candidatIdFromLabel ||
+                        premierJour?.disponibilite?.candidat_id ||
+                        premierJour?.commande?.candidat_id ||
+                        ""
 
+                      const nomPrenom = key
                       const totalHeures = heuresParCandidat[key] || "00:00"
                       const isEtagesRow = secteur === "Étages"
                       const minH = isEtagesRow ? FULL_H_ETAGES : ROW_H_OTHERS

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useDeferredValue } from "react"
+import { useCallback, useEffect, useMemo, useState, useDeferredValue, useRef } from "react"
 import MainLayout from "@/components/main-layout"
 import { SectionFixeCommandes } from "@/components/commandes/section-fixe-commandes"
 import { PlanningClientTable } from "@/components/commandes/PlanningClientTable"
@@ -37,6 +37,9 @@ type CommandeRow = {
 }
 
 const COUNTABLE = new Set(["Validé", "En recherche", "Non pourvue"])
+
+// ✅ LIMITE DURE côté serveur (empêche Content-Range: 0-999/*)
+const LIMIT_MAX = 200
 
 // ——— utilitaire anti-boucle : ne setState que si le mapping a réellement changé
 function shallowEqualRecord(a: Record<string, string>, b: Record<string, string>) {
@@ -262,13 +265,20 @@ export default function Commandes() {
     return { newFiltered, stats: { demandées: d, validées: v, enRecherche: r, nonPourvue: np } }
   }, [])
 
+  // ✅ Anti-chevauchement de fetch (si l’utilisateur change vite de semaine/secteur)
+  const fetchIdRef = useRef(0)
+
   const fetchPlanning = useCallback(async () => {
+    const myFetchId = ++fetchIdRef.current
+
+    // Fenêtre "Toutes" : 6 mois (déjà dans ton code), sinon semaine sélectionnée
     const mondayCurrent = startOfWeek(new Date(), { weekStartsOn: 1 })
     const dminToutes = format(mondayCurrent, "yyyy-MM-dd")
     const dmaxToutes = format(addDays(mondayCurrent, 180), "yyyy-MM-dd")
 
     const { dmin, dmax } = computeWeekRange()
 
+    // ✅ Colonnes strictes (PAS de *) + LIMIT
     let query = supabase
       .from("commandes")
       .select(`
@@ -288,22 +298,25 @@ export default function Commandes() {
       query = query.gte("date", dmin).lte("date", dmax)
     }
 
+    if (selectedSecteurs.length > 0) {
+      query = query.in("secteur", selectedSecteurs)
+    }
+
     query = query
       .order("date", { ascending: true })
       .order("client_id", { ascending: true })
       .order("secteur", { ascending: true })
       .order("service", { ascending: true, nullsFirst: true })
       .order("mission_slot", { ascending: true })
-
-    if (selectedSecteurs.length > 0) {
-      query = query.in("secteur", selectedSecteurs)
-    }
+      .limit(LIMIT_MAX) // ✅ anti 0-999/*
 
     const { data, error } = await query
 
+    // Si une nouvelle requête a démarré entre-temps, on ignore ce résultat
+    if (myFetchId !== fetchIdRef.current) return
+
     if (error || !data) {
       console.error("❌ Erreur Supabase :", error)
-      // on NE vide pas l’écran (évite flash)
       return
     }
 
@@ -362,6 +375,7 @@ export default function Commandes() {
         .select("date")
         .gte("date", format(startWindow, "yyyy-MM-dd"))
         .lte("date", format(endWindow, "yyyy-MM-dd"))
+        .limit(5000) // sécurité raisonnable pour dates seules
 
       if (selectedSecteurs.length > 0) {
         q = q.in("secteur", selectedSecteurs)
@@ -434,6 +448,7 @@ export default function Commandes() {
         .select("id, date, statut")
         .gte("date", format(lundi, "yyyy-MM-dd"))
         .lte("date", format(dimanche, "yyyy-MM-dd"))
+        .limit(2000)
   
       if (error || !data) {
         console.error("❌ Erreur totauxSemaine :", error)

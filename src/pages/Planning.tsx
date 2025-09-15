@@ -200,7 +200,16 @@ export default function Planning() {
 
   const [semainesDisponibles, setSemainesDisponibles] = useState<string[]>([])
   const [stats, setStats] = useState({ "Non renseigné": 0, "Dispo": 0, "Non Dispo": 0, "Planifié": 0 })
-  const [candidateNames, setCandidateNames] = useState<Record<string, string>>({})
+  const [candidateNames, setCandidateNames] = useState<Record<string, string>>({}) // id -> "Nom Prénom"
+
+  // 👇 mapping inverse : "Nom Prénom" -> id (pour lignes synthétiques)
+  const candidateIdsByLabel = useMemo(() => {
+    const inv: Record<string, string> = {}
+    for (const [id, label] of Object.entries(candidateNames)) {
+      if (label) inv[label] = id
+    }
+    return inv
+  }, [candidateNames])
 
   /* -------- Date range builder (semaine choisie + buffer 15j si besoin) -------- */
   const computeDateRange = useCallback((): { from: string; to: string; includePrev: boolean } => {
@@ -211,19 +220,16 @@ export default function Planning() {
 
     if (allWeeks) {
       const from = format(mondayBase, "yyyy-MM-dd")
-      // horizon raisonnable pour éviter l'egress massif ; ajustable si besoin
       const to = format(endOfWeek(addWeeks(mondayBase, 12), { weekStartsOn: 1 }), "yyyy-MM-dd")
       return { from, to, includePrev: false }
     }
 
-    // semaine précise (numéro)
     const targetWeek = parseInt(selectedSemaine || String(currentWeek), 10)
     const diff = targetWeek - currentWeek
     const mondayTarget = addWeeks(mondayBase, diff)
     const sundayTarget = endOfWeek(mondayTarget, { weekStartsOn: 1 })
 
-    // buffer -15 jours pour la détection “candidat récent sans statut sur la semaine”
-    const from = format(subDays(mondayTarget, 14), "yyyy-MM-dd")
+    const from = format(subDays(mondayTarget, 14), "yyyy-MM-dd") // buffer -15j
     const to = format(sundayTarget, "yyyy-MM-dd")
     return { from, to, includePrev: true }
   }, [selectedSemaine])
@@ -236,7 +242,6 @@ export default function Planning() {
   ): { secteur: string; service: string | null; commande?: CommandeFull; autresCommandes: CommandeFull[]; disponibilite?: CandidatDispoWithNom } => {
     const dispoFull = dispoRow ? buildDispoFull(dispoRow) : undefined
 
-    // Séparation
     const valides = commandesRows.filter((c) => normalize(c.statut) === "valide")
     const annexes = commandesRows.filter((c) => isAnnexe(c.statut))
 
@@ -262,7 +267,6 @@ export default function Planning() {
           secteur = soirFull.secteur
           service = (soirFull.service ?? service) ?? null
         } else {
-          // on garde le créneau complémentaire même si même client
           secondaires.push(soirFull)
         }
       }
@@ -286,7 +290,7 @@ export default function Planning() {
     return { secteur, service, commande: principale, autresCommandes: secondaires, disponibilite: dispoFull }
   }, [])
 
-  /* --------- helpers pour MAJ locale --------- */
+  /* --------- helpers MAJ locale --------- */
   const removeCommandeEverywhere = useCallback((base: Record<string, JourPlanningCandidat[]>, id: string) => {
     const next: Record<string, JourPlanningCandidat[]> = {}
     for (const [label, jours] of Object.entries(base)) {
@@ -384,7 +388,7 @@ export default function Planning() {
     []
   )
 
-  /* --------- Filtrage (conserve ta logique existante) --------- */
+  /* --------- Filtrage --------- */
   const applyFilters = useCallback((
     rawPlanning: Record<string, JourPlanningCandidat[]>,
     secteurs: string[],
@@ -490,7 +494,7 @@ export default function Planning() {
     setStats({ "Non renseigné": nr, "Dispo": d, "Non Dispo": nd, "Planifié": p })
   }, [])
 
-  /* --------- Fetch (SEMAINE & SECTEUR ciblés) + MERGE planif/commandes --------- */
+  /* --------- Fetch + MERGE --------- */
   const didInitRef = useRef(false)
 
   const fetchPlanning = useCallback(async () => {
@@ -591,7 +595,6 @@ export default function Planning() {
         ]))
 
         for (const dt of dates) {
-          // MERGE commandes + planifs du jour (toujours), dédoublonné par id
           const fromCmd = commandesCandidat.filter((c) => c.date === dt)
           const fromPlanif = (planifIdx.get(`${candId}|${dt}`) || []).map(buildCommandeRowFromPlanif)
           const byId = new Map<string, CommandeRow>()
@@ -740,7 +743,7 @@ export default function Planning() {
     setSelectedSemaine(getISOWeek(new Date()).toString())
   }
 
-  /* --------- Realtime (inchangé) --------- */
+  /* --------- Realtime --------- */
   useLiveRows<CommandeRow>({
     table: "commandes",
     onInsert: (row) => setPlanning((prev) => upsertCommande(prev, row)),
@@ -806,6 +809,7 @@ export default function Planning() {
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
         onRefresh={() => {}}
+        candidateIdsByLabel={candidateIdsByLabel} // 👈 passage du mapping pour fiabiliser l’ID
       />
     </MainLayout>
   )
