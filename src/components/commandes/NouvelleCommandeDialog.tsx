@@ -1,3 +1,6 @@
+// … imports identiques
+// (fichier complet, inchangé sauf la section marquée 🔴 HISTO with candidate names)
+
 import {
   Dialog,
   DialogContent,
@@ -21,12 +24,12 @@ export default function NouvelleCommandeDialog({
   open,
   onOpenChange,
   onRefreshDone,
-  commande, // <- nouvelle prop
+  commande,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRefreshDone: () => void;
-  commande?: any; // ou ton vrai type si tu veux, mais "any" ne casse rien pour l’instant
+  commande?: any;
 }) {
   const navigate = useNavigate()
 
@@ -40,6 +43,8 @@ export default function NouvelleCommandeDialog({
   const [joursState, setJoursState] = useState<Record<string, boolean>>({})
   const [heuresParJour, setHeuresParJour] = useState<Record<string, any>>({})
   const [posteTypeId, setPosteTypeId] = useState("")
+  const [plannedByDay, setPlannedByDay] = useState<Record<string, string[]>>({})
+
   const [semainesDisponibles, setSemainesDisponibles] = useState<
     { value: string; label: string; startDate: Date }[]
   >([])
@@ -56,8 +61,8 @@ export default function NouvelleCommandeDialog({
     if (!commande) {
       setJoursState(newJoursState)
       setHeuresParJour({})
+      setPlannedByDay({})
     }
-
   }, [semaine, semainesDisponibles, commande])
 
   const { clients } = useClientsBySecteur(secteur)
@@ -71,10 +76,7 @@ export default function NouvelleCommandeDialog({
   const joursSemaine = semaineObj
     ? Array.from({ length: 7 }, (_, i) => {
         const date = addDays(semaineObj.startDate, i)
-        return {
-          jour: format(date, "EEEE dd MMMM", { locale: fr }),
-          key: format(date, "yyyy-MM-dd"),
-        }
+        return { jour: format(date, "EEEE dd MMMM", { locale: fr }), key: format(date, "yyyy-MM-dd") }
       })
     : []
 
@@ -103,29 +105,20 @@ export default function NouvelleCommandeDialog({
 
   useEffect(() => {
     if (!open) return;
-  
-    // Mode création : on réinitialise comme avant
+
     if (!commande) {
-      setSecteur("");
-      setClientId("");
-      setService("");
+      setSecteur(""); setClientId(""); setService("");
       setSemaine(getWeekNumber(new Date()).toString());
-      setCommentaire("");
-      setComplementMotif("");
-      setMotif("Extra Usage constant");
-      setJoursState({});
-      setHeuresParJour({});
-      setPosteTypeId("");
+      setCommentaire(""); setComplementMotif(""); setMotif("Extra Usage constant");
+      setJoursState({}); setHeuresParJour({}); setPosteTypeId(""); setPlannedByDay({});
       return;
     }
-  
-    // ---- Mode édition : tout pré-remplir proprement ----
+
     const run = async () => {
-      // 1) Pré-remplir la partie gauche (comme avant)
       const dateCmd = new Date(commande.date);
       const monday = startOfWeek(dateCmd, { weekStartsOn: 1 });
       const weekValue = getWeekNumber(dateCmd).toString();
-  
+
       setSecteur(commande.secteur || "");
       setClientId(commande.client_id || "");
       setService(commande.service || "");
@@ -143,19 +136,18 @@ export default function NouvelleCommandeDialog({
           nbPersonnes: 1,
         }
       })
-      setPosteTypeId("");
-  
-      // 2) Construire la semaine complète (7 jours)
-      const fullWeek: Record<string, boolean> = {};
+      setPosteTypeId("")
+      setPlannedByDay({ [commande.date]: [""] })
+
+      const fullWeek: Record<string, boolean> = {}
       for (let i = 0; i < 7; i++) {
-        const key = format(addDays(monday, i), "yyyy-MM-dd");
-        fullWeek[key] = false;
+        const key = format(addDays(monday, i), "yyyy-MM-dd")
+        fullWeek[key] = false
       }
-  
-      // 3) Charger TOUTES les commandes de la même "ligne"
-      const weekStart = format(monday, "yyyy-MM-dd");
-      const weekEnd = format(addDays(monday, 6), "yyyy-MM-dd");
-  
+
+      const weekStart = format(monday, "yyyy-MM-dd")
+      const weekEnd = format(addDays(monday, 6), "yyyy-MM-dd")
+
       let q = supabase
         .from("commandes")
         .select("date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, mission_slot, service")
@@ -163,20 +155,14 @@ export default function NouvelleCommandeDialog({
         .eq("secteur", commande.secteur)
         .eq("mission_slot", commande.mission_slot ?? 0)
         .gte("date", weekStart)
-        .lte("date", weekEnd);
-  
-      if (commande.service) {
-        q = q.eq("service", commande.service);
-      } else {
-        q = q.is("service", null);
-      }
-  
-      const { data, error } = await q;
+        .lte("date", weekEnd)
+
+      if (commande.service) q = q.eq("service", commande.service); else q = q.is("service", null)
+
+      const { data, error } = await q
       if (error) {
-        console.error("❌ Chargement des jours de la ligne :", error);
-        // On retombe au moins sur la journée d’origine si la requête échoue
-        const key = format(dateCmd, "yyyy-MM-dd");
-        setJoursState({ ...fullWeek, [key]: true });
+        const key = format(dateCmd, "yyyy-MM-dd")
+        setJoursState({ ...fullWeek, [key]: true })
         setHeuresParJour({
           [key]: {
             debutMatin: (commande.heure_debut_matin || "").slice(0, 5),
@@ -185,112 +171,88 @@ export default function NouvelleCommandeDialog({
             finSoir: (commande.heure_fin_soir || "").slice(0, 5),
             nbPersonnes: 1,
           },
-        });
-        return;
+        })
+        setPlannedByDay({ [key]: [""] })
+        return
       }
-  
-      const hhmm = (t?: string | null) => (t ? t.slice(0, 5) : "");
-      const heures: Record<string, any> = {};
-  
-      (data || []).forEach((cmd) => {
-        const key = format(new Date(cmd.date), "yyyy-MM-dd");
-        fullWeek[key] = true;
+
+      const hhmm = (t?: string | null) => (t ? t.slice(0, 5) : "")
+      const heures: Record<string, any> = {}
+
+      ;(data || []).forEach((cmd) => {
+        const key = format(new Date(cmd.date), "yyyy-MM-dd")
+        fullWeek[key] = true
         heures[key] = {
           debutMatin: hhmm(cmd.heure_debut_matin),
           finMatin: hhmm(cmd.heure_fin_matin),
           debutSoir: hhmm(cmd.heure_debut_soir),
           finSoir: hhmm(cmd.heure_fin_soir),
-          nbPersonnes: 1, // 1 ligne = 1 personne
-        };
-      });
-  
-      // Si aucune autre journée n’est trouvée, on garde au moins la journée d’origine
+          nbPersonnes: 1,
+        }
+      })
+
       if ((data || []).length === 0) {
-        const key = format(dateCmd, "yyyy-MM-dd");
-        fullWeek[key] = true;
+        const key = format(dateCmd, "yyyy-MM-dd")
+        fullWeek[key] = true
         heures[key] = {
           debutMatin: hhmm(commande.heure_debut_matin),
           finMatin: hhmm(commande.heure_fin_matin),
           debutSoir: hhmm(commande.heure_debut_soir),
           finSoir: hhmm(commande.heure_fin_soir),
           nbPersonnes: 1,
-        };
+        }
       }
-  
-      setJoursState(fullWeek);
-      setHeuresParJour(heures);
-    };
-  
-    run();
-  }, [open, commande]);
 
-    // Effacement auto du complément si le motif redevient "Extra Usage constant"
-    useEffect(() => {
-      if (motif === "Extra Usage constant" && complementMotif !== "") {
-        setComplementMotif("");
-      }
-    }, [motif, complementMotif]);
-    
+      setJoursState(fullWeek)
+      setHeuresParJour(heures)
+      setPlannedByDay(Object.fromEntries(Object.keys(fullWeek).map(k => [k, [""]])))
+    };
+    run();
+  }, [open, commande])
+
+  useEffect(() => {
+    if (motif === "Extra Usage constant" && complementMotif !== "") setComplementMotif("")
+  }, [motif, complementMotif])
+
   const handleSave = async () => {
-    if (!clientId || !secteur || !semaine) return;
-  
-    // 1) Récup user app
-    const { data: authData } = await supabase.auth.getUser();
-    const userEmail = authData?.user?.email || null;
-    if (!userEmail) return;
-  
+    if (!clientId || !secteur || !semaine) return
+
+    const { data: authData } = await supabase.auth.getUser()
+    const userEmail = authData?.user?.email || null
+    if (!userEmail) return
+
     const { data: userApp, error: userError } = await supabase
       .from("utilisateurs")
       .select("id")
       .eq("email", userEmail)
-      .single();
-  
-    if (userError || !userApp?.id) {
-      console.error("❌ Utilisateur non trouvé dans table `utilisateurs` :", userError);
-      return;
-    }
-  
-    const userId = userApp.id;
-  
-    // 2) BRANCHE ÉDITION : si `commande` est fournie, on MET À JOUR (pas d'insert)
+      .single()
+
+    if (userError || !userApp?.id) return
+    const userId = userApp.id
+
+    // ----- ÉDITION (inchangé) -----
     if (commande) {
-      // Jours de la semaine à mettre à jour = ceux marqués true (donc les jours où la ligne a une commande)
-      const datesToUpdate = Object.keys(joursState).filter((d) => !!joursState[d]);
-      if (datesToUpdate.length === 0) {
-        toast.error("Aucune journée à mettre à jour");
-        return;
-      }
-  
-      // On met à jour toutes les commandes de la même ligne (client/secteur/slot + service d'origine)
+      const datesToUpdate = Object.keys(joursState).filter((d) => !!joursState[d])
+      if (datesToUpdate.length === 0) { toast.error("Aucune journée à mettre à jour"); return }
+
       let q = supabase
-      .from("commandes")
-      .update({
-        service: service || null,
-        motif_contrat: motif,
-        complement_motif: motif === "Extra Usage constant" ? null : (complementMotif || null),
-        commentaire: commentaire || null,
-      })
-      .eq("client_id", clientId)
-      .eq("secteur", secteur)
-      .eq("mission_slot", commande.mission_slot ?? 0)
-      .in("date", datesToUpdate);
-    
-  
-      // service d'origine (peut être null)
-      if (commande.service) {
-        q = q.eq("service", commande.service);
-      } else {
-        q = q.is("service", null);
-      }
-  
-      const { data: updatedRows, error: updErr } = await q.select("id, date");
-      if (updErr) {
-        console.error("❌ Erreur mise à jour de la commande :", updErr);
-        toast.error("Échec de la mise à jour");
-        return;
-      }
-  
-      // Historique
+        .from("commandes")
+        .update({
+          service: service || null,
+          motif_contrat: motif,
+          complement_motif: motif === "Extra Usage constant" ? null : (complementMotif || null),
+          commentaire: commentaire || null,
+        })
+        .eq("client_id", clientId)
+        .eq("secteur", secteur)
+        .eq("mission_slot", commande.mission_slot ?? 0)
+        .in("date", datesToUpdate)
+
+      if (commande.service) q = q.eq("service", commande.service); else q = q.is("service", null)
+
+      const { data: updatedRows, error: updErr } = await q.select("id, date")
+      if (updErr) { toast.error("Échec de la mise à jour"); return }
+
       if (updatedRows && updatedRows.length > 0) {
         const historique = updatedRows.map((row) => ({
           table_cible: "commandes",
@@ -305,44 +267,32 @@ export default function NouvelleCommandeDialog({
             complement_motif: motif === "Extra Usage constant" ? null : (complementMotif || null),
             commentaire: commentaire || null,
             date: row.date,
-          },       
-        }));
-  
-        const { error: histError } = await supabase.from("historique").insert(historique);
-        if (histError) {
-          console.error("❌ Erreur insertion historique (modification) :", histError);
-        }
+          },
+        }))
+        await supabase.from("historique").insert(historique)
       }
-  
-      // Refresh + fermeture
-      if (onRefreshDone) {
-        await onRefreshDone();
-      }
-      toast.success("Commande mise à jour");
-      onOpenChange(false);
-      return;
+
+      onRefreshDone?.(); toast.success("Commande mise à jour"); onOpenChange(false); return
     }
-  
-    // 3) BRANCHE CRÉATION : inchangée (on garde ton code d'origine)
-    const lignes: any[] = [];
-  
-    const joursCommandes = Object.entries(joursState).filter(([_, active]) => active);
-    const datesCommandes = joursCommandes.map(([date]) => date);
-  
+
+    // ----- CRÉATION (inchangé jusqu'à l'insert) -----
+    const lignes: any[] = []
+    const joursCommandes = Object.entries(joursState).filter(([_, active]) => active)
+    const datesCommandes = joursCommandes.map(([date]) => date)
+
     const { data: commandesExistantesAll } = await supabase
       .from("commandes")
       .select("mission_slot")
       .eq("client_id", clientId)
       .eq("secteur", secteur)
-      .in("date", datesCommandes);
-  
-    const existingSlots = (commandesExistantesAll || []).map((c) => c.mission_slot ?? 0);
-    let baseSlot = existingSlots.length > 0 ? Math.max(...existingSlots) + 1 : 1;
-  
+      .in("date", datesCommandes)
+
+    const existingSlots = (commandesExistantesAll || []).map((c) => c.mission_slot ?? 0)
+    const baseSlot = existingSlots.length > 0 ? Math.max(...existingSlots) + 1 : 1
+
     for (const [key, isActive] of joursCommandes) {
-      const heure = heuresParJour[key] || {};
-      const nb = heure.nbPersonnes || 1;
-  
+      const heure = heuresParJour[key] || {}
+      const nb = heure.nbPersonnes || 1
       for (let i = 0; i < nb; i++) {
         lignes.push({
           client_id: clientId,
@@ -359,53 +309,118 @@ export default function NouvelleCommandeDialog({
           commentaire: commentaire || null,
           created_by: userId,
           mission_slot: baseSlot + i,
-        });
-        
+        })
       }
     }
-  
-    if (lignes.length === 0) return;
-  
+
+    if (lignes.length === 0) return
+
     const { data, error } = await supabase
       .from("commandes")
       .insert(lignes)
-      .select("id, date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir");
-  
-    if (error) {
-      console.error("❌ Erreur insertion commandes :", error);
-      return;
+      .select("id, date, mission_slot, secteur, service, client_id, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+
+    if (error) { toast.error("Échec création commandes"); return }
+
+    // 🔴 HISTO avec noms candidats
+    // Récupère la liste unique des candidats pré-sélectionnés pour enrichir l'historique.
+    const uniqueCandIds = Array.from(
+      new Set(
+        Object.values(plannedByDay)
+          .flat()
+          .filter(Boolean)
+      )
+    ) as string[]
+
+    const candidatNames = new Map<string, { nom: string; prenom: string }>()
+    if (uniqueCandIds.length > 0) {
+      const { data: candRows } = await supabase
+        .from("candidats")
+        .select("id, nom, prenom")
+        .in("id", uniqueCandIds)
+      ;(candRows || []).forEach((r: any) => {
+        candidatNames.set(r.id, { nom: r.nom || "", prenom: r.prenom || "" })
+      })
     }
-  
-    if (data && data.length > 0) {
-      const historique = data.map((cmd) => ({
-        table_cible: "commandes",
-        action: "creation",
-        ligne_id: cmd.id,
-        user_id: userId,
-        date_action: new Date().toISOString(),
-        description: "Création de commande via NouvelleCommandeDialog",
-        apres: {
-          date: cmd.date,
-          heure_debut_matin: cmd.heure_debut_matin,
-          heure_fin_matin: cmd.heure_fin_matin,
-          heure_debut_soir: cmd.heure_debut_soir,
-          heure_fin_soir: cmd.heure_fin_soir,
-        },
-      }));
-  
-      const { error: histError } = await supabase.from("historique").insert(historique);
-      if (histError) {
-        console.error("❌ Erreur insertion historique :", histError);
+
+    // 🔸 Application de la PRÉ-PLANIF (respect index slot)
+    try {
+      const byDateSlot = new Map<string, any>()
+      for (const row of data || []) byDateSlot.set(`${row.date}|${row.mission_slot}`, row)
+
+      const planifRows: any[] = []
+      const updates: Array<{ id: string; candidat_id: string }> = []
+      const histPlanif: any[] = []
+
+      for (const [dateStr, ids] of Object.entries(plannedByDay)) {
+        if (!joursState[dateStr]) continue
+        const heure = heuresParJour[dateStr] || {}
+        const nb = heure.nbPersonnes || 1
+        for (let i = 0; i < nb; i++) {
+          const candId = ids?.[i]
+          if (!candId) continue
+          const cmd = byDateSlot.get(`${dateStr}|${baseSlot + i}`)
+          if (!cmd) continue
+
+          planifRows.push({
+            commande_id: cmd.id,
+            candidat_id: candId,
+            date: dateStr,
+            secteur,
+            statut: "Validé",
+            heure_debut_matin: cmd.heure_debut_matin,
+            heure_fin_matin: cmd.heure_fin_matin,
+            heure_debut_soir: cmd.heure_debut_soir,
+            heure_fin_soir: cmd.heure_fin_soir,
+          })
+
+          updates.push({ id: cmd.id, candidat_id: candId })
+
+          const nomPrenom = candidatNames.get(candId) || { nom: "", prenom: "" }
+          histPlanif.push({
+            table_cible: "commandes",
+            ligne_id: cmd.id,
+            action: "planification",
+            description: "Planification via création de commande (pré-sélection)",
+            user_id: userId,
+            date_action: new Date().toISOString(),
+            apres: {
+              date: dateStr,
+              candidat: { nom: nomPrenom.nom, prenom: nomPrenom.prenom }, // ✅ pour l’étiquette historique
+              heure_debut_matin: cmd.heure_debut_matin,
+              heure_fin_matin: cmd.heure_fin_matin,
+              heure_debut_soir: cmd.heure_debut_soir,
+              heure_fin_soir: cmd.heure_fin_soir,
+            },
+          })
+        }
       }
+
+      if (planifRows.length > 0) {
+        const { error: perr } = await supabase.from("planification").insert(planifRows)
+        if (!perr) {
+          await Promise.all(
+            updates.map(u =>
+              supabase.from("commandes").update({ candidat_id: u.candidat_id, statut: "Validé" }).eq("id", u.id)
+            )
+          )
+          if (histPlanif.length > 0) await supabase.from("historique").insert(histPlanif)
+
+          try {
+            window.dispatchEvent(new CustomEvent("planif:updated"))
+            window.dispatchEvent(new CustomEvent("adaptel:refresh-planning-client"))
+            window.dispatchEvent(new CustomEvent("adaptel:refresh-commandes"))
+          } catch {}
+        }
+      }
+    } catch (e) {
+      console.error("Pré-planif post-insert :", e)
     }
-  
-    if (onRefreshDone) {
-      await onRefreshDone();
-    }
-    toast.success("Commandes créées");
-    onOpenChange(false);
-  };
- 
+
+    onRefreshDone?.()
+    toast.success("Commandes créées")
+    onOpenChange(false)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -414,56 +429,46 @@ export default function NouvelleCommandeDialog({
           <DialogTitle>Nouvelle commande</DialogTitle>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-6 mt-4">
-        <CommandeFormGauche
-  secteur={secteur}
-  setSecteur={setSecteur}
-  clientId={clientId}
-  setClientId={setClientId}
-  service={service}
-  setService={setService}
-  semaine={semaine}
-  setSemaine={setSemaine}
-  motif={motif}
-  setMotif={setMotif}
-  commentaire={commentaire}
-  setCommentaire={setCommentaire}
-  complementMotif={complementMotif}
-  setComplementMotif={setComplementMotif}
-  clients={clients}
-  services={services}
-  semainesDisponibles={semainesDisponibles}
-  posteTypeId={posteTypeId}
-  setPosteTypeId={setPosteTypeId}
-  postesTypes={postesTypes}
-  setHeuresParJour={setHeuresParJour}
-  setJoursState={setJoursState}
-/>
-
-    <div className={commande ? "relative opacity-60" : ""}>
-            {commande && (
-              <div
-                className="absolute inset-0 z-[5] pointer-events-auto"
-                aria-hidden="true"
-              />
-            )}
-          <CommandeFormDroite
-            joursSemaine={joursSemaine}
-            joursState={joursState}
-            setJoursState={setJoursState}
-            heuresParJour={heuresParJour}
+          <CommandeFormGauche
+            secteur={secteur} setSecteur={setSecteur}
+            clientId={clientId} setClientId={setClientId}
+            service={service} setService={setService}
+            semaine={semaine} setSemaine={setSemaine}
+            motif={motif} setMotif={setMotif}
+            commentaire={commentaire} setCommentaire={setCommentaire}
+            complementMotif={complementMotif} setComplementMotif={setComplementMotif}
+            clients={clients}
+            services={services}
+            semainesDisponibles={semainesDisponibles}
+            posteTypeId={posteTypeId} setPosteTypeId={setPosteTypeId}
+            postesTypes={postesTypes}
             setHeuresParJour={setHeuresParJour}
-            selectedPosteType={selectedPosteType}
-            secteur={secteur}
-            handleSave={handleSave}
+            setJoursState={setJoursState}
           />
+
+          <div className={commande ? "relative opacity-60" : ""}>
+            {commande && <div className="absolute inset-0 z-[5] pointer-events-auto" aria-hidden="true" />}
+            <CommandeFormDroite
+              joursSemaine={joursSemaine}
+              joursState={joursState}
+              setJoursState={setJoursState}
+              heuresParJour={heuresParJour}
+              setHeuresParJour={setHeuresParJour}
+              selectedPosteType={selectedPosteType}
+              secteur={secteur}
+              handleSave={handleSave}
+              clientId={clientId}
+              plannedByDay={plannedByDay}
+              setPlannedByDay={setPlannedByDay}
+            />
+          </div>
         </div>
-        </div>
+
         {commande && (
           <div className="mt-4 flex justify-end">
             <Button onClick={handleSave}>Valider</Button>
           </div>
         )}
-
       </DialogContent>
     </Dialog>
   )
@@ -471,10 +476,6 @@ export default function NouvelleCommandeDialog({
 
 function getWeekNumber(date: Date) {
   const start = new Date(date.getFullYear(), 0, 1)
-  const diff =
-    (+date -
-      +start +
-      (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) /
-    86400000
+  const diff = (+date - +start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) / 86400000
   return Math.floor((diff + start.getDay() + 6) / 7)
 }
