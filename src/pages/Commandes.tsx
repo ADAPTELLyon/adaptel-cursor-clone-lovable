@@ -4,7 +4,7 @@ import { SectionFixeCommandes } from "@/components/commandes/section-fixe-comman
 import { PlanningClientTable } from "@/components/commandes/PlanningClientTable"
 import NouvelleCommandeDialog from "@/components/commandes/NouvelleCommandeDialog"
 import { supabase } from "@/lib/supabase"
-import { addDays, format, getWeek, startOfWeek } from "date-fns"
+import { addDays, format, getWeek, getWeekYear, startOfWeek } from "date-fns"
 import type { JourPlanning, CommandeWithCandidat } from "@/types/types-front"
 import { CommandesIndicateurs } from "@/components/commandes/CommandesIndicateurs"
 import { ClientEditDialog } from "@/components/clients/ClientEditDialog"
@@ -52,6 +52,14 @@ function shallowEqualRecord(a: Record<string, string>, b: Record<string, string>
   return true
 }
 
+// 🔧 util: lundi ISO d'une semaine/année
+function getMondayOfISOWeek(week: number, year: number) {
+  // ISO: la semaine 1 est celle qui contient le 4 janvier
+  const jan4 = new Date(year, 0, 4)
+  const mondayWeek1 = startOfWeek(jan4, { weekStartsOn: 1 })
+  return addDays(mondayWeek1, (week - 1) * 7)
+}
+
 export default function Commandes() {
   // Filtres & états d’UI
   const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(() => {
@@ -92,8 +100,8 @@ export default function Commandes() {
   const [clientIdToEdit, setClientIdToEdit] = useState<string | null>(null)
   const [showEditDialog, setShowEditDialog] = useState(false)
 
-  // Semaines dispo
-  const [semainesDisponibles, setSemainesDisponibles] = useState<string[]>([])
+  // Semaines dispo (⚠️ structure groupée par année)
+  const [semainesDisponibles, setSemainesDisponibles] = useState<{ year: number; weeks: number[] }[]>([])
 
   // Persist selection
   useEffect(() => { localStorage.setItem("selectedSecteurs", JSON.stringify(selectedSecteurs)) }, [selectedSecteurs])
@@ -109,23 +117,52 @@ export default function Commandes() {
     }
   }, [])
 
+  // 🧠 Résolution de l'année pour la semaine sélectionnée (si "1" existe en 2025/2026 => on prend l'année la + récente)
+  const resolvedYearForSelectedWeek = useMemo(() => {
+    if (semaineEnCours || selectedSemaine === "Toutes") {
+      return getWeekYear(new Date(), { weekStartsOn: 1 })
+    }
+    const w = parseInt(selectedSemaine || "", 10)
+    if (!Number.isFinite(w)) return getWeekYear(new Date(), { weekStartsOn: 1 })
+    // cherche les années qui contiennent cette semaine dans la fenêtre/secteur courants
+    const yearsHavingW = semainesDisponibles
+      .filter(g => g.weeks.includes(w))
+      .map(g => g.year)
+    if (yearsHavingW.length === 0) {
+      // fallback: année courante
+      return getWeekYear(new Date(), { weekStartsOn: 1 })
+    }
+    // choix: la plus récente
+    return Math.max(...yearsHavingW)
+  }, [semaineEnCours, selectedSemaine, semainesDisponibles])
+
   const computeWeekRange = useCallback(() => {
-    const now = new Date()
-    const mondayCurrent = startOfWeek(now, { weekStartsOn: 1 })
-    const weekCurrent = getWeek(now, { weekStartsOn: 1 })
+    // "Toutes" => fenêtre glissante depuis lundi courant sur ~6 mois (inchangé)
+    if (selectedSemaine === "Toutes" || semaineEnCours) {
+      const now = new Date()
+      const mondayCurrent = startOfWeek(now, { weekStartsOn: 1 })
+      const weekCurrent = getWeek(now, { weekStartsOn: 1 })
+      const targetWeek = (semaineEnCours || selectedSemaine === "Toutes")
+        ? weekCurrent
+        : parseInt(selectedSemaine || String(weekCurrent), 10)
+      const deltaWeeks = targetWeek - weekCurrent
+      const mondayTarget = addDays(mondayCurrent, deltaWeeks * 7)
+      const sundayTarget = addDays(mondayTarget, 6)
+      const dmin = format(mondayTarget, "yyyy-MM-dd")
+      const dmax = format(sundayTarget, "yyyy-MM-dd")
+      return { dmin, dmax }
+    }
 
-    const targetWeek = (semaineEnCours || selectedSemaine === "Toutes")
-      ? weekCurrent
-      : parseInt(selectedSemaine || String(weekCurrent), 10)
-
-    const deltaWeeks = targetWeek - weekCurrent
-    const mondayTarget = addDays(mondayCurrent, deltaWeeks * 7)
+    // ✅ Cas d'une semaine précise: utiliser l'année résolue
+    const w = parseInt(selectedSemaine, 10)
+    const y = resolvedYearForSelectedWeek
+    const mondayTarget = getMondayOfISOWeek(w, y)
     const sundayTarget = addDays(mondayTarget, 6)
-
-    const dmin = format(mondayTarget, "yyyy-MM-dd")
-    const dmax = format(sundayTarget, "yyyy-MM-dd")
-    return { dmin, dmax }
-  }, [semaineEnCours, selectedSemaine])
+    return {
+      dmin: format(mondayTarget, "yyyy-MM-dd"),
+      dmax: format(sundayTarget, "yyyy-MM-dd"),
+    }
+  }, [selectedSemaine, semaineEnCours, resolvedYearForSelectedWeek])
 
   const buildCommandeFromRow = useCallback((item: any): CommandeWithCandidat => {
     return {
@@ -192,7 +229,7 @@ export default function Commandes() {
       joursClient.push({
         date: c.date,
         secteur: c.secteur,
-        service: c.service ?? null, // ← retour à ton code “base”
+        service: c.service ?? null,
         mission_slot: c.mission_slot ?? 0,
         commandes: [c],
       })
@@ -223,9 +260,7 @@ export default function Commandes() {
 
   const applyFiltersLight = useCallback((
     source: Record<string, JourPlanning[]>,
-    {
-      client, search, enRecherche,
-    }: { client: string, search: string, enRecherche: boolean }
+    { client, search, enRecherche }: { client: string, search: string, enRecherche: boolean }
   ) => {
     const matchSearchTerm = (val: string) =>
       search.trim().toLowerCase().split(" ").every((term) => val.toLowerCase().includes(term))
@@ -302,6 +337,11 @@ export default function Commandes() {
       query = query.in("secteur", selectedSecteurs)
     }
 
+    // 🔎 Filtre serveur quand "En recherche" est actif
+    if (enRecherche) {
+      query = query.eq("statut", "En recherche")
+    }
+
     query = query
       .order("date", { ascending: true })
       .order("client_id", { ascending: true })
@@ -359,7 +399,7 @@ export default function Commandes() {
     // ⛔️ anti-boucle : n’actualiser le cache nom client que s’il a changé
     setClientNames((prev) => (shallowEqualRecord(prev, nameCache) ? prev : nameCache))
     setPlanning(sorted)
-  }, [computeWeekRange, selectedSemaine, selectedSecteurs, buildCommandeFromRow])
+  }, [computeWeekRange, selectedSemaine, selectedSecteurs, buildCommandeFromRow, enRecherche])
 
   useEffect(() => { fetchPlanning() }, [fetchPlanning])
 
@@ -375,7 +415,8 @@ export default function Commandes() {
         .select("date")
         .gte("date", format(startWindow, "yyyy-MM-dd"))
         .lte("date", format(endWindow, "yyyy-MM-dd"))
-        .limit(5000) // sécurité raisonnable pour dates seules
+        .order("date", { ascending: false })
+        .limit(20000)
 
       if (selectedSecteurs.length > 0) {
         q = q.in("secteur", selectedSecteurs)
@@ -388,14 +429,24 @@ export default function Commandes() {
         return
       }
 
-      const weeks = new Set<string>()
+      // ⚙️ Regroupement par année -> set de semaines
+      const byYear = new Map<number, Set<number>>()
       ;(data as { date: string }[]).forEach((row) => {
-        const w = getWeek(new Date(row.date), { weekStartsOn: 1 }).toString()
-        weeks.add(w)
+        const d = new Date(row.date)
+        const w = getWeek(d, { weekStartsOn: 1 })
+        const y = getWeekYear(d, { weekStartsOn: 1 })
+        if (!byYear.has(y)) byYear.set(y, new Set<number>())
+        byYear.get(y)!.add(w)
       })
 
-      const sorted = Array.from(weeks).sort((a, b) => parseInt(a) - parseInt(b))
-      setSemainesDisponibles(sorted)
+      // Tri: année croissante, semaine croissante
+      const years = Array.from(byYear.keys()).sort((a, b) => a - b)
+      const grouped = years.map((year) => ({
+        year,
+        weeks: Array.from(byYear.get(year)!).sort((a, b) => a - b),
+      }))
+
+      setSemainesDisponibles(grouped)
     } catch (e) {
       console.error("fetchSemainesDisponibles exception:", e)
       setSemainesDisponibles([])

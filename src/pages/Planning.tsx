@@ -107,6 +107,14 @@ const isAnnexe = (s?: string | null) => {
   return t === "Annule Int" || t === "Annule Client" || t === "Annule ADA" || t === "Absence"
 }
 
+/** compte “planifié” élargi (Validé / Planifié / À valider) sans casser le typage existant */
+const isPlanifieLike = (s?: StatutCommande | string | null) => {
+  const v = (s ?? "")
+    .normalize("NFD").replace(/\p{Diacritic}/gu, "")
+    .toLowerCase().trim()
+  return v === "valide" || v === "planifie" || v === "a valider"
+}
+
 const buildCommandeFull = (c: Partial<CommandeRow>): CommandeFull => ({
   id: String(c.id),
   date: String(c.date),
@@ -201,6 +209,7 @@ export default function Planning() {
   const [semainesDisponibles, setSemainesDisponibles] = useState<string[]>([])
   const [stats, setStats] = useState({ "Non renseigné": 0, "Dispo": 0, "Non Dispo": 0, "Planifié": 0 })
   const [candidateNames, setCandidateNames] = useState<Record<string, string>>({}) // id -> "Nom Prénom"
+  const [clientNames, setClientNames] = useState<Record<string, string>>({})     // id -> "Nom client"
 
   // 👇 mapping inverse : "Nom Prénom" -> id (pour lignes synthétiques)
   const candidateIdsByLabel = useMemo(() => {
@@ -239,7 +248,13 @@ export default function Planning() {
     dateISO: string,
     dispoRow: DispoRow | null,
     commandesRows: CommandeRow[]
-  ): { secteur: string; service: string | null; commande?: CommandeFull; autresCommandes: CommandeFull[]; disponibilite?: CandidatDispoWithNom } => {
+  ): {
+    secteur: string
+    service: string | null
+    commande?: CommandeFull
+    autresCommandes: CommandeFull[]
+    disponibilite?: CandidatDispoWithNom
+  } => {
     const dispoFull = dispoRow ? buildDispoFull(dispoRow) : undefined
 
     const valides = commandesRows.filter((c) => normalize(c.statut) === "valide")
@@ -251,8 +266,9 @@ export default function Planning() {
     let service = (dispoRow?.service ?? null) as string | null
 
     if (valides.length > 0) {
-      const missionMatin = valides.find((c) => !!c.heure_debut_matin && !!c.heure_fin_matin)
-      const missionSoir  = valides.find((c) => !!c.heure_debut_soir  && !!c.heure_fin_soir)
+      // on ne force plus la présence des 2 heures : une seule (ou zéro) ne masque pas la mission
+      const missionMatin = valides.find((c) => (c.heure_debut_matin || c.heure_fin_matin) !== null)
+      const missionSoir  = valides.find((c) => (c.heure_debut_soir  || c.heure_fin_soir ) !== null)
 
       if (missionMatin) {
         const full = buildCommandeFull(missionMatin)
@@ -322,8 +338,14 @@ export default function Planning() {
       const candId = row.candidat_id ?? null
       if (!candId) return removeCommandeEverywhere(base, String(row.id))
 
+      // ✅ hydratation nom client en live si absent (évite “Client ?”)
+      const patched: Partial<CommandeRow> = { ...row }
+      if (!patched.client && row.client_id && clientNames[row.client_id]) {
+        patched.client = { nom: clientNames[row.client_id] }
+      }
+
       const label = getLabelForCandidate(candId)
-      const commande = buildCommandeFull(row)
+      const commande = buildCommandeFull(patched)
       const dateStr = String(row.date)
 
       const next = removeCommandeEverywhere(base, String(row.id))
@@ -334,14 +356,26 @@ export default function Planning() {
         const current = line[idx]
         const autres = (current.autresCommandes ?? []).filter((c) => c.id !== row.id)
         const maybeKeepOld = current.commande && current.commande.id !== row.id ? [current.commande] : []
-        line[idx] = { ...current, secteur: row.secteur ?? current.secteur, service: (row.service ?? current.service) ?? null, commande, autresCommandes: [...autres, ...maybeKeepOld] }
+        line[idx] = {
+          ...current,
+          secteur: row.secteur ?? current.secteur,
+          service: (row.service ?? current.service) ?? null,
+          commande,
+          autresCommandes: [...autres, ...maybeKeepOld],
+        }
       } else {
-        line.push({ date: dateStr, secteur: String(row.secteur ?? "Inconnu"), service: (row.service ?? null) as string | null, commande, autresCommandes: [] })
+        line.push({
+          date: dateStr,
+          secteur: String(row.secteur ?? "Inconnu"),
+          service: (row.service ?? null) as string | null,
+          commande,
+          autresCommandes: [],
+        })
       }
       next[label] = line
       return next
     },
-    [getLabelForCandidate, removeCommandeEverywhere]
+    [getLabelForCandidate, removeCommandeEverywhere, clientNames]
   )
 
   const upsertDispo = useCallback(
@@ -356,9 +390,21 @@ export default function Planning() {
       const idx = line.findIndex((j) => j.date === dateStr)
       if (idx >= 0) {
         const current = line[idx]
-        line[idx] = { ...current, secteur: String(row.secteur ?? current.secteur ?? "Inconnu"), service: (row.service ?? current.service) ?? null, disponibilite: dispo }
+        line[idx] = {
+          ...current,
+          secteur: String(row.secteur ?? current.secteur ?? "Inconnu"),
+          service: (row.service ?? current.service) ?? null,
+          disponibilite: dispo,
+        }
       } else {
-        line.push({ date: dateStr, secteur: String(row.secteur ?? "Inconnu"), service: (row.service ?? null) as string | null, disponibilite: dispo, commande: undefined, autresCommandes: [] })
+        line.push({
+          date: dateStr,
+          secteur: String(row.secteur ?? "Inconnu"),
+          service: (row.service ?? null) as string | null,
+          disponibilite: dispo,
+          commande: undefined,
+          autresCommandes: [],
+        })
       }
       next[label] = line
       return next
@@ -477,12 +523,12 @@ export default function Planning() {
 
     setFilteredPlanning(newFiltered)
 
-    // stats
+    // ✅ stats : “Planifié” = Validé / Planifié / À valider (robuste)
     let nr = 0, d = 0, nd = 0, p = 0
     Object.values(newFiltered).forEach((jours) =>
       jours.forEach((j) => {
         const s = j.commande?.statut
-        if (s === "Validé") p++
+        if (isPlanifieLike(s)) p++
         else {
           const sd = j.disponibilite?.statut || "Non renseigné"
           if (sd === "Dispo") d++
@@ -549,8 +595,11 @@ export default function Planning() {
         ;(planQ as any).in("secteur", filterSecteur)
       }
 
-      const [{ data: commandesData, error: commandesError }, { data: dispoData, error: dispoError }, { data: planifData, error: planifError }] =
-        await Promise.all([cmdQ, dispQ, planQ])
+      const [
+        { data: commandesData, error: commandesError },
+        { data: dispoData, error: dispoError },
+        { data: planifData, error: planifError }
+      ] = await Promise.all([cmdQ, dispQ, planQ])
 
       if (commandesError || dispoError || planifError) {
         console.error("Erreurs fetch:", commandesError || dispoError || planifError)
@@ -558,10 +607,34 @@ export default function Planning() {
       }
 
       const nameCache: Record<string, string> = {}
-      ;(dispoData ?? []).forEach((d) => { if (d.candidat_id && d.candidats?.nom) nameCache[d.candidat_id] = `${d.candidats.nom} ${d.candidats.prenom ?? ""}`.trim() })
-      ;(commandesData ?? []).forEach((c) => { if (c.candidat_id && c.candidat?.nom) nameCache[c.candidat_id] = `${c.candidat.nom} ${c.candidat.prenom ?? ""}`.trim() })
-      ;(planifData ?? []).forEach((p: PlanifRow) => { if (p.candidat_id && p.candidat?.nom) nameCache[p.candidat_id] = `${p.candidat.nom} ${p.candidat.prenom ?? ""}`.trim() })
+      ;(dispoData ?? []).forEach((d) => {
+        if (d.candidat_id && d.candidats?.nom) {
+          nameCache[d.candidat_id] = `${d.candidats.nom} ${d.candidats.prenom ?? ""}`.trim()
+        }
+      })
+      ;(commandesData ?? []).forEach((c) => {
+        if (c.candidat_id && c.candidat?.nom) {
+          nameCache[c.candidat_id] = `${c.candidat.nom} ${c.candidat.prenom ?? ""}`.trim()
+        }
+      })
+      ;(planifData ?? []).forEach((p: PlanifRow) => {
+        if (p.candidat_id && p.candidat?.nom) {
+          nameCache[p.candidat_id] = `${p.candidat.nom} ${p.candidat.prenom ?? ""}`.trim()
+        }
+      })
       setCandidateNames(nameCache)
+
+      // ✅ cache nom client pour hydrater le live
+      const clientCache: Record<string, string> = {}
+      ;(commandesData ?? []).forEach((c) => {
+        if (c.client_id && c.client?.nom) clientCache[c.client_id] = c.client.nom
+      })
+      ;(planifData ?? []).forEach((p: PlanifRow) => {
+        if (p.commande?.client_id && p.commande?.client?.nom) {
+          clientCache[p.commande.client_id] = p.commande.client.nom
+        }
+      })
+      setClientNames(clientCache)
 
       // index planification par candidat|date
       const planifIdx = new Map<string, PlanifRow[]>()
@@ -809,7 +882,7 @@ export default function Planning() {
         selectedSecteurs={selectedSecteurs}
         selectedSemaine={selectedSemaine}
         onRefresh={() => {}}
-        candidateIdsByLabel={candidateIdsByLabel} // 👈 passage du mapping pour fiabiliser l’ID
+        candidateIdsByLabel={candidateIdsByLabel}
       />
     </MainLayout>
   )

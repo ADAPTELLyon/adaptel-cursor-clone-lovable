@@ -190,16 +190,25 @@ export function SectionFixeCommandes({
               }}
             >
               <option value="Toutes">Toutes les semaines</option>
-              {semainesDisponibles.map((s: string) => (
-                <option key={s} value={s}>Semaine {s}</option>
-              ))}
+              {/* Groupement par année */}
+              {Array.isArray(semainesDisponibles) &&
+                semainesDisponibles.map(({ year, weeks }: { year: number; weeks: number[] }) => (
+                  <optgroup key={year} label={`Année ${year}`}>
+                    {weeks.map((w) => (
+                      <option key={`${year}-${w}`} value={w.toString()}>
+                        Semaine {w}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))
+              }
             </select>
 
             <select
-  className="border rounded-lg px-3 py-2 text-sm w-[220px] min-w-[220px] max-w-[220px]"
-  value={client}
-  onChange={(e) => setClient(e.target.value)}
->
+              className="border rounded-lg px-3 py-2 text-sm w-[220px] min-w-[220px] max-w-[220px]"
+              value={client}
+              onChange={(e) => setClient(e.target.value)}
+            >
               <option value="">Tous les clients</option>
               {clientsDisponibles.map((nom: string) => (
                 <option key={nom} value={nom}>{nom}</option>
