@@ -3,7 +3,17 @@ import MainLayout from "@/components/main-layout"
 import { SectionFixeCandidates } from "@/components/Planning/section-fixe-candidates"
 import { PlanningCandidateTable } from "@/components/Planning/PlanningCandidateTable"
 import { supabase } from "@/lib/supabase"
-import { addDays, endOfWeek, format, getISOWeek, parseISO, startOfWeek, addWeeks, subDays } from "date-fns"
+import {
+  addDays,
+  endOfWeek,
+  format,
+  getISOWeek,
+  getISOWeekYear,
+  parseISO,
+  startOfWeek,
+  addWeeks,
+  subDays,
+} from "date-fns"
 import type {
   JourPlanningCandidat,
   CommandeFull,
@@ -28,6 +38,71 @@ const lsSet = (key: string, value: unknown) => {
   try {
     localStorage.setItem(key, JSON.stringify(value))
   } catch {}
+}
+
+/* -----------------------------------------
+ *  Helpers ISO semaine / année
+ * ----------------------------------------- */
+
+/** Clé ISO type "2025-48" à partir d'une date */
+const getIsoYearWeekKeyFromDate = (date: Date): string => {
+  const year = getISOWeekYear(date)
+  const week = getISOWeek(date)
+  return `${year}-${String(week).padStart(2, "0")}`
+}
+
+/** Clé ISO type "2025-48" à partir d'une date ISO "yyyy-MM-dd" */
+const getIsoYearWeekKeyFromISO = (dateISO: string): string => {
+  const d = parseISO(dateISO)
+  return getIsoYearWeekKeyFromDate(d)
+}
+
+/** Décode "2025-48" ou "48" (ancien format) */
+const parseSelectedWeek = (
+  selected: string
+): { year: number | null; week: number | null; key: string | null } => {
+  if (!selected || selected === "Toutes") return { year: null, week: null, key: null }
+
+  // Nouveau format "YYYY-WW"
+  if (selected.includes("-")) {
+    const [y, w] = selected.split("-")
+    const year = parseInt(y, 10)
+    const week = parseInt(w, 10)
+    if (!Number.isNaN(year) && !Number.isNaN(week)) {
+      return { year, week, key: `${year}-${String(week).padStart(2, "0")}` }
+    }
+  }
+
+  // Ancien format : juste le numéro de semaine (on prend l'année ISO actuelle)
+  const week = parseInt(selected, 10)
+  if (!Number.isNaN(week)) {
+    const now = new Date()
+    const year = getISOWeekYear(now)
+    return { year, week, key: `${year}-${String(week).padStart(2, "0")}` }
+  }
+
+  return { year: null, week: null, key: null }
+}
+
+/** Lundi de la semaine ISO (année + semaine) */
+const getMondayOfIsoWeek = (isoYear: number, isoWeek: number): Date => {
+  // 4 janvier est toujours dans la semaine 1 ISO
+  const fourthJan = new Date(isoYear, 0, 4)
+  const firstMonday = startOfWeek(fourthJan, { weekStartsOn: 1 })
+  return addDays(firstMonday, (isoWeek - 1) * 7)
+}
+
+/** Semaine ISO actuelle au format "YYYY-WW" */
+const getCurrentIsoWeekKey = (): string => {
+  return getIsoYearWeekKeyFromDate(new Date())
+}
+
+/** Semaine ISO précédente */
+const prevIsoWeek = (year: number, week: number): { year: number; week: number } => {
+  if (week > 1) return { year, week: week - 1 }
+  // semaine 1 -> on va chercher la dernière semaine ISO de l'année précédente
+  const lastWeekPrevYear = getISOWeek(new Date(year - 1, 11, 28)) // 28 déc. est dans la dernière semaine ISO
+  return { year: year - 1, week: lastWeekPrevYear }
 }
 
 /* -----------------------------------------
@@ -110,8 +185,10 @@ const isAnnexe = (s?: string | null) => {
 /** compte “planifié” élargi (Validé / Planifié / À valider) sans casser le typage existant */
 const isPlanifieLike = (s?: StatutCommande | string | null) => {
   const v = (s ?? "")
-    .normalize("NFD").replace(/\p{Diacritic}/gu, "")
-    .toLowerCase().trim()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim()
   return v === "valide" || v === "planifie" || v === "a valider"
 }
 
@@ -196,9 +273,20 @@ export default function Planning() {
   const [semaine, setSemaine] = useState<string>(
     () => lsGet<string>("planning.semaine", format(new Date(), "yyyy-MM-dd"))
   )
-  const [selectedSemaine, setSelectedSemaine] = useState<string>(
-    () => lsGet<string>("planning.selectedSemaine", "Toutes")
-  )
+
+  const [selectedSemaine, setSelectedSemaine] = useState<string>(() => {
+    const stored = lsGet<string>("planning.selectedSemaine", "Toutes")
+    if (!stored || stored === "Toutes") return "Toutes"
+    if (stored.includes("-")) return stored // déjà au nouveau format
+    // ancien format : juste le numéro de semaine -> on bascule sur l'année ISO actuelle
+    const week = parseInt(stored, 10)
+    if (!Number.isNaN(week)) {
+      const year = getISOWeekYear(new Date())
+      return `${year}-${String(week).padStart(2, "0")}`
+    }
+    return "Toutes"
+  })
+
   const [candidat, setCandidat] = useState<string>(() => lsGet<string>("planning.candidat", ""))
   const [search, setSearch] = useState<string>(() => lsGet<string>("planning.search", ""))
   const [toutAfficher, setToutAfficher] = useState<boolean>(
@@ -207,9 +295,14 @@ export default function Planning() {
   const [dispo, setDispo] = useState<boolean>(() => lsGet<boolean>("planning.dispo", false))
 
   const [semainesDisponibles, setSemainesDisponibles] = useState<string[]>([])
-  const [stats, setStats] = useState({ "Non renseigné": 0, "Dispo": 0, "Non Dispo": 0, "Planifié": 0 })
+  const [stats, setStats] = useState({
+    "Non renseigné": 0,
+    Dispo: 0,
+    "Non Dispo": 0,
+    Planifié: 0,
+  })
   const [candidateNames, setCandidateNames] = useState<Record<string, string>>({}) // id -> "Nom Prénom"
-  const [clientNames, setClientNames] = useState<Record<string, string>>({})     // id -> "Nom client"
+  const [clientNames, setClientNames] = useState<Record<string, string>>({}) // id -> "Nom client"
 
   // 👇 mapping inverse : "Nom Prénom" -> id (pour lignes synthétiques)
   const candidateIdsByLabel = useMemo(() => {
@@ -224,111 +317,141 @@ export default function Planning() {
   const computeDateRange = useCallback((): { from: string; to: string; includePrev: boolean } => {
     const today = new Date()
     const mondayBase = startOfWeek(today, { weekStartsOn: 1 })
-    const currentWeek = getISOWeek(today)
-    const allWeeks = selectedSemaine === "Toutes"
 
-    if (allWeeks) {
+    // Mode "Toutes les semaines" : à partir de la semaine en cours sur ~12 semaines
+    if (selectedSemaine === "Toutes") {
       const from = format(mondayBase, "yyyy-MM-dd")
       const to = format(endOfWeek(addWeeks(mondayBase, 12), { weekStartsOn: 1 }), "yyyy-MM-dd")
       return { from, to, includePrev: false }
     }
 
-    const targetWeek = parseInt(selectedSemaine || String(currentWeek), 10)
-    const diff = targetWeek - currentWeek
-    const mondayTarget = addWeeks(mondayBase, diff)
-    const sundayTarget = endOfWeek(mondayTarget, { weekStartsOn: 1 })
+    const { year, week } = parseSelectedWeek(selectedSemaine)
+    if (!year || !week) {
+      const from = format(mondayBase, "yyyy-MM-dd")
+      const to = format(endOfWeek(addWeeks(mondayBase, 12), { weekStartsOn: 1 }), "yyyy-MM-dd")
+      return { from, to, includePrev: false }
+    }
 
+    const mondayTarget = getMondayOfIsoWeek(year, week)
+    const sundayTarget = endOfWeek(mondayTarget, { weekStartsOn: 1 })
     const from = format(subDays(mondayTarget, 14), "yyyy-MM-dd") // buffer -15j
     const to = format(sundayTarget, "yyyy-MM-dd")
     return { from, to, includePrev: true }
   }, [selectedSemaine])
 
   /* --------- compose un jour (priorité : Validé > Annexe >= Dispo) --------- */
-  const composeJour = useCallback((
-    dateISO: string,
-    dispoRow: DispoRow | null,
-    commandesRows: CommandeRow[]
-  ): {
-    secteur: string
-    service: string | null
-    commande?: CommandeFull
-    autresCommandes: CommandeFull[]
-    disponibilite?: CandidatDispoWithNom
-  } => {
-    const dispoFull = dispoRow ? buildDispoFull(dispoRow) : undefined
+  const composeJour = useCallback(
+    (
+      dateISO: string,
+      dispoRow: DispoRow | null,
+      commandesRows: CommandeRow[]
+    ): {
+      secteur: string
+      service: string | null
+      commande?: CommandeFull
+      autresCommandes: CommandeFull[]
+      disponibilite?: CandidatDispoWithNom
+    } => {
+      const dispoFull = dispoRow ? buildDispoFull(dispoRow) : undefined
 
-    const valides = commandesRows.filter((c) => normalize(c.statut) === "valide")
-    const annexes = commandesRows.filter((c) => isAnnexe(c.statut))
+      const valides = commandesRows.filter((c) => normalize(c.statut) === "valide")
+      const annexes = commandesRows.filter((c) => isAnnexe(c.statut))
 
-    let principale: CommandeFull | undefined
-    const secondaires: CommandeFull[] = []
-    let secteur = dispoRow?.secteur || "Inconnu"
-    let service = (dispoRow?.service ?? null) as string | null
+      let principale: CommandeFull | undefined
+      const secondaires: CommandeFull[] = []
+      let secteur = dispoRow?.secteur || "Inconnu"
+      let service = (dispoRow?.service ?? null) as string | null
 
-    if (valides.length > 0) {
-      // on ne force plus la présence des 2 heures : une seule (ou zéro) ne masque pas la mission
-      const missionMatin = valides.find((c) => (c.heure_debut_matin || c.heure_fin_matin) !== null)
-      const missionSoir  = valides.find((c) => (c.heure_debut_soir  || c.heure_fin_soir ) !== null)
+      if (valides.length > 0) {
+        // on ne force plus la présence des 2 heures : une seule (ou zéro) ne masque pas la mission
+        const missionMatin = valides.find(
+          (c) => (c.heure_debut_matin || c.heure_fin_matin) !== null
+        )
+        const missionSoir = valides.find(
+          (c) => (c.heure_debut_soir || c.heure_fin_soir) !== null
+        )
 
-      if (missionMatin) {
-        const full = buildCommandeFull(missionMatin)
-        principale = full
-        secteur = full.secteur
-        service = (full.service ?? service) ?? null
-      }
-      if (missionSoir) {
-        const soirFull = buildCommandeFull(missionSoir)
+        if (missionMatin) {
+          const full = buildCommandeFull(missionMatin)
+          principale = full
+          secteur = full.secteur
+          service = (full.service ?? service) ?? null
+        }
+        if (missionSoir) {
+          const soirFull = buildCommandeFull(missionSoir)
+          if (!principale) {
+            principale = soirFull
+            secteur = soirFull.secteur
+            service = (soirFull.service ?? service) ?? null
+          } else {
+            secondaires.push(soirFull)
+          }
+        }
         if (!principale) {
-          principale = soirFull
-          secteur = soirFull.secteur
-          service = (soirFull.service ?? service) ?? null
-        } else {
-          secondaires.push(soirFull)
+          const lastValide = [...valides].sort((a, b) => ts(b) - ts(a))[0]
+          const full = buildCommandeFull(lastValide)
+          principale = full
+          secteur = full.secteur
+          service = (full.service ?? service) ?? null
+        }
+      } else {
+        const lastAnnexe =
+          annexes.length > 0 ? [...annexes].sort((a, b) => ts(b) - ts(a))[0] : null
+        if (lastAnnexe && (!dispoFull || ts(lastAnnexe) >= ts(dispoFull))) {
+          const full = buildCommandeFull(lastAnnexe)
+          principale = full
+          secteur = full.secteur
+          service = (full.service ?? service) ?? null
         }
       }
-      if (!principale) {
-        const lastValide = [...valides].sort((a, b) => ts(b) - ts(a))[0]
-        const full = buildCommandeFull(lastValide)
-        principale = full
-        secteur = full.secteur
-        service = (full.service ?? service) ?? null
-      }
-    } else {
-      const lastAnnexe = annexes.length > 0 ? [...annexes].sort((a, b) => ts(b) - ts(a))[0] : null
-      if (lastAnnexe && (!dispoFull || ts(lastAnnexe) >= ts(dispoFull))) {
-        const full = buildCommandeFull(lastAnnexe)
-        principale = full
-        secteur = full.secteur
-        service = (full.service ?? service) ?? null
-      }
-    }
 
-    return { secteur, service, commande: principale, autresCommandes: secondaires, disponibilite: dispoFull }
-  }, [])
+      return {
+        secteur,
+        service,
+        commande: principale,
+        autresCommandes: secondaires,
+        disponibilite: dispoFull,
+      }
+    },
+    []
+  )
 
   /* --------- helpers MAJ locale --------- */
-  const removeCommandeEverywhere = useCallback((base: Record<string, JourPlanningCandidat[]>, id: string) => {
-    const next: Record<string, JourPlanningCandidat[]> = {}
-    for (const [label, jours] of Object.entries(base)) {
-      const nj: JourPlanningCandidat[] = []
-      for (const j of jours) {
-        let clone: JourPlanningCandidat = j
-        let changed = false
-        if (j.commande?.id === id) { clone = { ...clone, commande: undefined }; changed = true }
-        if (j.autresCommandes?.length) {
-          const filtered = j.autresCommandes.filter((c) => c.id !== id)
-          if (filtered.length !== (j.autresCommandes?.length || 0)) { clone = { ...clone, autresCommandes: filtered }; changed = true }
+  const removeCommandeEverywhere = useCallback(
+    (base: Record<string, JourPlanningCandidat[]>, id: string) => {
+      const next: Record<string, JourPlanningCandidat[]> = {}
+      for (const [label, jours] of Object.entries(base)) {
+        const nj: JourPlanningCandidat[] = []
+        for (const j of jours) {
+          let clone: JourPlanningCandidat = j
+          let changed = false
+          if (j.commande?.id === id) {
+            clone = { ...clone, commande: undefined }
+            changed = true
+          }
+          if (j.autresCommandes?.length) {
+            const filtered = j.autresCommandes.filter((c) => c.id !== id)
+            if (filtered.length !== (j.autresCommandes?.length || 0)) {
+              clone = { ...clone, autresCommandes: filtered }
+              changed = true
+            }
+          }
+          const keep =
+            clone.commande ||
+            (clone.autresCommandes && clone.autresCommandes.length > 0) ||
+            clone.disponibilite
+          if (keep) nj.push(changed ? clone : j)
         }
-        const keep = clone.commande || (clone.autresCommandes && clone.autresCommandes.length > 0) || clone.disponibilite
-        if (keep) nj.push(changed ? clone : j)
+        if (nj.length > 0) next[label] = nj
       }
-      if (nj.length > 0) next[label] = nj
-    }
-    return next
-  }, [])
+      return next
+    },
+    []
+  )
 
   const getLabelForCandidate = useCallback(
-    (candidat_id?: string | null) => (candidat_id && candidateNames[candidat_id]) || "Candidat inconnu",
+    (candidat_id?: string | null) =>
+      (candidat_id && candidateNames[candidat_id]) || "Candidat inconnu",
     [candidateNames]
   )
 
@@ -355,7 +478,8 @@ export default function Planning() {
       if (idx >= 0) {
         const current = line[idx]
         const autres = (current.autresCommandes ?? []).filter((c) => c.id !== row.id)
-        const maybeKeepOld = current.commande && current.commande.id !== row.id ? [current.commande] : []
+        const maybeKeepOld =
+          current.commande && current.commande.id !== row.id ? [current.commande] : []
         line[idx] = {
           ...current,
           secteur: row.secteur ?? current.secteur,
@@ -421,7 +545,10 @@ export default function Planning() {
         for (const j of jours) {
           if (j.disponibilite?.id === String(row.id)) {
             const clone: JourPlanningCandidat = { ...j, disponibilite: undefined }
-            const keep = clone.commande || (clone.autresCommandes && clone.autresCommandes.length > 0) || clone.disponibilite
+            const keep =
+              clone.commande ||
+              (clone.autresCommandes && clone.autresCommandes.length > 0) ||
+              clone.disponibilite
             if (keep) nj.push(clone)
           } else {
             nj.push(j)
@@ -435,110 +562,143 @@ export default function Planning() {
   )
 
   /* --------- Filtrage --------- */
-  const applyFilters = useCallback((
-    rawPlanning: Record<string, JourPlanningCandidat[]>,
-    secteurs: string[],
-    semaineSelect: string,
-    candidatSelect: string,
-    dispoFilter: boolean,
-    searchText: string,
-    _toutAfficherBool: boolean
-  ) => {
-    const newFiltered: typeof rawPlanning = {}
-    const currentWeekStr = getISOWeek(new Date()).toString()
+  const applyFilters = useCallback(
+    (
+      rawPlanning: Record<string, JourPlanningCandidat[]>,
+      secteurs: string[],
+      semaineSelect: string,
+      candidatSelect: string,
+      dispoFilter: boolean,
+      searchText: string,
+      _toutAfficherBool: boolean
+    ) => {
+      const newFiltered: typeof rawPlanning = {}
 
-    const matchSearchTerm = (val: string) =>
-      searchText.trim().toLowerCase().split(" ").every((term) => val.toLowerCase().includes(term))
+      const matchSearchTerm = (val: string) =>
+        searchText
+          .trim()
+          .toLowerCase()
+          .split(" ")
+          .every((term) => val.toLowerCase().includes(term))
 
-    const isToutes = semaineSelect === "Toutes"
-    const selectedWeekNum = isToutes ? null : parseInt(semaineSelect || "0", 10)
-    const prevWeeks = new Set<string>()
-    if (!isToutes && selectedWeekNum && !Number.isNaN(selectedWeekNum)) {
-      const w1 = selectedWeekNum - 1 > 0 ? selectedWeekNum - 1 : 52
-      const w2 = w1 - 1 > 0 ? w1 - 1 : 52
-      prevWeeks.add(String(w1)); prevWeeks.add(String(w2))
-    }
+      const isToutes = semaineSelect === "Toutes"
 
-    let mondayOfSelectedWeek: Date | null = null
-    if (!isToutes && selectedWeekNum) {
-      outer: for (const jours of Object.values(rawPlanning)) {
-        for (const j of jours) {
-          const w = getISOWeek(parseISO(j.date))
-          if (w === selectedWeekNum) {
-            mondayOfSelectedWeek = startOfWeek(parseISO(j.date), { weekStartsOn: 1 })
-            break outer
+      const { year: selectedYear, week: selectedWeek, key: selectedKey } =
+        parseSelectedWeek(semaineSelect)
+
+      // semaines précédentes (2 semaines avant) pour la logique "lignes fantômes"
+      const prevKeys = new Set<string>()
+      if (!isToutes && selectedYear && selectedWeek) {
+        const p1 = prevIsoWeek(selectedYear, selectedWeek)
+        const p2 = prevIsoWeek(p1.year, p1.week)
+        prevKeys.add(`${p1.year}-${String(p1.week).padStart(2, "0")}`)
+        prevKeys.add(`${p2.year}-${String(p2.week).padStart(2, "0")}`)
+      }
+
+      let mondayOfSelectedWeek: Date | null = null
+      if (!isToutes && selectedYear && selectedWeek) {
+        mondayOfSelectedWeek = getMondayOfIsoWeek(selectedYear, selectedWeek)
+      }
+
+      const mondayCurrentWeek = startOfWeek(new Date(), { weekStartsOn: 1 })
+
+      const weekMatch = (dateISO: string) => {
+        if (isToutes) {
+          // mode "Toutes" : on garde à partir de la semaine actuelle (>= lundi en cours)
+          const d = parseISO(dateISO)
+          return d >= mondayCurrentWeek
+        }
+        if (!selectedKey) return false
+        const key = getIsoYearWeekKeyFromISO(dateISO)
+        return key === selectedKey
+      }
+
+      const weekInPrev2 = (dateISO: string) => {
+        if (isToutes || !selectedKey) return false
+        const key = getIsoYearWeekKeyFromISO(dateISO)
+        return prevKeys.has(key)
+      }
+
+      Object.entries(rawPlanning).forEach(([candidatNom, jours]) => {
+        const aggregate = [
+          candidatNom,
+          ...jours.map((j) => j.secteur || ""),
+          ...jours.map((j) => j.service || ""),
+          ...jours.map((j) => j.commande?.client?.nom || ""),
+          ...jours.flatMap((j) =>
+            (j.autresCommandes || []).map((c) => c.client?.nom || "")
+          ),
+        ].join(" ")
+        if (searchText.trim() && !matchSearchTerm(aggregate)) return
+        if (candidatSelect && candidatNom !== candidatSelect) return
+
+        const joursSemaine = jours.filter(
+          (j) => secteurs.includes(j.secteur) && weekMatch(j.date)
+        )
+        if (dispoFilter) {
+          const hasDispo = joursSemaine.some(
+            (j) => j.disponibilite?.statut === "Dispo"
+          )
+          if (!hasDispo) return
+        }
+
+        if (joursSemaine.length > 0) {
+          newFiltered[candidatNom] = joursSemaine
+        } else if (!isToutes && !dispoFilter) {
+          const hadRecent = jours.some(
+            (j) => secteurs.includes(j.secteur) && weekInPrev2(j.date)
+          )
+          if (hadRecent && mondayOfSelectedWeek) {
+            const recentJours = jours
+              .filter((j) => weekInPrev2(j.date) && secteurs.includes(j.secteur))
+              .sort(
+                (a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime()
+              )
+            const recentSecteur = recentJours[0]?.secteur || "Inconnu"
+            const recentService = recentJours[0]?.service ?? null
+
+            const sevenDays: JourPlanningCandidat[] = Array.from({ length: 7 }).map(
+              (_, idx) => {
+                const d = addDays(mondayOfSelectedWeek!, idx)
+                const dISO = format(d, "yyyy-MM-dd")
+                return {
+                  date: dISO,
+                  secteur: recentSecteur,
+                  service: recentService,
+                  commande: undefined,
+                  autresCommandes: [],
+                  disponibilite: undefined,
+                }
+              }
+            )
+            newFiltered[candidatNom] = sevenDays
           }
         }
-      }
-      if (!mondayOfSelectedWeek) mondayOfSelectedWeek = startOfWeek(new Date(), { weekStartsOn: 1 })
-    }
-
-    const weekMatch = (dateISO: string) => {
-      const w = getISOWeek(parseISO(dateISO)).toString()
-      return isToutes ? parseInt(w) >= parseInt(currentWeekStr) : w === String(selectedWeekNum)
-    }
-    const weekInPrev2 = (dateISO: string) => {
-      if (isToutes) return false
-      const w = getISOWeek(parseISO(dateISO)).toString()
-      return prevWeeks.has(w)
-    }
-
-    Object.entries(rawPlanning).forEach(([candidatNom, jours]) => {
-      const aggregate = [
-        candidatNom,
-        ...jours.map(j => j.secteur || ""),
-        ...jours.map(j => j.service || ""),
-        ...jours.map(j => j.commande?.client?.nom || ""),
-        ...jours.flatMap(j => (j.autresCommandes || []).map(c => c.client?.nom || "")),
-      ].join(" ")
-      if (searchText.trim() && !matchSearchTerm(aggregate)) return
-      if (candidatSelect && candidatNom !== candidatSelect) return
-
-      const joursSemaine = jours.filter((j) => secteurs.includes(j.secteur) && weekMatch(j.date))
-      if (dispoFilter) {
-        const hasDispo = joursSemaine.some((j) => j.disponibilite?.statut === "Dispo")
-        if (!hasDispo) return
-      }
-
-      if (joursSemaine.length > 0) {
-        newFiltered[candidatNom] = joursSemaine
-      } else if (!isToutes && !dispoFilter) {
-        const hadRecent = jours.some((j) => secteurs.includes(j.secteur) && weekInPrev2(j.date))
-        if (hadRecent && mondayOfSelectedWeek) {
-          const recentJours = jours
-            .filter((j) => weekInPrev2(j.date) && secteurs.includes(j.secteur))
-            .sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())
-          const recentSecteur = recentJours[0]?.secteur || "Inconnu"
-          const recentService = recentJours[0]?.service ?? null
-
-          const sevenDays: JourPlanningCandidat[] = Array.from({ length: 7 }).map((_, idx) => {
-            const d = addDays(mondayOfSelectedWeek!, idx)
-            const dISO = format(d, "yyyy-MM-dd")
-            return { date: dISO, secteur: recentSecteur, service: recentService, commande: undefined, autresCommandes: [], disponibilite: undefined }
-          })
-          newFiltered[candidatNom] = sevenDays
-        }
-      }
-    })
-
-    setFilteredPlanning(newFiltered)
-
-    // ✅ stats : “Planifié” = Validé / Planifié / À valider (robuste)
-    let nr = 0, d = 0, nd = 0, p = 0
-    Object.values(newFiltered).forEach((jours) =>
-      jours.forEach((j) => {
-        const s = j.commande?.statut
-        if (isPlanifieLike(s)) p++
-        else {
-          const sd = j.disponibilite?.statut || "Non renseigné"
-          if (sd === "Dispo") d++
-          else if (sd === "Non Dispo") nd++
-          else nr++
-        }
       })
-    )
-    setStats({ "Non renseigné": nr, "Dispo": d, "Non Dispo": nd, "Planifié": p })
-  }, [])
+
+      setFilteredPlanning(newFiltered)
+
+      // ✅ stats : “Planifié” = Validé / Planifié / À valider (robuste)
+      let nr = 0,
+        d = 0,
+        nd = 0,
+        p = 0
+      Object.values(newFiltered).forEach((jours) =>
+        jours.forEach((j) => {
+          const s = j.commande?.statut
+          if (isPlanifieLike(s)) p++
+          else {
+            const sd = j.disponibilite?.statut || "Non renseigné"
+            if (sd === "Dispo") d++
+            else if (sd === "Non Dispo") nd++
+            else nr++
+          }
+        })
+      )
+      setStats({ "Non renseigné": nr, Dispo: d, "Non Dispo": nd, Planifié: p })
+    },
+    []
+  )
 
   /* --------- Fetch + MERGE --------- */
   const didInitRef = useRef(false)
@@ -546,7 +706,8 @@ export default function Planning() {
   const fetchPlanning = useCallback(async () => {
     try {
       const { from, to } = computeDateRange()
-      const filterSecteur = selectedSecteurs.length && selectedSecteurs.length < 5 ? selectedSecteurs : null
+      const filterSecteur =
+        selectedSecteurs.length && selectedSecteurs.length < 5 ? selectedSecteurs : null
 
       const [cmdQ, dispQ, planQ] = [
         supabase
@@ -598,7 +759,7 @@ export default function Planning() {
       const [
         { data: commandesData, error: commandesError },
         { data: dispoData, error: dispoError },
-        { data: planifData, error: planifError }
+        { data: planifData, error: planifError },
       ] = await Promise.all([cmdQ, dispQ, planQ])
 
       if (commandesError || dispoError || planifError) {
@@ -609,17 +770,23 @@ export default function Planning() {
       const nameCache: Record<string, string> = {}
       ;(dispoData ?? []).forEach((d) => {
         if (d.candidat_id && d.candidats?.nom) {
-          nameCache[d.candidat_id] = `${d.candidats.nom} ${d.candidats.prenom ?? ""}`.trim()
+          nameCache[d.candidat_id] = `${d.candidats.nom} ${
+            d.candidats.prenom ?? ""
+          }`.trim()
         }
       })
       ;(commandesData ?? []).forEach((c) => {
         if (c.candidat_id && c.candidat?.nom) {
-          nameCache[c.candidat_id] = `${c.candidat.nom} ${c.candidat.prenom ?? ""}`.trim()
+          nameCache[c.candidat_id] = `${c.candidat.nom} ${
+            c.candidat.prenom ?? ""
+          }`.trim()
         }
       })
       ;(planifData ?? []).forEach((p: PlanifRow) => {
         if (p.candidat_id && p.candidat?.nom) {
-          nameCache[p.candidat_id] = `${p.candidat.nom} ${p.candidat.prenom ?? ""}`.trim()
+          nameCache[p.candidat_id] = `${p.candidat.nom} ${
+            p.candidat.prenom ?? ""
+          }`.trim()
         }
       })
       setCandidateNames(nameCache)
@@ -641,7 +808,8 @@ export default function Planning() {
       ;(planifData ?? []).forEach((p: PlanifRow) => {
         const key = `${p.candidat_id}|${p.date}`
         const arr = planifIdx.get(key)
-        if (arr) arr.push(p); else planifIdx.set(key, [p])
+        if (arr) arr.push(p)
+        else planifIdx.set(key, [p])
       })
 
       const map: Record<string, JourPlanningCandidat[]> = {}
@@ -657,28 +825,40 @@ export default function Planning() {
         const label = nameCache[candId] ?? "Candidat inconnu"
         const jours: Record<string, JourPlanningCandidat> = {}
 
-        const commandesCandidat = (commandesData ?? []).filter((c) => c.candidat_id === candId)
-        const dispoCandidat = (dispoData ?? []).filter((d) => d.candidat_id === candId)
-        const planifsCandidat = (planifData ?? []).filter((p: PlanifRow) => p.candidat_id === candId)
+        const commandesCandidat = (commandesData ?? []).filter(
+          (c) => c.candidat_id === candId
+        )
+        const dispoCandidat = (dispoData ?? []).filter(
+          (d) => d.candidat_id === candId
+        )
+        const planifsCandidat = (planifData ?? []).filter(
+          (p: PlanifRow) => p.candidat_id === candId
+        )
 
-        const dates = Array.from(new Set([
-          ...commandesCandidat.map((c) => c.date),
-          ...dispoCandidat.map((d) => d.date),
-          ...planifsCandidat.map((p) => p.date),
-        ]))
+        const dates = Array.from(
+          new Set([
+            ...commandesCandidat.map((c) => c.date),
+            ...dispoCandidat.map((d) => d.date),
+            ...planifsCandidat.map((p) => p.date),
+          ])
+        )
 
         for (const dt of dates) {
           const fromCmd = commandesCandidat.filter((c) => c.date === dt)
-          const fromPlanif = (planifIdx.get(`${candId}|${dt}`) || []).map(buildCommandeRowFromPlanif)
+          const fromPlanif = (planifIdx.get(`${candId}|${dt}`) || []).map(
+            buildCommandeRowFromPlanif
+          )
           const byId = new Map<string, CommandeRow>()
-          for (const r of [...fromCmd, ...fromPlanif]) { if (r?.id) byId.set(String(r.id), r as CommandeRow) }
+          for (const r of [...fromCmd, ...fromPlanif]) {
+            if (r?.id) byId.set(String(r.id), r as CommandeRow)
+          }
           const cs: CommandeRow[] = Array.from(byId.values())
 
           const dispoJour = dispoCandidat.find((d) => d.date === dt) ?? null
           const composed = composeJour(dt, dispoJour as any, cs as any)
 
-          const w = getISOWeek(parseISO(dt)).toString()
-          semaines.add(w)
+          const keyWeek = getIsoYearWeekKeyFromISO(dt)
+          semaines.add(keyWeek)
 
           jours[dt] = {
             date: dt,
@@ -696,33 +876,44 @@ export default function Planning() {
 
       setPlanning(map)
 
-      const semainesTriees = Array.from(semaines).sort((a, b) => parseInt(b) - parseInt(a))
+      const semainesTriees = Array.from(semaines).sort((a, b) => {
+        const [ay, aw] = a.split("-").map((n) => parseInt(n, 10))
+        const [by, bw] = b.split("-").map((n) => parseInt(n, 10))
+        if (ay !== by) return ay - by
+        return aw - bw
+      })
       setSemainesDisponibles(semainesTriees)
       if (!didInitRef.current) didInitRef.current = true
     } catch (e) {
       console.error(e)
     }
-  }, [computeDateRange, selectedSecteurs])
+  }, [computeDateRange, selectedSecteurs, composeJour])
 
   /* --------- Refresh ciblé (1 candidat / 1 jour), MERGE inclus --------- */
-  const refreshOne = useCallback(async (candidatId: string, dateISO: string) => {
-    try {
-      const jour = dateISO.slice(0, 10)
-      const [{ data: dispoData }, { data: cmdData }, { data: planData }, { data: candRow }] = await Promise.all([
-        supabase
-          .from("disponibilites")
-          .select(`
+  const refreshOne = useCallback(
+    async (candidatId: string, dateISO: string) => {
+      try {
+        const jour = dateISO.slice(0, 10)
+        const [
+          { data: dispoData },
+          { data: cmdData },
+          { data: planData },
+          { data: candRow },
+        ] = await Promise.all([
+          supabase
+            .from("disponibilites")
+            .select(`
             id, date, secteur, service, statut, commentaire, candidat_id,
             dispo_matin, dispo_soir, dispo_nuit, created_at, updated_at,
             candidats:candidat_id ( nom, prenom )
           `)
-          .eq("candidat_id", candidatId)
-          .eq("date", jour)
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from("commandes")
-          .select(`
+            .eq("candidat_id", candidatId)
+            .eq("date", jour)
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from("commandes")
+            .select(`
             id, date, statut, secteur, service, client_id, candidat_id,
             heure_debut_matin, heure_fin_matin,
             heure_debut_soir,  heure_fin_soir,
@@ -731,11 +922,11 @@ export default function Planning() {
             client:client_id ( nom ),
             candidat:candidat_id ( nom, prenom )
           `)
-          .eq("candidat_id", candidatId)
-          .eq("date", jour),
-        supabase
-          .from("planification")
-          .select(`
+            .eq("candidat_id", candidatId)
+            .eq("date", jour),
+          supabase
+            .from("planification")
+            .select(`
             id, commande_id, candidat_id, date, secteur, statut,
             heure_debut_matin, heure_fin_matin,
             heure_debut_soir,  heure_fin_soir,
@@ -747,63 +938,110 @@ export default function Planning() {
             ),
             candidat:candidat_id ( nom, prenom )
           `)
-          .eq("candidat_id", candidatId)
-          .eq("date", jour),
-        supabase.from("candidats").select("nom, prenom").eq("id", candidatId).maybeSingle(),
-      ])
+            .eq("candidat_id", candidatId)
+            .eq("date", jour),
+          supabase.from("candidats").select("nom, prenom").eq("id", candidatId).maybeSingle(),
+        ])
 
-      const label = candidateNames[candidatId] || (candRow ? `${candRow.nom ?? ""} ${candRow.prenom ?? ""}`.trim() : "Candidat inconnu")
+        const label =
+          candidateNames[candidatId] ||
+          (candRow ? `${candRow.nom ?? ""} ${candRow.prenom ?? ""}`.trim() : "Candidat inconnu")
 
-      const byId = new Map<string, CommandeRow>()
-      for (const r of [
-        ...(((cmdData ?? []) as unknown) as CommandeRow[]),
-        ...(((planData ?? []).map(buildCommandeRowFromPlanif)) as unknown as CommandeRow[]),
-      ]) { if (r?.id) byId.set(String(r.id), r) }
-      const cmdRows: CommandeRow[] = Array.from(byId.values())
-
-      const composed = composeJour(jour, (dispoData as any) ?? null, cmdRows as any)
-
-      setCandidateNames((prev) => ({ ...prev, [candidatId]: label }))
-      setPlanning((prev) => {
-        const next = { ...prev }
-        const line = next[label] ? [...next[label]] : []
-        const idx = line.findIndex((j) => j.date === jour)
-        const newJour: JourPlanningCandidat = {
-          date: jour,
-          secteur: composed.secteur,
-          service: composed.service,
-          commande: composed.commande,
-          autresCommandes: composed.autresCommandes,
-          disponibilite: composed.disponibilite,
+        const byId = new Map<string, CommandeRow>()
+        for (const r of [
+          ...(((cmdData ?? []) as unknown) as CommandeRow[]),
+          ...(((planData ?? []).map(
+            buildCommandeRowFromPlanif
+          ) as unknown) as CommandeRow[]),
+        ]) {
+          if (r?.id) byId.set(String(r.id), r)
         }
-        if (idx >= 0) line[idx] = newJour
-        else line.push(newJour)
-        next[label] = line
-        return next
-      })
-    } catch (e) {
-      console.error("refreshOne exception:", e)
-    }
-  }, [candidateNames])
+        const cmdRows: CommandeRow[] = Array.from(byId.values())
+
+        const composed = composeJour(jour, (dispoData as any) ?? null, cmdRows as any)
+
+        setCandidateNames((prev) => ({ ...prev, [candidatId]: label }))
+        setPlanning((prev) => {
+          const next = { ...prev }
+          const line = next[label] ? [...next[label]] : []
+          const idx = line.findIndex((j) => j.date === jour)
+          const newJour: JourPlanningCandidat = {
+            date: jour,
+            secteur: composed.secteur,
+            service: composed.service,
+            commande: composed.commande,
+            autresCommandes: composed.autresCommandes,
+            disponibilite: composed.disponibilite,
+          }
+          if (idx >= 0) line[idx] = newJour
+          else line.push(newJour)
+          next[label] = line
+          return next
+        })
+      } catch (e) {
+        console.error("refreshOne exception:", e)
+      }
+    },
+    [candidateNames, composeJour]
+  )
 
   /* --------- Effects --------- */
-  useEffect(() => { if (semaineEnCours) setSelectedSemaine(getISOWeek(new Date()).toString()) }, [semaineEnCours])
 
-  useEffect(() => { fetchPlanning() }, [fetchPlanning, selectedSemaine, selectedSecteurs])
+  // Quand "Semaine en cours" est actif, on force la sélection sur la semaine ISO actuelle "YYYY-WW"
+  useEffect(() => {
+    if (semaineEnCours) setSelectedSemaine(getCurrentIsoWeekKey())
+  }, [semaineEnCours])
 
   useEffect(() => {
-    applyFilters(planning, selectedSecteurs, selectedSemaine, candidat, dispo, search, toutAfficher)
-  }, [planning, selectedSecteurs, selectedSemaine, candidat, search, dispo, toutAfficher, applyFilters])
+    fetchPlanning()
+  }, [fetchPlanning, selectedSemaine, selectedSecteurs])
+
+  useEffect(() => {
+    applyFilters(
+      planning,
+      selectedSecteurs,
+      selectedSemaine,
+      candidat,
+      dispo,
+      search,
+      toutAfficher
+    )
+  }, [
+    planning,
+    selectedSecteurs,
+    selectedSemaine,
+    candidat,
+    search,
+    dispo,
+    toutAfficher,
+    applyFilters,
+  ])
 
   // persist
-  useEffect(() => { lsSet("planning.selectedSecteurs", selectedSecteurs) }, [selectedSecteurs])
-  useEffect(() => { lsSet("planning.semaineEnCours", semaineEnCours) }, [semaineEnCours])
-  useEffect(() => { lsSet("planning.semaine", semaine) }, [semaine])
-  useEffect(() => { lsSet("planning.selectedSemaine", selectedSemaine) }, [selectedSemaine])
-  useEffect(() => { lsSet("planning.candidat", candidat) }, [candidat])
-  useEffect(() => { lsSet("planning.search", search) }, [search])
-  useEffect(() => { lsSet("planning.toutAfficher", toutAfficher) }, [toutAfficher])
-  useEffect(() => { lsSet("planning.dispo", dispo) }, [dispo])
+  useEffect(() => {
+    lsSet("planning.selectedSecteurs", selectedSecteurs)
+  }, [selectedSecteurs])
+  useEffect(() => {
+    lsSet("planning.semaineEnCours", semaineEnCours)
+  }, [semaineEnCours])
+  useEffect(() => {
+    lsSet("planning.semaine", semaine)
+  }, [semaine])
+  useEffect(() => {
+    lsSet("planning.selectedSemaine", selectedSemaine)
+  }, [selectedSemaine])
+  useEffect(() => {
+    lsSet("planning.candidat", candidat)
+  }, [candidat])
+  useEffect(() => {
+    lsSet("planning.search", search)
+  }, [search])
+  useEffect(() => {
+    lsSet("planning.toutAfficher", toutAfficher)
+  }, [toutAfficher])
+  useEffect(() => {
+    lsSet("planning.dispo", dispo)
+  }, [dispo])
 
   const resetFiltres = () => {
     setSelectedSecteurs(["Étages"])
@@ -813,7 +1051,7 @@ export default function Planning() {
     setToutAfficher(false)
     setSemaineEnCours(true)
     setSemaine(format(new Date(), "yyyy-MM-dd"))
-    setSelectedSemaine(getISOWeek(new Date()).toString())
+    setSelectedSemaine(getCurrentIsoWeekKey())
   }
 
   /* --------- Realtime --------- */
@@ -821,7 +1059,9 @@ export default function Planning() {
     table: "commandes",
     onInsert: (row) => setPlanning((prev) => upsertCommande(prev, row)),
     onUpdate: (row) => setPlanning((prev) => upsertCommande(prev, row)),
-    onDelete: (row) => { if (row?.id) setPlanning((prev) => removeCommandeEverywhere(prev, String(row.id))) },
+    onDelete: (row) => {
+      if (row?.id) setPlanning((prev) => removeCommandeEverywhere(prev, String(row.id)))
+    },
   })
   useLiveRows<DispoRow>({
     table: "disponibilites",
@@ -834,7 +1074,8 @@ export default function Planning() {
     const onEvt = (fn: (c: string, d: string) => void) => (e: Event) => {
       const ce = e as CustomEvent<{ candidatId?: string; date?: string }>
       const { candidatId, date } = ce.detail || {}
-      if (candidatId && date) fn(candidatId, date); else fetchPlanning()
+      if (candidatId && date) fn(candidatId, date)
+      else fetchPlanning()
     }
     const onDispoUpdated = onEvt((c, d) => refreshOne(c, d))
     const onPlanifUpdated = onEvt((c, d) => refreshOne(c, d))
@@ -842,11 +1083,17 @@ export default function Planning() {
 
     window.addEventListener("dispos:updated", onDispoUpdated as EventListener)
     window.addEventListener("planif:updated", onPlanifUpdated as EventListener)
-    window.addEventListener("adaptel:refresh-planning-candidat", onAdaptelRefresh as EventListener)
+    window.addEventListener(
+      "adaptel:refresh-planning-candidat",
+      onAdaptelRefresh as EventListener
+    )
     return () => {
       window.removeEventListener("dispos:updated", onDispoUpdated as EventListener)
       window.removeEventListener("planif:updated", onPlanifUpdated as EventListener)
-      window.removeEventListener("adaptel:refresh-planning-candidat", onAdaptelRefresh as EventListener)
+      window.removeEventListener(
+        "adaptel:refresh-planning-candidat",
+        onAdaptelRefresh as EventListener
+      )
     }
   }, [refreshOne, fetchPlanning])
 

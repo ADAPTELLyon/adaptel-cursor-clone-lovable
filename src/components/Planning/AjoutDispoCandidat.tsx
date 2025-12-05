@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { secteursList } from "@/lib/secteurs"
-import { format, startOfWeek, addDays, getWeek } from "date-fns"
+import { format, startOfWeek, addDays, getISOWeek, getISOWeekYear } from "date-fns"
 import { fr } from "date-fns/locale"
 import type { Candidat } from "@/types/types-front"
 import { supabase } from "@/integrations/supabase/client"
@@ -28,6 +28,11 @@ type JourPlanMap = Record<
   { client: string; horaire: string; statut?: string }[]
 >
 
+function capitalize(str: string) {
+  if (!str) return str
+  return str.charAt(0).toUpperCase() + str.slice(1)
+}
+
 export default function AjoutDispoCandidat({
   open,
   onOpenChange,
@@ -41,32 +46,58 @@ export default function AjoutDispoCandidat({
   const [candidat, setCandidat] = useState<Candidat | null>(null)
   const [commentaire, setCommentaire] = useState("")
   const [search, setSearch] = useState("")
+
+  // ⬇️ Lundi de la semaine en cours
   const lundi = startOfWeek(new Date(), { weekStartsOn: 1 })
-  const [semaine, setSemaine] = useState(getWeek(lundi).toString())
+
+  // 🔁 On stocke comme pour les commandes : valeur = date du lundi "yyyy-MM-dd"
+  const [semaine, setSemaine] = useState(format(lundi, "yyyy-MM-dd"))
+
   const [semainesDisponibles, setSemainesDisponibles] = useState<
-    { value: string; label: string; startDate: Date }[]
+    { value: string; label: string; startDate: Date; year: number; week: number }[]
   >([])
+
   const [dispos, setDispos] = useState<DispoState>({})
   const [planningMap, setPlanningMap] = useState<JourPlanMap>({})
   const [existantesIndex, setExistantesIndex] = useState<Record<string, string>>({})
 
   const { data: candidatsSecteur = [] } = useCandidatsBySecteur(secteur)
 
-  // --- Génération des semaines sélectionnables
+  // --- Génération des semaines sélectionnables : N-2, N-1, N, N+1..N+20
   useEffect(() => {
-    const semaines: { value: string; label: string; startDate: Date }[] = []
+    const weeks: { value: string; label: string; startDate: Date; year: number; week: number }[] = []
     const today = new Date()
     const start = startOfWeek(today, { weekStartsOn: 1 })
 
-    for (let i = 0; i < 10; i++) {
-      const monday = addDays(start, i * 7)
-      const value = getWeek(monday).toString()
-      const label = `Semaine ${value} - ${format(monday, "dd MMM", {
-        locale: fr,
-      })} au ${format(addDays(monday, 6), "dd MMM", { locale: fr })}`
-      semaines.push({ value, label, startDate: monday })
+    for (let offset = -2; offset <= 20; offset++) {
+      const monday = addDays(start, offset * 7)
+      const year = getISOWeekYear(monday)
+      const week = getISOWeek(monday)
+
+      const value = format(monday, "yyyy-MM-dd")
+
+      const lundiStrRaw = format(monday, "EEEE d MMM", { locale: fr })
+      const dimanche = addDays(monday, 6)
+      const dimancheStrRaw = format(dimanche, "EEEE d MMM", { locale: fr })
+
+      const lundiStr = capitalize(lundiStrRaw.replace(/\.$/, ""))
+      const dimancheStr = capitalize(dimancheStrRaw.replace(/\.$/, ""))
+
+      // 🚫 Pas de "Semaine 53" dans l'affichage
+      const displayWeek = week > 52 ? 52 : week
+
+      const label = `Semaine ${displayWeek} - ${lundiStr} - ${dimancheStr}`
+
+      weeks.push({ value, label, startDate: monday, year, week })
     }
-    setSemainesDisponibles(semaines)
+
+    // Tri par année, puis par numéro de semaine
+    weeks.sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year
+      return a.week - b.week
+    })
+
+    setSemainesDisponibles(weeks)
   }, [])
 
   const semaineObj = useMemo(
@@ -224,8 +255,7 @@ export default function AjoutDispoCandidat({
           // S’il y en a plusieurs, on prend la plus récente
           const a = annexes.sort(
             (a, b) =>
-              new Date(b.updated_at || b.date).getTime() -
-              new Date(a.updated_at || a.date).getTime()
+              new Date(b.updated_at || b.date).getTime() - new Date(a.updated_at || a.date).getTime()
           )[0]
           finalMap[date] = [
             {
@@ -529,15 +559,33 @@ export default function AjoutDispoCandidat({
                 value={semaine}
                 onChange={(e) => setSemaine(e.target.value)}
               >
-                {semainesDisponibles.map((s) => (
-                  <option key={s.value} value={s.value}>
-                    {s.label}
-                  </option>
-                ))}
+                {(() => {
+                  const nodes: JSX.Element[] = []
+                  let currentYear: number | null = null
+
+                  for (const s of semainesDisponibles) {
+                    if (currentYear === null || currentYear !== s.year) {
+                      currentYear = s.year
+                      nodes.push(
+                        <option key={`year-${s.year}`} value={`year-${s.year}`} disabled>
+                          {s.year}
+                        </option>
+                      )
+                    }
+
+                    nodes.push(
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    )
+                  }
+
+                  return nodes
+                })()}
               </select>
             </div>
 
-            {/* Commentaire (appliqué aux enregistrements créés/mis à jour) */}
+            {/* Commentaire */}
             <div className="space-y-2 border rounded-lg p-4 bg-gray-50 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
                 <MessageSquareText className="w-4 h-4 text-muted-foreground" />

@@ -277,7 +277,13 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
     date: string,
     dispoRow: any | null,
     commandesRows: CommandeRowLike[]
-  ): { secteur: string; service: string | null; commande?: CommandeFull; autresCommandes: CommandeFull[]; disponibilite?: CandidatDispoWithNom } => {
+  ): {
+    secteur: string;
+    service: string | null;
+    commande?: CommandeFull;
+    autresCommandes: CommandeFull[];
+    disponibilite?: CandidatDispoWithNom;
+  } => {
     const dispoFull = dispoRow ? toDispoFull(dispoRow) : undefined;
 
     const valides = commandesRows.filter((c) => isPlanif(c.statut));
@@ -418,6 +424,19 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
   // Statut global (colonne gauche)
   const hasDispo = useMemo(() => planning.some((j) => j.disponibilite?.statut === "Dispo"), [planning]);
 
+  // ✅ Secteur à afficher dans la colonne gauche :
+  // on prend le premier jour où il y a vraiment quelque chose (commande ou dispo),
+  // pour éviter d'utiliser un secteur par défaut ("Étages") sur un jour totalement vide.
+  const secteurColonne = useMemo(() => {
+    const j = planning.find(
+      (d) =>
+        d &&
+        d.secteur &&
+        (d.commande || d.disponibilite || (d.autresCommandes && d.autresCommandes.length > 0))
+    );
+    return j?.secteur || "";
+  }, [planning]);
+
   /* -----------------------------
      Rendu
   ----------------------------- */
@@ -461,7 +480,7 @@ export default function PlanningMiniCandidat({ candidatId }: { candidatId: strin
         {/* Colonne gauche (mêmes données que la nouvelle vue) */}
         <ColonneCandidate
           nomComplet={candidatNomPrenom || "Candidat ?"}
-          secteur={planning[0]?.secteur || ""}
+          secteur={secteurColonne}
           semaine={String(numeroSemaine)}
           statutGlobal={hasDispo ? "Dispo" : "Non Dispo"}
           candidatId={candidatId}

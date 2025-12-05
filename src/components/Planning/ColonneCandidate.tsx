@@ -125,6 +125,15 @@ export function ColonneCandidate({
 
   const totalHeuresAffiche = normalizeTotalHeures(totalHeures)
 
+  // ✅ affichage propre du numéro de semaine, même si on reçoit "2025-49"
+  const displayWeek = useMemo(() => {
+    if (!semaine) return ""
+    const parts = String(semaine).split("-")
+    const raw = parts[parts.length - 1] // dernière partie = numéro de semaine
+    const num = parseInt(raw, 10)
+    return Number.isNaN(num) ? raw : String(num)
+  }, [semaine])
+
   // garde l'état en phase si le parent nous donne un nouvel ID
   useEffect(() => {
     setResolvedId(candidatId || "")
@@ -230,7 +239,7 @@ export function ColonneCandidate({
           </button>
 
           <div className="h-5 w-5 rounded bg-gray-900 text-white text-xs flex items-center justify-center font-semibold">
-            {semaine}
+            {displayWeek}
           </div>
           <div className="flex items-center gap-1">
             <Clock className="w-4 h-4" />

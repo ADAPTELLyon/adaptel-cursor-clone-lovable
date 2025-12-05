@@ -113,17 +113,12 @@ export function SectionFixeCandidates({
             onCheckedChange={(val) => {
               setSemaineEnCours(val)
               if (val) {
+                // On met à jour juste la date de référence (lundi de la semaine)
                 const today = new Date()
                 const monday = startOfWeek(today, { weekStartsOn: 1 })
                 const iso = monday.toISOString().slice(0, 10)
                 setSemaine(iso)
-                // on bascule aussi la liste sur la semaine courante
-                const start = new Date(monday.getFullYear(), 0, 1)
-                const diff =
-                  (+monday - +start + (start.getTimezoneOffset() - monday.getTimezoneOffset()) * 60 * 1000) /
-                  86400000
-                const currentWeek = Math.floor((diff + start.getDay() + 6) / 7).toString()
-                setSelectedSemaine(currentWeek)
+                // La valeur de selectedSemaine sera forcée côté page (Planning.tsx)
               } else {
                 setSelectedSemaine("Toutes")
               }
@@ -161,7 +156,7 @@ export function SectionFixeCandidates({
 
       <div className="flex flex-wrap gap-4 items-center">
         <select
-          className="border rounded px-2 py-2 text-sm w-[160px]"
+          className="border rounded px-2 py-2 text-sm w-[200px]"
           value={selectedSemaine}
           onChange={(e) => {
             const val = e.target.value
@@ -171,11 +166,19 @@ export function SectionFixeCandidates({
           }}
         >
           <option value="Toutes">Toutes les semaines</option>
-          {semainesDisponibles.map((s) => (
-            <option key={s} value={s}>
-              Semaine {s}
-            </option>
-          ))}
+          {semainesDisponibles.map((s) => {
+            // s est au format "YYYY-WW"
+            const [yearStr, weekStr] = s.split("-")
+            const weekNum = parseInt(weekStr || "0", 10)
+            const label = !Number.isNaN(weekNum)
+              ? `Semaine ${weekNum} - ${yearStr}`
+              : s
+            return (
+              <option key={s} value={s}>
+                {label}
+              </option>
+            )
+          })}
         </select>
 
         <select
@@ -204,7 +207,12 @@ export function SectionFixeCandidates({
             viewBox="0 0 24 24"
             stroke="currentColor"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
           </svg>
         </div>
       </div>
@@ -319,12 +327,4 @@ export function SectionFixeCandidates({
       )}
     </div>
   )
-}
-
-function getWeekNumber(date: Date) {
-  const start = new Date(date.getFullYear(), 0, 1)
-  const diff =
-    (+date - +start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) /
-    86400000
-  return Math.floor((diff + start.getDay() + 6) / 7)
 }

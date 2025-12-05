@@ -1,11 +1,23 @@
 import { useEffect, useState } from "react"
 import { Plus } from "lucide-react"
-import { format, startOfWeek, endOfWeek, addWeeks } from "date-fns"
+import {
+  format,
+  startOfWeek,
+  endOfWeek,
+  addDays,
+  getISOWeek,
+  getISOWeekYear,
+} from "date-fns"
 import { statutColors, disponibiliteColors } from "@/lib/colors"
 import { supabase } from "@/lib/supabase"
 import type { JourPlanningCandidat, CommandeFull } from "@/types/types-front"
 import { ColonneCandidate } from "@/components/Planning/ColonneCandidate"
-import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import {
+  TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip"
 import CandidateJourneeDialog from "@/components/Planning/CandidateJourneeDialog"
 
 const HALF_H = 48
@@ -30,9 +42,32 @@ const fmt = (h?: string | null) => (h && h.length >= 5 ? h.slice(0, 5) : "")
 // ✔︎ Helper commun : considère "Validé" + "Planifié" + "À valider" (avec/ sans accents)
 const isPlanif = (s?: string | null) => {
   const v = (s || "")
-    .normalize("NFD").replace(/\p{Diacritic}/gu, "")
-    .toLowerCase().trim()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim()
   return v === "valide" || v === "planifie" || v === "a valider" || v === "à valider"
+}
+
+/** Parse une clé de semaine "YYYY-WW" */
+const parseWeekKey = (
+  key: string
+): { year: number; week: number } | null => {
+  if (!key || key === "Toutes") return null
+  if (!key.includes("-")) return null
+  const [y, w] = key.split("-")
+  const year = parseInt(y, 10)
+  const week = parseInt(w, 10)
+  if (Number.isNaN(year) || Number.isNaN(week)) return null
+  return { year, week }
+}
+
+/** Lundi de la semaine ISO (année + semaine) */
+const getMondayOfIsoWeek = (isoYear: number, isoWeek: number): Date => {
+  // 4 janvier est toujours dans la semaine 1 ISO
+  const fourthJan = new Date(isoYear, 0, 4)
+  const firstMonday = startOfWeek(fourthJan, { weekStartsOn: 1 })
+  return addDays(firstMonday, (isoWeek - 1) * 7)
 }
 
 export function PlanningCandidateTable({
@@ -101,17 +136,23 @@ export function PlanningCandidateTable({
     }
   }, [onRefresh])
 
+  // 👉 calcul des heures par candidat pour la semaine sélectionnée (YYYY-WW ou "Toutes")
   useEffect(() => {
     const fetchHeures = async () => {
       const currentDate = new Date()
-      const lundiSemaine = startOfWeek(currentDate, { weekStartsOn: 1 })
-      let lundiTarget = lundiSemaine
+      let lundiTarget: Date
 
-      if (selectedSemaine !== "Toutes") {
-        const numSemaineCible = parseInt(selectedSemaine)
-        const numSemaineActuelle = parseInt(format(currentDate, "I"))
-        const diff = numSemaineCible - numSemaineActuelle
-        lundiTarget = addWeeks(lundiSemaine, diff)
+      if (selectedSemaine === "Toutes") {
+        // on prend la semaine actuelle
+        lundiTarget = startOfWeek(currentDate, { weekStartsOn: 1 })
+      } else {
+        const parsed = parseWeekKey(selectedSemaine)
+        if (parsed) {
+          lundiTarget = getMondayOfIsoWeek(parsed.year, parsed.week)
+        } else {
+          // fallback : semaine actuelle
+          lundiTarget = startOfWeek(currentDate, { weekStartsOn: 1 })
+        }
       }
 
       const dimancheTarget = endOfWeek(lundiTarget, { weekStartsOn: 1 })
@@ -168,7 +209,9 @@ export function PlanningCandidateTable({
 
         const heuresTotal = Math.floor(totalMinutes / 60)
         const minutesTotal = totalMinutes % 60
-        heures[candidatNom] = `${heuresTotal.toString().padStart(2, "0")}:${minutesTotal.toString().padStart(2, "0")}`
+        heures[candidatNom] = `${heuresTotal.toString().padStart(2, "0")}:${minutesTotal
+          .toString()
+          .padStart(2, "0")}`
       }
 
       setHeuresParCandidat(heures)
@@ -177,20 +220,26 @@ export function PlanningCandidateTable({
     fetchHeures()
   }, [planning, selectedSemaine, candidateIdsByLabel])
 
-  const groupesParSemaine: Record<string, Record<string, Record<string, JourPlanningCandidat[]>>> = {}
+  // 👉 regroupement par semaine (année + semaine) + secteur
+  const groupesParSemaine: Record<
+    string,
+    Record<string, Record<string, JourPlanningCandidat[]>>
+  > = {}
 
   Object.entries(planning).forEach(([candidat, jours]) => {
     jours.forEach((jour) => {
       const dateObj = new Date(jour.date)
-      const lundiSemaine = startOfWeek(dateObj, { weekStartsOn: 1 })
-      const numeroSemaine = format(lundiSemaine, "I")
+      const isoYear = getISOWeekYear(dateObj)
+      const isoWeek = getISOWeek(dateObj)
+      const weekKey = `${isoYear}-${String(isoWeek).padStart(2, "0")}`
       const secteur = jour.secteur || "Inconnu"
-      const keySemaineSecteur = selectedSecteurs.length === 5 ? `${numeroSemaine}_${secteur}` : numeroSemaine
+      const keySemaineSecteur =
+        selectedSecteurs.length === 5 ? `${weekKey}_${secteur}` : weekKey
 
       if (!groupesParSemaine[keySemaineSecteur]) groupesParSemaine[keySemaineSecteur] = {}
-      if (!groupesParSemaine[keySemaineSecteur][candidat]) groupesParSemaine[keySemaineSecteur][candidat] = {}
+      if (!groupesParSemaine[keySemaineSecteur][candidat])
+        groupesParSemaine[keySemaineSecteur][candidat] = {}
 
-      // clé locale
       const dateKey = String(jour.date).slice(0, 10)
       if (!groupesParSemaine[keySemaineSecteur][candidat][dateKey]) {
         groupesParSemaine[keySemaineSecteur][candidat][dateKey] = []
@@ -268,13 +317,18 @@ export function PlanningCandidateTable({
         {/* Fond gris moyen global (type Synthèse) */}
         <div className="space-y-8 mt-8 p-1 rounded-md bg-[#e5e7eb]">
           {Object.entries(groupesParSemaine).map(([keySemaineSecteur, groupes]) => {
-            const [semaineStr, secteurStr] = keySemaineSecteur.split("_")
-            const baseDate = startOfWeek(new Date(), { weekStartsOn: 1 })
-            const diff = parseInt(semaineStr) - parseInt(format(baseDate, "I"))
-            const lundiCible = addWeeks(baseDate, diff)
+            const [weekKey, secteurStr] = keySemaineSecteur.split("_")
+            let isoYear = getISOWeekYear(new Date())
+            let isoWeek = getISOWeek(new Date())
+            const parsed = parseWeekKey(weekKey)
+            if (parsed) {
+              isoYear = parsed.year
+              isoWeek = parsed.week
+            }
+            const lundiCible = getMondayOfIsoWeek(isoYear, isoWeek)
+
             const jours = Array.from({ length: 7 }, (_, i) => {
-              const jour = new Date(lundiCible)
-              jour.setDate(jour.getDate() + i)
+              const jour = addDays(lundiCible, i)
               const dateStr = format(jour, "yyyy-MM-dd")
               return {
                 date: jour,
@@ -291,24 +345,37 @@ export function PlanningCandidateTable({
             const secteurHeader =
               selectedSecteurs.length === 1
                 ? selectedSecteurs[0]
-                : (secteurStr && selectedSecteurs.length === 5 ? secteurStr : "")
+                : secteurStr && selectedSecteurs.length === 5
+                ? secteurStr
+                : ""
 
             return (
-              <div key={keySemaineSecteur} className="border rounded-lg overflow-hidden shadow-sm bg-transparent">
+              <div
+                key={keySemaineSecteur}
+                className="border rounded-lg overflow-hidden shadow-sm bg-transparent"
+              >
                 {/* ——— ENTÊTE ——— */}
                 <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white">
                   <div className="p-4 border-r flex flex-col items-center justify-center min-h-[64px]">
-                    <div>{`Semaine ${semaineStr}`}</div>
+                    <div>{`Semaine ${isoWeek} - ${isoYear}`}</div>
                     {secteurHeader ? (
                       <div className="text-xs mt-1 italic">{secteurHeader}</div>
                     ) : null}
                   </div>
-                  {jours.map((jour, index) => (
-                    <div key={index} className="p-4 border-r text-center relative min-h-[64px]">
-                      <div>{jour.label.split(" ")[0]}</div>
-                      <div>{jour.label.split(" ").slice(1).join(" ")}</div>
-                    </div>
-                  ))}
+                  {jours.map((jour, index) => {
+                    const parts = jour.label.split(" ")
+                    const jourLabel = parts[0] // lundi, mardi...
+                    const reste = parts.slice(1).join(" ")
+                    return (
+                      <div
+                        key={index}
+                        className="p-4 border-r text-center relative min-h-[64px]"
+                      >
+                        <div className="capitalize">{jourLabel}</div>
+                        <div>{reste}</div>
+                      </div>
+                    )
+                  })}
                 </div>
 
                 {/* ——— LIGNES façon “cartes” ——— */}
@@ -336,13 +403,16 @@ export function PlanningCandidateTable({
                       const minH = isEtagesRow ? FULL_H_ETAGES : ROW_H_OTHERS
 
                       return (
-                        <div key={key} className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition">
+                        <div
+                          key={key}
+                          className="bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition"
+                        >
                           <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] text-sm">
                             {/* Colonne Candidat */}
                             <ColonneCandidate
                               nomComplet={nomPrenom}
                               secteur={secteur}
-                              semaine={semaineStr}
+                              semaine={weekKey}
                               statutGlobal={hasDispo ? "Dispo" : "Non Dispo"}
                               candidatId={candidatId}
                               totalHeures={totalHeures}
@@ -353,21 +423,37 @@ export function PlanningCandidateTable({
                               const jourCells = jourMap[jour.dateStr] || []
 
                               const rawCmds: CommandeFull[] = [
-                                ...jourCells.map((j) => j.commande).filter((c): c is CommandeFull => !!c),
-                                ...jourCells.flatMap((j) => (j.autresCommandes || []) as CommandeFull[]).filter(Boolean),
+                                ...jourCells
+                                  .map((j) => j.commande)
+                                  .filter((c): c is CommandeFull => !!c),
+                                ...jourCells
+                                  .flatMap(
+                                    (j) => (j.autresCommandes || []) as CommandeFull[]
+                                  )
+                                  .filter(Boolean),
                               ]
                               const byId = new Map<string, CommandeFull>()
-                              for (const c of rawCmds) { if (c?.id) byId.set(c.id, c) }
+                              for (const c of rawCmds) {
+                                if (c?.id) byId.set(c.id, c)
+                              }
                               const commandes: CommandeFull[] = Array.from(byId.values())
 
                               const valides = commandes.filter((c) => isPlanif(c.statut))
-                              const missionMatin = valides.find((c) => !!c.heure_debut_matin && !!c.heure_fin_matin)
-                              const missionSoir  = valides.find((c) => !!c.heure_debut_soir  && !!c.heure_fin_soir)
+                              const missionMatin = valides.find(
+                                (c) =>
+                                  !!c.heure_debut_matin && !!c.heure_fin_matin
+                              )
+                              const missionSoir = valides.find(
+                                (c) =>
+                                  !!c.heure_debut_soir && !!c.heure_fin_soir
+                              )
 
                               const dispo = jourCells[0]?.disponibilite
                               const service = jourCells[0]?.service || ""
-                              const colorDispo = disponibiliteColors["Dispo"]?.bg || "#d1d5db"
-                              const colorNonDispo = disponibiliteColors["Non Dispo"]?.bg || "#6b7280"
+                              const colorDispo =
+                                disponibiliteColors["Dispo"]?.bg || "#d1d5db"
+                              const colorNonDispo =
+                                disponibiliteColors["Non Dispo"]?.bg || "#6b7280"
 
                               const secteurCell = jourCells[0]?.secteur || secteur
                               const isEtagesCell = secteurCell === "Étages"
@@ -384,11 +470,24 @@ export function PlanningCandidateTable({
                                         <div className="w-full h-full min-w-0 overflow-hidden">
                                           {missionMatin || missionSoir ? (
                                             <VignettePlanifiee
-                                              client={(missionMatin || missionSoir)!.client?.nom || "Client ?"}
+                                              client={
+                                                (missionMatin || missionSoir)!.client?.nom ||
+                                                "Client ?"
+                                              }
                                               hours={[
-                                                missionMatin ? `${fmt(missionMatin.heure_debut_matin)} ${fmt(missionMatin.heure_fin_matin)}` : "",
-                                                missionSoir  ? `${fmt(missionSoir.heure_debut_soir)} ${fmt(missionSoir.heure_fin_soir)}`   : ""
-                                              ].filter(Boolean).join(" / ")}
+                                                missionMatin
+                                                  ? `${fmt(
+                                                      missionMatin.heure_debut_matin
+                                                    )} ${fmt(missionMatin.heure_fin_matin)}`
+                                                  : "",
+                                                missionSoir
+                                                  ? `${fmt(
+                                                      missionSoir.heure_debut_soir
+                                                    )} ${fmt(missionSoir.heure_fin_soir)}`
+                                                  : "",
+                                              ]
+                                                .filter(Boolean)
+                                                .join(" / ")}
                                             />
                                           ) : dispo?.matin === true ? (
                                             <VignetteColor
@@ -440,14 +539,21 @@ export function PlanningCandidateTable({
                                         // Autres secteurs => 2 vignettes (matin / soir)
                                         <div
                                           className="grid h-full gap-[6px] min-w-0"
-                                          style={{ gridTemplateRows: `repeat(2, minmax(${HALF_H}px, ${HALF_H}px))`, overflow: "hidden" }}
+                                          style={{
+                                            gridTemplateRows: `repeat(2, minmax(${HALF_H}px, ${HALF_H}px))`,
+                                            overflow: "hidden",
+                                          }}
                                         >
                                           {/* Matin */}
                                           <div className="w-full h-full min-w-0 overflow-hidden">
                                             {missionMatin ? (
                                               <VignettePlanifiee
-                                                client={missionMatin.client?.nom || "Client ?"}
-                                                hours={`${fmt(missionMatin.heure_debut_matin)} ${fmt(missionMatin.heure_fin_matin)}`}
+                                                client={
+                                                  missionMatin.client?.nom || "Client ?"
+                                                }
+                                                hours={`${fmt(
+                                                  missionMatin.heure_debut_matin
+                                                )} ${fmt(missionMatin.heure_fin_matin)}`}
                                               />
                                             ) : dispo?.matin === true ? (
                                               <VignetteColor
@@ -500,8 +606,12 @@ export function PlanningCandidateTable({
                                           <div className="w-full h-full min-w-0 overflow-hidden">
                                             {missionSoir ? (
                                               <VignettePlanifiee
-                                                client={missionSoir.client?.nom || "Client ?"}
-                                                hours={`${fmt(missionSoir.heure_debut_soir)} ${fmt(missionSoir.heure_fin_soir)}`}
+                                                client={
+                                                  missionSoir.client?.nom || "Client ?"
+                                                }
+                                                hours={`${fmt(
+                                                  missionSoir.heure_debut_soir
+                                                )} ${fmt(missionSoir.heure_fin_soir)}`}
                                               />
                                             ) : dispo?.soir === true ? (
                                               <VignetteColor
