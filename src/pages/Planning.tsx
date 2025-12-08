@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import MainLayout from "@/components/main-layout"
 import { SectionFixeCandidates } from "@/components/Planning/section-fixe-candidates"
 import { PlanningCandidateTable } from "@/components/Planning/PlanningCandidateTable"
@@ -254,14 +254,18 @@ const buildCommandeRowFromPlanif = (p: PlanifRow): CommandeRow => ({
 })
 
 const ts = (x?: { updated_at?: string | null; created_at?: string | null } | null) =>
-  (x?.updated_at ? Date.parse(x.updated_at) : 0) || (x?.created_at ? Date.parse(x.created_at!) : 0) || 0
+  (x?.updated_at ? Date.parse(x.updated_at) : 0) ||
+  (x?.created_at ? Date.parse(x.created_at!) : 0) ||
+  0
 
 /* -----------------------------------------
  *  Page
  * ----------------------------------------- */
 export default function Planning() {
   const [planning, setPlanning] = useState<Record<string, JourPlanningCandidat[]>>({})
-  const [filteredPlanning, setFilteredPlanning] = useState<Record<string, JourPlanningCandidat[]>>({})
+  const [filteredPlanning, setFilteredPlanning] = useState<Record<string, JourPlanningCandidat[]>>(
+    {}
+  )
 
   // UI state (persisted)
   const [selectedSecteurs, setSelectedSecteurs] = useState<string[]>(
@@ -304,7 +308,7 @@ export default function Planning() {
   const [candidateNames, setCandidateNames] = useState<Record<string, string>>({}) // id -> "Nom Prénom"
   const [clientNames, setClientNames] = useState<Record<string, string>>({}) // id -> "Nom client"
 
-  // 👇 mapping inverse : "Nom Prénom" -> id (pour lignes synthétiques)
+  // mapping inverse : "Nom Prénom" -> id (pour lignes synthétiques)
   const candidateIdsByLabel = useMemo(() => {
     const inv: Record<string, string> = {}
     for (const [id, label] of Object.entries(candidateNames)) {
@@ -461,7 +465,7 @@ export default function Planning() {
       const candId = row.candidat_id ?? null
       if (!candId) return removeCommandeEverywhere(base, String(row.id))
 
-      // ✅ hydratation nom client en live si absent (évite “Client ?”)
+      // hydratation nom client en live si absent
       const patched: Partial<CommandeRow> = { ...row }
       if (!patched.client && row.client_id && clientNames[row.client_id]) {
         patched.client = { nom: clientNames[row.client_id] }
@@ -678,7 +682,7 @@ export default function Planning() {
 
       setFilteredPlanning(newFiltered)
 
-      // ✅ stats : “Planifié” = Validé / Planifié / À valider (robuste)
+      // stats
       let nr = 0,
         d = 0,
         nd = 0,
@@ -700,9 +704,7 @@ export default function Planning() {
     []
   )
 
-  /* --------- Fetch + MERGE --------- */
-  const didInitRef = useRef(false)
-
+  /* --------- Fetch PLANNING (fenêtre limitée) --------- */
   const fetchPlanning = useCallback(async () => {
     try {
       const { from, to } = computeDateRange()
@@ -791,7 +793,7 @@ export default function Planning() {
       })
       setCandidateNames(nameCache)
 
-      // ✅ cache nom client pour hydrater le live
+      // cache nom client
       const clientCache: Record<string, string> = {}
       ;(commandesData ?? []).forEach((c) => {
         if (c.client_id && c.client?.nom) clientCache[c.client_id] = c.client.nom
@@ -813,7 +815,6 @@ export default function Planning() {
       })
 
       const map: Record<string, JourPlanningCandidat[]> = {}
-      const semaines = new Set<string>()
 
       const candidatsSet = new Set<string>([
         ...((commandesData ?? []).map((c) => c.candidat_id).filter(Boolean) as string[]),
@@ -857,9 +858,6 @@ export default function Planning() {
           const dispoJour = dispoCandidat.find((d) => d.date === dt) ?? null
           const composed = composeJour(dt, dispoJour as any, cs as any)
 
-          const keyWeek = getIsoYearWeekKeyFromISO(dt)
-          semaines.add(keyWeek)
-
           jours[dt] = {
             date: dt,
             secteur: composed.secteur,
@@ -875,19 +873,32 @@ export default function Planning() {
       }
 
       setPlanning(map)
-
-      const semainesTriees = Array.from(semaines).sort((a, b) => {
-        const [ay, aw] = a.split("-").map((n) => parseInt(n, 10))
-        const [by, bw] = b.split("-").map((n) => parseInt(n, 10))
-        if (ay !== by) return ay - by
-        return aw - bw
-      })
-      setSemainesDisponibles(semainesTriees)
-      if (!didInitRef.current) didInitRef.current = true
     } catch (e) {
       console.error(e)
     }
   }, [computeDateRange, selectedSecteurs, composeJour])
+
+  /* --------- Semaines dispo dérivées DU PLANNING --------- */
+  useEffect(() => {
+    const semaines = new Set<string>()
+
+    Object.values(planning).forEach((jours) => {
+      jours.forEach((j) => {
+        if (j.date) {
+          semaines.add(getIsoYearWeekKeyFromISO(j.date))
+        }
+      })
+    })
+
+    const semainesTriees = Array.from(semaines).sort((a, b) => {
+      const [ay, aw] = a.split("-").map((n) => parseInt(n, 10))
+      const [by, bw] = b.split("-").map((n) => parseInt(n, 10))
+      if (ay !== by) return ay - by
+      return bw - aw === 0 ? aw - bw : aw - bw
+    })
+
+    setSemainesDisponibles(semainesTriees)
+  }, [planning])
 
   /* --------- Refresh ciblé (1 candidat / 1 jour), MERGE inclus --------- */
   const refreshOne = useCallback(

@@ -168,7 +168,7 @@ export default function Candidats() {
 
         {/* Formulaire candidat */}
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden bg-white p-6 rounded-xl shadow-lg">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden bg.white p-6 rounded-xl shadow-lg">
             <DialogHeader>
               <DialogTitle className="text-xl font-semibold text-gray-800">
                 {editingCandidate ? "Modifier le candidat" : "Ajouter un candidat"}

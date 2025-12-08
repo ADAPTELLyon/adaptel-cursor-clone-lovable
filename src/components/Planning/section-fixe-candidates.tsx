@@ -48,7 +48,7 @@ export function SectionFixeCandidates({
 }: {
   selectedSecteurs: string[]
   setSelectedSecteurs: (val: string[]) => void
-  stats: { Dispo: number; "Non Dispo": number; Planifié: number }
+  stats: { Dispo: number; "Non Dispo": number; Planifié: number; "Non renseigné"?: number }
   semaine: string
   setSemaine: (s: string) => void
   selectedSemaine: string
@@ -77,6 +77,27 @@ export function SectionFixeCandidates({
   const [showSelectClient, setShowSelectClient] = useState(false)
   const [openFicheClient, setOpenFicheClient] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+
+  // Groupement des semaines par année pour l'affichage <optgroup>, à partir des clés "YYYY-WW"
+  const groupedSemaines = (() => {
+    const map: Record<number, number[]> = {}
+
+    semainesDisponibles.forEach((key) => {
+      const [yearStr, weekStr] = key.split("-")
+      const year = parseInt(yearStr, 10)
+      const week = parseInt(weekStr, 10)
+      if (Number.isNaN(year) || Number.isNaN(week)) return
+      if (!map[year]) map[year] = []
+      if (!map[year].includes(week)) map[year].push(week)
+    })
+
+    return Object.entries(map)
+      .map(([yearStr, weeks]) => ({
+        year: parseInt(yearStr, 10),
+        weeks: (weeks as number[]).sort((a, b) => a - b),
+      }))
+      .sort((a, b) => a.year - b.year)
+  })()
 
   return (
     <div className="sticky top-[64px] z-10 bg-white shadow-sm p-4 pb-4 border-b border-gray-100 space-y-6">
@@ -155,30 +176,30 @@ export function SectionFixeCandidates({
       </div>
 
       <div className="flex flex-wrap gap-4 items-center">
+        {/* Sélecteur de semaine avec titres Année, comme sur Commandes */}
         <select
           className="border rounded px-2 py-2 text-sm w-[200px]"
           value={selectedSemaine}
           onChange={(e) => {
             const val = e.target.value
             setSelectedSemaine(val)
-            // ✅ règle demandée : sélectionner via la liste “déconnecte” l’interrupteur
+            // sélectionner via la liste “déconnecte” l’interrupteur
             setSemaineEnCours(false)
           }}
         >
           <option value="Toutes">Toutes les semaines</option>
-          {semainesDisponibles.map((s) => {
-            // s est au format "YYYY-WW"
-            const [yearStr, weekStr] = s.split("-")
-            const weekNum = parseInt(weekStr || "0", 10)
-            const label = !Number.isNaN(weekNum)
-              ? `Semaine ${weekNum} - ${yearStr}`
-              : s
-            return (
-              <option key={s} value={s}>
-                {label}
-              </option>
-            )
-          })}
+          {groupedSemaines.map(({ year, weeks }) => (
+            <optgroup key={year} label={`Année ${year}`}>
+              {weeks.map((w) => {
+                const value = `${year}-${String(w).padStart(2, "0")}`
+                return (
+                  <option key={value} value={value}>
+                    {`Semaine ${w}`}
+                  </option>
+                )
+              })}
+            </optgroup>
+          ))}
         </select>
 
         <select

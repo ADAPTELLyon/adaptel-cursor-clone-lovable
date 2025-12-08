@@ -32,6 +32,7 @@ type CandidateListProps = {
 }
 
 export function CandidateList({ candidates, onEdit, onToggleActive }: CandidateListProps) {
+  // ✅ Regroupement par premier secteur (inchangé)
   const candidatesBySecteur = candidates.reduce((acc, candidate) => {
     const premierSecteur = candidate.secteurs?.[0]
     if (!premierSecteur) return acc
@@ -41,12 +42,21 @@ export function CandidateList({ candidates, onEdit, onToggleActive }: CandidateL
     return acc
   }, {} as Record<string, Candidate[]>)
 
+  // ✅ Liste des candidats SANS secteur
+  const candidatesSansSecteur = candidates.filter(
+    (c) => !c.secteurs || c.secteurs.length === 0
+  )
+
+  // Tri alpha par secteur
   for (const key in candidatesBySecteur) {
     candidatesBySecteur[key].sort((a, b) => a.nom.localeCompare(b.nom, "fr"))
   }
+  // Tri alpha pour les sans secteur aussi
+  candidatesSansSecteur.sort((a, b) => a.nom.localeCompare(b.nom, "fr"))
 
   return (
     <div className="space-y-8 p-2">
+      {/* Sections par secteur (Plonge, Cuisine, Salle, Étages, Réception, etc.) */}
       {secteurOrder.map((secteurKey) => {
         const candidats = candidatesBySecteur[secteurKey] || []
         if (candidats.length === 0) return null
@@ -134,6 +144,70 @@ export function CandidateList({ candidates, onEdit, onToggleActive }: CandidateL
           </div>
         )
       })}
+
+      {/* ✅ Nouvelle section : Sans secteur */}
+      {candidatesSansSecteur.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-gray-700 text-white px-6 py-3 rounded-lg shadow-sm">
+            <div className="flex items-center gap-3 text-lg font-semibold">
+              <span>Sans secteur</span>
+            </div>
+            <Badge variant="secondary" className="bg-white text-gray-800 font-medium">
+              {candidatesSansSecteur.length}{" "}
+              {candidatesSansSecteur.length > 1 ? "candidats" : "candidat"}
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {candidatesSansSecteur.map((c) => (
+              <Card
+                key={c.id}
+                className="h-full flex flex-col border border-gray-200 shadow-sm hover:shadow-md transition-all duration-200 hover:border-gray-700/40"
+              >
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg font-semibold text-gray-900">
+                    {c.nom} {c.prenom}
+                  </CardTitle>
+                </CardHeader>
+
+                <CardContent className="flex-1 space-y-3">
+                  <div>
+                    <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                      Secteurs
+                    </h4>
+                    <div className="flex flex-wrap gap-1">
+                      {/* Ici forcément aucun secteur */}
+                      <span className="text-sm text-gray-400">Aucun secteur</span>
+                    </div>
+                  </div>
+
+                  <Separator className="my-2" />
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium text-gray-600">Actif :</span>
+                    <SwitchCandidat
+                      checked={c.actif}
+                      onCheckedChange={(checked) => onToggleActive(c.id, checked)}
+                    />
+                  </div>
+                </CardContent>
+
+                <CardFooter className="pt-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onEdit(c.id)}
+                    className="w-full gap-2 border-gray-700 text-gray-700 hover:bg-gray-700/10 hover:text-gray-900"
+                  >
+                    <Edit className="h-4 w-4" />
+                    Modifier
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

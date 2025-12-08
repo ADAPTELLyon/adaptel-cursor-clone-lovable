@@ -1,6 +1,3 @@
-// … imports identiques
-// (fichier complet, inchangé sauf la section marquée 🔴 HISTO with candidate names)
-
 import {
   Dialog,
   DialogContent,
@@ -15,7 +12,6 @@ import { fr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
 import CommandeFormGauche from "./CommandeFormGauche"
 import CommandeFormDroite from "./CommandeFormDroite"
-import type { PosteType } from "@/types/types-front"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -26,17 +22,17 @@ export default function NouvelleCommandeDialog({
   onRefreshDone,
   commande,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onRefreshDone: () => void;
-  commande?: any;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onRefreshDone: () => void
+  commande?: any
 }) {
   const navigate = useNavigate()
 
   const [secteur, setSecteur] = useState("")
   const [clientId, setClientId] = useState("")
   const [service, setService] = useState("")
-  const [semaine, setSemaine] = useState("")
+  const [semaine, setSemaine] = useState("") // 👈 plus de valeur par défaut
   const [commentaire, setCommentaire] = useState("")
   const [complementMotif, setComplementMotif] = useState("")
   const [motif, setMotif] = useState("Extra Usage constant")
@@ -49,8 +45,9 @@ export default function NouvelleCommandeDialog({
     { value: string; label: string; startDate: Date }[]
   >([])
 
+  // Quand on change de semaine (value = numéro de semaine dans ton système actuel)
   useEffect(() => {
-    const semaineObj = semainesDisponibles.find(s => s.value === semaine)
+    const semaineObj = semainesDisponibles.find((s) => s.value === semaine)
     if (!semaineObj) return
 
     const newJoursState: Record<string, boolean> = {}
@@ -76,10 +73,14 @@ export default function NouvelleCommandeDialog({
   const joursSemaine = semaineObj
     ? Array.from({ length: 7 }, (_, i) => {
         const date = addDays(semaineObj.startDate, i)
-        return { jour: format(date, "EEEE dd MMMM", { locale: fr }), key: format(date, "yyyy-MM-dd") }
+        return {
+          jour: format(date, "EEEE dd MMMM", { locale: fr }),
+          key: format(date, "yyyy-MM-dd"),
+        }
       })
     : []
 
+  // Construction de la liste des semaines (identique à ta base, sans sélection auto)
   useEffect(() => {
     const semaines: any[] = []
     const today = new Date()
@@ -100,32 +101,44 @@ export default function NouvelleCommandeDialog({
     }
 
     setSemainesDisponibles(semaines)
-    setSemaine(getWeekNumber(new Date()).toString())
+    // ❌ AVANT : setSemaine(getWeekNumber(new Date()).toString())
+    // ✅ MAINTENANT : on laisse vide, l'user choisit la semaine
+    setSemaine("")
   }, [])
 
+  // Reset / pré-remplissage à l'ouverture
   useEffect(() => {
-    if (!open) return;
+    if (!open) return
 
+    // MODE CREATION
     if (!commande) {
-      setSecteur(""); setClientId(""); setService("");
-      setSemaine(getWeekNumber(new Date()).toString());
-      setCommentaire(""); setComplementMotif(""); setMotif("Extra Usage constant");
-      setJoursState({}); setHeuresParJour({}); setPosteTypeId(""); setPlannedByDay({});
-      return;
+      setSecteur("")
+      setClientId("")
+      setService("")
+      setSemaine("") // 👈 plus de semaine en cours par défaut
+      setCommentaire("")
+      setComplementMotif("")
+      setMotif("Extra Usage constant")
+      setJoursState({})
+      setHeuresParJour({})
+      setPosteTypeId("")
+      setPlannedByDay({})
+      return
     }
 
+    // MODE EDITION
     const run = async () => {
-      const dateCmd = new Date(commande.date);
-      const monday = startOfWeek(dateCmd, { weekStartsOn: 1 });
-      const weekValue = getWeekNumber(dateCmd).toString();
+      const dateCmd = new Date(commande.date)
+      const monday = startOfWeek(dateCmd, { weekStartsOn: 1 })
+      const weekValue = getWeekNumber(dateCmd).toString()
 
-      setSecteur(commande.secteur || "");
-      setClientId(commande.client_id || "");
-      setService(commande.service || "");
-      setSemaine(weekValue);
-      setCommentaire(commande.commentaire || "");
+      setSecteur(commande.secteur || "")
+      setClientId(commande.client_id || "")
+      setService(commande.service || "")
+      setSemaine(weekValue)
+      setCommentaire(commande.commentaire || "")
       setComplementMotif(commande.complement_motif || "")
-      setMotif(commande.motif_contrat || "Extra Usage constant");
+      setMotif(commande.motif_contrat || "Extra Usage constant")
       setJoursState({ [commande.date]: true })
       setHeuresParJour({
         [commande.date]: {
@@ -134,7 +147,7 @@ export default function NouvelleCommandeDialog({
           debutSoir: commande.heure_debut_soir || "",
           finSoir: commande.heure_fin_soir || "",
           nbPersonnes: 1,
-        }
+        },
       })
       setPosteTypeId("")
       setPlannedByDay({ [commande.date]: [""] })
@@ -150,14 +163,17 @@ export default function NouvelleCommandeDialog({
 
       let q = supabase
         .from("commandes")
-        .select("date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, mission_slot, service")
+        .select(
+          "date, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir, mission_slot, service"
+        )
         .eq("client_id", commande.client_id)
         .eq("secteur", commande.secteur)
         .eq("mission_slot", commande.mission_slot ?? 0)
         .gte("date", weekStart)
         .lte("date", weekEnd)
 
-      if (commande.service) q = q.eq("service", commande.service); else q = q.is("service", null)
+      if (commande.service) q = q.eq("service", commande.service)
+      else q = q.is("service", null)
 
       const { data, error } = await q
       if (error) {
@@ -205,13 +221,17 @@ export default function NouvelleCommandeDialog({
 
       setJoursState(fullWeek)
       setHeuresParJour(heures)
-      setPlannedByDay(Object.fromEntries(Object.keys(fullWeek).map(k => [k, [""]])))
-    };
-    run();
+      setPlannedByDay(
+        Object.fromEntries(Object.keys(fullWeek).map((k) => [k, [""]]))
+      )
+    }
+    run()
   }, [open, commande])
 
   useEffect(() => {
-    if (motif === "Extra Usage constant" && complementMotif !== "") setComplementMotif("")
+    if (motif === "Extra Usage constant" && complementMotif !== "") {
+      setComplementMotif("")
+    }
   }, [motif, complementMotif])
 
   const handleSave = async () => {
@@ -230,17 +250,21 @@ export default function NouvelleCommandeDialog({
     if (userError || !userApp?.id) return
     const userId = userApp.id
 
-    // ----- ÉDITION (inchangé) -----
+    // ----- ÉDITION -----
     if (commande) {
       const datesToUpdate = Object.keys(joursState).filter((d) => !!joursState[d])
-      if (datesToUpdate.length === 0) { toast.error("Aucune journée à mettre à jour"); return }
+      if (datesToUpdate.length === 0) {
+        toast.error("Aucune journée à mettre à jour")
+        return
+      }
 
       let q = supabase
         .from("commandes")
         .update({
           service: service || null,
           motif_contrat: motif,
-          complement_motif: motif === "Extra Usage constant" ? null : (complementMotif || null),
+          complement_motif:
+            motif === "Extra Usage constant" ? null : complementMotif || null,
           commentaire: commentaire || null,
         })
         .eq("client_id", clientId)
@@ -248,10 +272,14 @@ export default function NouvelleCommandeDialog({
         .eq("mission_slot", commande.mission_slot ?? 0)
         .in("date", datesToUpdate)
 
-      if (commande.service) q = q.eq("service", commande.service); else q = q.is("service", null)
+      if (commande.service) q = q.eq("service", commande.service)
+      else q = q.is("service", null)
 
       const { data: updatedRows, error: updErr } = await q.select("id, date")
-      if (updErr) { toast.error("Échec de la mise à jour"); return }
+      if (updErr) {
+        toast.error("Échec de la mise à jour")
+        return
+      }
 
       if (updatedRows && updatedRows.length > 0) {
         const historique = updatedRows.map((row) => ({
@@ -264,7 +292,10 @@ export default function NouvelleCommandeDialog({
           apres: {
             service: service || null,
             motif_contrat: motif,
-            complement_motif: motif === "Extra Usage constant" ? null : (complementMotif || null),
+            complement_motif:
+              motif === "Extra Usage constant"
+                ? null
+                : complementMotif || null,
             commentaire: commentaire || null,
             date: row.date,
           },
@@ -272,12 +303,17 @@ export default function NouvelleCommandeDialog({
         await supabase.from("historique").insert(historique)
       }
 
-      onRefreshDone?.(); toast.success("Commande mise à jour"); onOpenChange(false); return
+      onRefreshDone?.()
+      toast.success("Commande mise à jour")
+      onOpenChange(false)
+      return
     }
 
-    // ----- CRÉATION (inchangé jusqu'à l'insert) -----
+    // ----- CRÉATION -----
     const lignes: any[] = []
-    const joursCommandes = Object.entries(joursState).filter(([_, active]) => active)
+    const joursCommandes = Object.entries(joursState).filter(
+      ([_, active]) => active
+    )
     const datesCommandes = joursCommandes.map(([date]) => date)
 
     const { data: commandesExistantesAll } = await supabase
@@ -287,7 +323,9 @@ export default function NouvelleCommandeDialog({
       .eq("secteur", secteur)
       .in("date", datesCommandes)
 
-    const existingSlots = (commandesExistantesAll || []).map((c) => c.mission_slot ?? 0)
+    const existingSlots = (commandesExistantesAll || []).map(
+      (c) => c.mission_slot ?? 0
+    )
     const baseSlot = existingSlots.length > 0 ? Math.max(...existingSlots) + 1 : 1
 
     for (const [key, isActive] of joursCommandes) {
@@ -305,7 +343,10 @@ export default function NouvelleCommandeDialog({
           heure_debut_soir: heure.debutSoir || null,
           heure_fin_soir: heure.finSoir || null,
           motif_contrat: motif,
-          complement_motif: motif === "Extra Usage constant" ? null : (complementMotif || null),
+          complement_motif:
+            motif === "Extra Usage constant"
+              ? null
+              : complementMotif || null,
           commentaire: commentaire || null,
           created_by: userId,
           mission_slot: baseSlot + i,
@@ -318,12 +359,16 @@ export default function NouvelleCommandeDialog({
     const { data, error } = await supabase
       .from("commandes")
       .insert(lignes)
-      .select("id, date, mission_slot, secteur, service, client_id, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir")
+      .select(
+        "id, date, mission_slot, secteur, service, client_id, heure_debut_matin, heure_fin_matin, heure_debut_soir, heure_fin_soir"
+      )
 
-    if (error) { toast.error("Échec création commandes"); return }
+    if (error) {
+      toast.error("Échec création commandes")
+      return
+    }
 
     // 🔴 HISTO avec noms candidats
-    // Récupère la liste unique des candidats pré-sélectionnés pour enrichir l'historique.
     const uniqueCandIds = Array.from(
       new Set(
         Object.values(plannedByDay)
@@ -343,10 +388,12 @@ export default function NouvelleCommandeDialog({
       })
     }
 
-    // 🔸 Application de la PRÉ-PLANIF (respect index slot)
+    // Pré-planif post-insert
     try {
       const byDateSlot = new Map<string, any>()
-      for (const row of data || []) byDateSlot.set(`${row.date}|${row.mission_slot}`, row)
+      for (const row of data || []) {
+        byDateSlot.set(`${row.date}|${row.mission_slot}`, row)
+      }
 
       const planifRows: any[] = []
       const updates: Array<{ id: string; candidat_id: string }> = []
@@ -376,17 +423,24 @@ export default function NouvelleCommandeDialog({
 
           updates.push({ id: cmd.id, candidat_id: candId })
 
-          const nomPrenom = candidatNames.get(candId) || { nom: "", prenom: "" }
+          const nomPrenom = candidatNames.get(candId) || {
+            nom: "",
+            prenom: "",
+          }
           histPlanif.push({
             table_cible: "commandes",
             ligne_id: cmd.id,
             action: "planification",
-            description: "Planification via création de commande (pré-sélection)",
+            description:
+              "Planification via création de commande (pré-sélection)",
             user_id: userId,
             date_action: new Date().toISOString(),
             apres: {
               date: dateStr,
-              candidat: { nom: nomPrenom.nom, prenom: nomPrenom.prenom }, // ✅ pour l’étiquette historique
+              candidat: {
+                nom: nomPrenom.nom,
+                prenom: nomPrenom.prenom,
+              },
               heure_debut_matin: cmd.heure_debut_matin,
               heure_fin_matin: cmd.heure_fin_matin,
               heure_debut_soir: cmd.heure_debut_soir,
@@ -397,19 +451,30 @@ export default function NouvelleCommandeDialog({
       }
 
       if (planifRows.length > 0) {
-        const { error: perr } = await supabase.from("planification").insert(planifRows)
+        const { error: perr } = await supabase
+          .from("planification")
+          .insert(planifRows)
         if (!perr) {
           await Promise.all(
-            updates.map(u =>
-              supabase.from("commandes").update({ candidat_id: u.candidat_id, statut: "Validé" }).eq("id", u.id)
+            updates.map((u) =>
+              supabase
+                .from("commandes")
+                .update({ candidat_id: u.candidat_id, statut: "Validé" })
+                .eq("id", u.id)
             )
           )
-          if (histPlanif.length > 0) await supabase.from("historique").insert(histPlanif)
+          if (histPlanif.length > 0) {
+            await supabase.from("historique").insert(histPlanif)
+          }
 
           try {
             window.dispatchEvent(new CustomEvent("planif:updated"))
-            window.dispatchEvent(new CustomEvent("adaptel:refresh-planning-client"))
-            window.dispatchEvent(new CustomEvent("adaptel:refresh-commandes"))
+            window.dispatchEvent(
+              new CustomEvent("adaptel:refresh-planning-client")
+            )
+            window.dispatchEvent(
+              new CustomEvent("adaptel:refresh-commandes")
+            )
           } catch {}
         }
       }
@@ -430,24 +495,37 @@ export default function NouvelleCommandeDialog({
         </DialogHeader>
         <div className="grid grid-cols-2 gap-6 mt-4">
           <CommandeFormGauche
-            secteur={secteur} setSecteur={setSecteur}
-            clientId={clientId} setClientId={setClientId}
-            service={service} setService={setService}
-            semaine={semaine} setSemaine={setSemaine}
-            motif={motif} setMotif={setMotif}
-            commentaire={commentaire} setCommentaire={setCommentaire}
-            complementMotif={complementMotif} setComplementMotif={setComplementMotif}
+            secteur={secteur}
+            setSecteur={setSecteur}
+            clientId={clientId}
+            setClientId={setClientId}
+            service={service}
+            setService={setService}
+            semaine={semaine}
+            setSemaine={setSemaine}
+            motif={motif}
+            setMotif={setMotif}
+            commentaire={commentaire}
+            setCommentaire={setCommentaire}
+            complementMotif={complementMotif}
+            setComplementMotif={setComplementMotif}
             clients={clients}
             services={services}
             semainesDisponibles={semainesDisponibles}
-            posteTypeId={posteTypeId} setPosteTypeId={setPosteTypeId}
+            posteTypeId={posteTypeId}
+            setPosteTypeId={setPosteTypeId}
             postesTypes={postesTypes}
             setHeuresParJour={setHeuresParJour}
             setJoursState={setJoursState}
           />
 
           <div className={commande ? "relative opacity-60" : ""}>
-            {commande && <div className="absolute inset-0 z-[5] pointer-events-auto" aria-hidden="true" />}
+            {commande && (
+              <div
+                className="absolute inset-0 z-[5] pointer-events-auto"
+                aria-hidden="true"
+              />
+            )}
             <CommandeFormDroite
               joursSemaine={joursSemaine}
               joursState={joursState}
@@ -476,6 +554,9 @@ export default function NouvelleCommandeDialog({
 
 function getWeekNumber(date: Date) {
   const start = new Date(date.getFullYear(), 0, 1)
-  const diff = (+date - +start + (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) / 86400000
+  const diff =
+    (+date - +start +
+      (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) /
+    86400000
   return Math.floor((diff + start.getDay() + 6) / 7)
 }
