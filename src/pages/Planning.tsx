@@ -13,6 +13,7 @@ import {
   startOfWeek,
   addWeeks,
   subDays,
+  subWeeks, // MAINTENANT UTILISÉ
 } from "date-fns"
 import type {
   JourPlanningCandidat,
@@ -23,7 +24,7 @@ import type {
 import { useLiveRows } from "@/hooks/useLiveRows"
 
 /* -----------------------------------------
- *  LocalStorage helpers
+ * LocalStorage helpers
  * ----------------------------------------- */
 const lsGet = <T,>(key: string, fallback: T): T => {
   try {
@@ -41,7 +42,7 @@ const lsSet = (key: string, value: unknown) => {
 }
 
 /* -----------------------------------------
- *  Helpers ISO semaine / année
+ * Helpers ISO semaine / année
  * ----------------------------------------- */
 
 /** Clé ISO type "2025-48" à partir d'une date */
@@ -106,7 +107,7 @@ const prevIsoWeek = (year: number, week: number): { year: number; week: number }
 }
 
 /* -----------------------------------------
- *  DB rows
+ * DB rows
  * ----------------------------------------- */
 type CommandeRow = {
   id: string
@@ -172,7 +173,7 @@ type PlanifRow = {
 }
 
 /* -----------------------------------------
- *  Utils
+ * Utils
  * ----------------------------------------- */
 const normalize = (s?: string | null) =>
   (s || "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim()
@@ -259,7 +260,7 @@ const ts = (x?: { updated_at?: string | null; created_at?: string | null } | nul
   0
 
 /* -----------------------------------------
- *  Page
+ * Page
  * ----------------------------------------- */
 export default function Planning() {
   const [planning, setPlanning] = useState<Record<string, JourPlanningCandidat[]>>({})
@@ -307,6 +308,9 @@ export default function Planning() {
   })
   const [candidateNames, setCandidateNames] = useState<Record<string, string>>({}) // id -> "Nom Prénom"
   const [clientNames, setClientNames] = useState<Record<string, string>>({}) // id -> "Nom client"
+  
+  // NOUVEAU: Stocke toutes les dates brutes des données chargées, filtrées par secteur.
+  const [rawDates, setRawDates] = useState<Set<string>>(new Set()); 
 
   // mapping inverse : "Nom Prénom" -> id (pour lignes synthétiques)
   const candidateIdsByLabel = useMemo(() => {
@@ -321,27 +325,39 @@ export default function Planning() {
   const computeDateRange = useCallback((): { from: string; to: string; includePrev: boolean } => {
     const today = new Date()
     const mondayBase = startOfWeek(today, { weekStartsOn: 1 })
-
-    // Mode "Toutes les semaines" : à partir de la semaine en cours sur ~12 semaines
-    if (selectedSemaine === "Toutes") {
-      const from = format(mondayBase, "yyyy-MM-dd")
-      const to = format(endOfWeek(addWeeks(mondayBase, 12), { weekStartsOn: 1 }), "yyyy-MM-dd")
-      return { from, to, includePrev: false }
-    }
+    
+    // NOUVEAU: Limite historique fixée à 6 semaines
+    const LOOKBACK_WEEKS = 6; 
+    const sixWeeksAgo = startOfWeek(subWeeks(today, LOOKBACK_WEEKS), { weekStartsOn: 1 });
 
     const { year, week } = parseSelectedWeek(selectedSemaine)
-    if (!year || !week) {
-      const from = format(mondayBase, "yyyy-MM-dd")
-      const to = format(endOfWeek(addWeeks(mondayBase, 12), { weekStartsOn: 1 }), "yyyy-MM-dd")
+    let mondayTarget: Date | null = null;
+    if (year && week) {
+        mondayTarget = getMondayOfIsoWeek(year, week);
+    }
+    
+    // Condition pour charger la plage ÉTENDUE :
+    // 1. Si "Toutes les semaines" est sélectionné.
+    // 2. Si aucune semaine valide n'est sélectionnée.
+    // 3. Si une semaine est sélectionnée, mais qu'elle est RÉCENTE (dans les 6 dernières semaines ou future).
+    const isWideRangeMode = selectedSemaine === "Toutes" || 
+                           !mondayTarget || 
+                           mondayTarget >= sixWeeksAgo; 
+
+    if (isWideRangeMode) {
+      // PLAGE ÉTENDUE (W - 6 à W + 52)
+      const from = format(sixWeeksAgo, "yyyy-MM-dd")
+      const to = format(endOfWeek(addWeeks(mondayBase, 52), { weekStartsOn: 1 }), "yyyy-MM-dd")
       return { from, to, includePrev: false }
     }
 
-    const mondayTarget = getMondayOfIsoWeek(year, week)
-    const sundayTarget = endOfWeek(mondayTarget, { weekStartsOn: 1 })
-    const from = format(subDays(mondayTarget, 14), "yyyy-MM-dd") // buffer -15j
-    const to = format(sundayTarget, "yyyy-MM-dd")
+    // PLAGE RESTREINTE (pour affichage d'une vieille semaine spécifique hors de W-6)
+    const mondayTargetOld = getMondayOfIsoWeek(year!, week!)
+    const sundayTargetOld = endOfWeek(mondayTargetOld, { weekStartsOn: 1 })
+    const from = format(subDays(mondayTargetOld, 14), "yyyy-MM-dd") // buffer -15j
+    const to = format(sundayTargetOld, "yyyy-MM-dd")
     return { from, to, includePrev: true }
-  }, [selectedSemaine])
+  }, [selectedSemaine]) // Seule selectedSemaine est nécessaire ici car c'est le seul paramètre qui change la plage FROM/TO DB
 
   /* --------- compose un jour (priorité : Validé > Annexe >= Dispo) --------- */
   const composeJour = useCallback(
@@ -610,7 +626,7 @@ export default function Planning() {
         if (isToutes) {
           // mode "Toutes" : on garde à partir de la semaine actuelle (>= lundi en cours)
           const d = parseISO(dateISO)
-          return d >= mondayCurrentWeek
+          return d >= mondayCurrentWeek // **LOGIQUE DE FILTRAGE D'AFFICHAGE TOUTES SEMAINES**
         }
         if (!selectedKey) return false
         const key = getIsoYearWeekKeyFromISO(dateISO)
@@ -717,8 +733,8 @@ export default function Planning() {
           .select(`
             id, date, statut, secteur, service, client_id, candidat_id,
             heure_debut_matin, heure_fin_matin,
-            heure_debut_soir,  heure_fin_soir,
-            heure_debut_nuit,  heure_fin_nuit,
+            heure_debut_soir, 	heure_fin_soir,
+            heure_debut_nuit, 	heure_fin_nuit,
             commentaire, created_at, updated_at, mission_slot,
             client:client_id ( nom ),
             candidat:candidat_id ( nom, prenom )
@@ -739,8 +755,8 @@ export default function Planning() {
           .select(`
             id, commande_id, candidat_id, date, secteur, statut,
             heure_debut_matin, heure_fin_matin,
-            heure_debut_soir,  heure_fin_soir,
-            heure_debut_nuit,  heure_fin_nuit,
+            heure_debut_soir, 	heure_fin_soir,
+            heure_debut_nuit, 	heure_fin_nuit,
             created_at, updated_at,
             commande:commande_id (
               id, client_id, secteur, service,
@@ -804,6 +820,13 @@ export default function Planning() {
         }
       })
       setClientNames(clientCache)
+      
+      // Collecte de toutes les dates trouvées pour construire la liste des semaines (SemainesDisponibles)
+      const allDates = new Set<string>();
+      (commandesData ?? []).forEach(c => allDates.add(String(c.date).slice(0, 10)));
+      (dispoData ?? []).forEach(d => allDates.add(String(d.date).slice(0, 10)));
+      (planifData ?? []).forEach(p => allDates.add(String(p.date).slice(0, 10)));
+      setRawDates(allDates); // Met à jour le nouvel état
 
       // index planification par candidat|date
       const planifIdx = new Map<string, PlanifRow[]>()
@@ -875,30 +898,29 @@ export default function Planning() {
       setPlanning(map)
     } catch (e) {
       console.error(e)
+      setRawDates(new Set()); // Reset on error
     }
   }, [computeDateRange, selectedSecteurs, composeJour])
 
-  /* --------- Semaines dispo dérivées DU PLANNING --------- */
+  /* --------- Semaines dispo dérivées DU PLANNING (Utilise les dates brutes) --------- */
   useEffect(() => {
     const semaines = new Set<string>()
 
-    Object.values(planning).forEach((jours) => {
-      jours.forEach((j) => {
-        if (j.date) {
-          semaines.add(getIsoYearWeekKeyFromISO(j.date))
-        }
-      })
+    // Utilisation des dates brutes (rawDates)
+    rawDates.forEach((dateISO) => {
+      semaines.add(getIsoYearWeekKeyFromISO(dateISO))
     })
 
     const semainesTriees = Array.from(semaines).sort((a, b) => {
       const [ay, aw] = a.split("-").map((n) => parseInt(n, 10))
       const [by, bw] = b.split("-").map((n) => parseInt(n, 10))
       if (ay !== by) return ay - by
-      return bw - aw === 0 ? aw - bw : aw - bw
+      return aw - bw // Tri par semaine croissante (du passé vers le futur)
     })
 
-    setSemainesDisponibles(semainesTriees)
-  }, [planning])
+    // On affiche TOUTES les semaines chargées. La limite historique (6 semaines) est gérée par la requête Supabase
+    setSemainesDisponibles(["Toutes", ...semainesTriees])
+  }, [rawDates])
 
   /* --------- Refresh ciblé (1 candidat / 1 jour), MERGE inclus --------- */
   const refreshOne = useCallback(
@@ -927,8 +949,8 @@ export default function Planning() {
             .select(`
             id, date, statut, secteur, service, client_id, candidat_id,
             heure_debut_matin, heure_fin_matin,
-            heure_debut_soir,  heure_fin_soir,
-            heure_debut_nuit,  heure_fin_nuit,
+            heure_debut_soir, 	heure_fin_soir,
+            heure_debut_nuit, 	heure_fin_nuit,
             commentaire, created_at, updated_at, mission_slot,
             client:client_id ( nom ),
             candidat:candidat_id ( nom, prenom )
@@ -940,8 +962,8 @@ export default function Planning() {
             .select(`
             id, commande_id, candidat_id, date, secteur, statut,
             heure_debut_matin, heure_fin_matin,
-            heure_debut_soir,  heure_fin_soir,
-            heure_debut_nuit,  heure_fin_nuit,
+            heure_debut_soir, 	heure_fin_soir,
+            heure_debut_nuit, 	heure_fin_nuit,
             created_at, updated_at,
             commande:commande_id (
               id, client_id, secteur, service,
@@ -1004,6 +1026,7 @@ export default function Planning() {
   }, [semaineEnCours])
 
   useEffect(() => {
+    // Appel à fetchPlanning qui met à jour l'état `planning` ET `rawDates`
     fetchPlanning()
   }, [fetchPlanning, selectedSemaine, selectedSecteurs])
 

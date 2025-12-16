@@ -100,7 +100,7 @@ export default function Commandes() {
   const [clientIdToEdit, setClientIdToEdit] = useState<string | null>(null)
   const [showEditDialog, setShowEditDialog] = useState(false)
 
-  // Semaines dispo (⚠️ structure groupée par année)
+  // Semaines dispo (structure groupée par année)
   const [semainesDisponibles, setSemainesDisponibles] = useState<{ year: number; weeks: number[] }[]>([])
 
   // Persist selection
@@ -117,27 +117,24 @@ export default function Commandes() {
     }
   }, [])
 
-  // 🧠 Résolution de l'année pour la semaine sélectionnée (si "1" existe en 2025/2026 => on prend l'année la + récente)
+  // Résolution de l'année pour la semaine sélectionnée
   const resolvedYearForSelectedWeek = useMemo(() => {
     if (semaineEnCours || selectedSemaine === "Toutes") {
       return getWeekYear(new Date(), { weekStartsOn: 1 })
     }
     const w = parseInt(selectedSemaine || "", 10)
     if (!Number.isFinite(w)) return getWeekYear(new Date(), { weekStartsOn: 1 })
-    // cherche les années qui contiennent cette semaine dans la fenêtre/secteur courants
     const yearsHavingW = semainesDisponibles
       .filter(g => g.weeks.includes(w))
       .map(g => g.year)
     if (yearsHavingW.length === 0) {
-      // fallback: année courante
       return getWeekYear(new Date(), { weekStartsOn: 1 })
     }
-    // choix: la plus récente
     return Math.max(...yearsHavingW)
   }, [semaineEnCours, selectedSemaine, semainesDisponibles])
 
   const computeWeekRange = useCallback(() => {
-    // "Toutes" => fenêtre glissante depuis lundi courant sur ~6 mois (inchangé)
+    // "Toutes" ou Semaine en cours
     if (selectedSemaine === "Toutes" || semaineEnCours) {
       const now = new Date()
       const mondayCurrent = startOfWeek(now, { weekStartsOn: 1 })
@@ -153,7 +150,7 @@ export default function Commandes() {
       return { dmin, dmax }
     }
 
-    // ✅ Cas d'une semaine précise: utiliser l'année résolue
+    // Cas d'une semaine précise
     const w = parseInt(selectedSemaine, 10)
     const y = resolvedYearForSelectedWeek
     const mondayTarget = getMondayOfISOWeek(w, y)
@@ -313,7 +310,6 @@ export default function Commandes() {
 
     const { dmin, dmax } = computeWeekRange()
 
-    // ✅ Colonnes strictes (PAS de *) + LIMIT
     let query = supabase
       .from("commandes")
       .select(`
@@ -337,7 +333,6 @@ export default function Commandes() {
       query = query.in("secteur", selectedSecteurs)
     }
 
-    // 🔎 Filtre serveur quand "En recherche" est actif
     if (enRecherche) {
       query = query.eq("statut", "En recherche")
     }
@@ -348,11 +343,10 @@ export default function Commandes() {
       .order("secteur", { ascending: true })
       .order("service", { ascending: true, nullsFirst: true })
       .order("mission_slot", { ascending: true })
-      .limit(LIMIT_MAX) // ✅ anti 0-999/*
+      .limit(LIMIT_MAX)
 
     const { data, error } = await query
 
-    // Si une nouvelle requête a démarré entre-temps, on ignore ce résultat
     if (myFetchId !== fetchIdRef.current) return
 
     if (error || !data) {
@@ -396,7 +390,6 @@ export default function Commandes() {
     const sorted: Record<string, JourPlanning[]> = {}
     for (const [k, v] of entries) sorted[k] = v
 
-    // ⛔️ anti-boucle : n’actualiser le cache nom client que s’il a changé
     setClientNames((prev) => (shallowEqualRecord(prev, nameCache) ? prev : nameCache))
     setPlanning(sorted)
   }, [computeWeekRange, selectedSemaine, selectedSecteurs, buildCommandeFromRow, enRecherche])
@@ -407,6 +400,10 @@ export default function Commandes() {
     try {
       const now = new Date()
       const mondayNow = startOfWeek(now, { weekStartsOn: 1 })
+
+      // 🔹 Fenêtre brute pour chercher les dates avec données :
+      //    - 52 semaines en arrière
+      //    - 26 semaines en avant
       const startWindow = addDays(mondayNow, -52 * 7)
       const endWindow = addDays(mondayNow, 26 * 7 + 6)
 
@@ -429,7 +426,7 @@ export default function Commandes() {
         return
       }
 
-      // ⚙️ Regroupement par année -> set de semaines
+      // ⚙️ Regroupement par année -> set de semaines (toutes les semaines avec données dans la fenêtre brute)
       const byYear = new Map<number, Set<number>>()
       ;(data as { date: string }[]).forEach((row) => {
         const d = new Date(row.date)
@@ -439,14 +436,32 @@ export default function Commandes() {
         byYear.get(y)!.add(w)
       })
 
-      // Tri: année croissante, semaine croissante
       const years = Array.from(byYear.keys()).sort((a, b) => a - b)
-      const grouped = years.map((year) => ({
+      const groupedRaw = years.map((year) => ({
         year,
         weeks: Array.from(byYear.get(year)!).sort((a, b) => a - b),
       }))
 
-      setSemainesDisponibles(grouped)
+      // 🔹 NOUVELLE RÈGLE :
+      //   - garder uniquement :
+      //       * la semaine en cours
+      //       * les semaines des 6 mois précédents (~26 semaines)
+      //       * toutes les semaines futures (dans la fenêtre endWindow) qui ont des données
+      const sixMonthsAgoMonday = addDays(mondayNow, -26 * 7)
+
+      const groupedFiltered = groupedRaw
+        .map(({ year, weeks }) => {
+          const keptWeeks = weeks.filter((week) => {
+            const mondayOfWeek = getMondayOfISOWeek(week, year)
+            // on garde toute semaine dont le lundi est >= (semaineCourante - 6 mois)
+            return mondayOfWeek >= sixMonthsAgoMonday
+          })
+          return { year, weeks: keptWeeks }
+        })
+        // on enlève les années qui n'ont plus aucune semaine après filtrage
+        .filter((g) => g.weeks.length > 0)
+
+      setSemainesDisponibles(groupedFiltered)
     } catch (e) {
       console.error("fetchSemainesDisponibles exception:", e)
       setSemainesDisponibles([])

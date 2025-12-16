@@ -22,7 +22,7 @@ interface CommandeFormGaucheProps {
   setClientId: (s: string) => void
   service: string
   setService: (s: string) => void
-  semaine: string          // ← passe "" à l’ouverture du popup pour que ce soit vide
+  semaine: string
   setSemaine: (s: string) => void
   motif: string
   setMotif: (s: string) => void
@@ -32,8 +32,8 @@ interface CommandeFormGaucheProps {
   setComplementMotif: (s: string) => void
   clients: { id: string; nom: string; services?: string[] }[]
   services: string[]
-  // Utilisé pour construire la liste des semaines (labels déjà prêts).
-  semainesDisponibles: { value: string; label: string }[]
+  // ⚠️ On réutilise ce qui vient du parent (value, label, startDate)
+  semainesDisponibles: { value: string; label: string; startDate?: Date }[]
   posteTypeId: string
   setPosteTypeId: (s: string) => void
   postesTypes: PosteType[]
@@ -186,19 +186,42 @@ export default function CommandeFormGauche({
 
         <div className="space-y-2">
           <Label>Semaine</Label>
-          <Select
-            value={semaine || ""}           // ← si "", le Select est vide et montre le placeholder
-            onValueChange={setSemaine}
-          >
+          <Select value={semaine} onValueChange={setSemaine}>
             <SelectTrigger>
-              <SelectValue placeholder="Sélectionner une semaine" />
+              <SelectValue placeholder="Semaine" />
             </SelectTrigger>
             <SelectContent>
-              {semainesDisponibles.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
+              {(() => {
+                let currentYearHeader: number | null = null
+                const nodes: React.ReactNode[] = []
+
+                for (const opt of semainesDisponibles) {
+                  const year =
+                    opt.startDate instanceof Date
+                      ? opt.startDate.getFullYear()
+                      : undefined
+
+                  if (year && year !== currentYearHeader) {
+                    currentYearHeader = year
+                    nodes.push(
+                      <div
+                        key={`year-${year}`}
+                        className="px-2 py-1 text-xs font-semibold text-muted-foreground opacity-80"
+                      >
+                        {year}
+                      </div>
+                    )
+                  }
+
+                  nodes.push(
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  )
+                }
+
+                return nodes
+              })()}
             </SelectContent>
           </Select>
         </div>
