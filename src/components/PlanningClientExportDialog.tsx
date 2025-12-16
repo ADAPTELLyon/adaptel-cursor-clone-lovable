@@ -27,7 +27,7 @@ type DayHeader = {
 
 type CommandeRow = {
   id: string
-  date: string // ISO (yyyy-MM-dd ou timestamp)
+  date: string
   secteur: string | null
   service: string | null
   statut: string
@@ -44,38 +44,51 @@ type SemaineOption = { value: string; label: string }
 type PdfCell = {
   statut: string
   candidat?: { nom: string; prenom: string } | null
-  hMatin?: string // "HH:MM HH:MM"
-  hSoir?: string  // "HH:MM HH:MM"
+  hMatin?: string
+  hSoir?: string
 }
+
 type PdfRow = {
   secteurCode: string
   secteurLabel: string
   service: string | null
-  label: string          // "Nom - Prénom" ou libellé statut
+  label: string
   totalMinutes: number
-  days: PdfCell[][]      // 7 colonnes
+  days: PdfCell[][]
+}
+
+/* ---------------------------- Couleurs de l'app ---------------------------- */
+const STATUT_BG: Record<string, string> = {
+  "Validé": "#a9d08e",
+  "En recherche": "#fdba74",
+  "Non pourvue": "#ef5350",
+  "Absence": "#f87171",
+  "Annule Int": "#fef3c7",
+  "Annule Client": "#fef3c7",
+  "Annule ADA": "#d4d4d8",
+  "": "#e5e7eb",
+}
+
+const STATUT_TEXT: Record<string, string> = {
+  "Validé": "#000000",
+  "En recherche": "#ffffff",
+  "Non pourvue": "#ffffff",
+  "Absence": "#ffffff",
+  "Annule Int": "#1f2937",
+  "Annule Client": "#1f2937",
+  "Annule ADA": "#1f2937",
+  "": "#6b7280",
+}
+
+const SECTEUR_COLORS: Record<string, string> = {
+  "Étages": "#d8b4fe",
+  "Cuisine": "#bfdbfe",
+  "Salle": "#fcd5b5",
+  "Plonge": "#e5e7eb",
+  "Réception": "#fef9c3",
 }
 
 /* ---------------------------- Utils ---------------------------- */
-const STATUT_BG: Record<string, string> = {
-  "Validé": "#16a34a",
-  "En recherche": "#f59e0b",
-  "Non pourvue": "#9ca3af",
-  "Absence": "#ef4444",
-  "Annule Client": "#ef4444",
-  "Annule ADA": "#6b7280",
-  "": "#e5e7eb",
-}
-const STATUT_TEXT: Record<string, string> = {
-  "Validé": "#ffffff",
-  "En recherche": "#111827",
-  "Non pourvue": "#111827",
-  "Absence": "#ffffff",
-  "Annule Client": "#ffffff",
-  "Annule ADA": "#ffffff",
-  "": "#111827",
-}
-
 const labelToCode: Record<string, string> = {
   "Cuisine": "cuisine",
   "Salle": "salle",
@@ -83,10 +96,12 @@ const labelToCode: Record<string, string> = {
   "Réception": "reception",
   "Étages": "etages",
 }
+
 function codeToLabel(code: string) {
   const e = Object.entries(labelToCode).find(([, v]) => v === code)
   return e ? e[0] : code
 }
+
 function getWeekMeta(mondayISO: string) {
   const monday = new Date(mondayISO)
   const nextMonday = addDays(monday, 7)
@@ -97,7 +112,9 @@ function getWeekMeta(mondayISO: string) {
     days: Array.from({ length: 7 }, (_, i) => addDays(monday, i)),
   }
 }
+
 const cutHM = (s: string | null) => (s && s.length >= 5 ? s.slice(0, 5) : null)
+
 function parseHM(s: string | null): number | null {
   const v = cutHM(s)
   if (!v) return null
@@ -105,11 +122,13 @@ function parseHM(s: string | null): number | null {
   if (!m) return null
   return parseInt(m[1], 10) * 60 + parseInt(m[2], 10)
 }
+
 function diffMin(d: string | null, f: string | null) {
   const a = parseHM(d), b = parseHM(f)
   if (a == null || b == null) return 0
   return Math.max(0, b - a)
 }
+
 function minToHHMM(min: number) {
   const h = Math.floor(min / 60), m = min % 60
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
@@ -125,139 +144,188 @@ function sectorInitials(labelOrCode: string) {
   return "SE"
 }
 
+function hexToRGB(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return [r, g, b]
+}
+
 /* ---------------------------- PDF (vignettes) ---------------------------- */
 function buildPlanningPDF(args: {
   fileName: string
+  clientNom: string
+  secteurLabel: string
+  services: string[]
+  semaine: number
+  userName: string
   daysHeaders: DayHeader[]
   rows: PdfRow[]
 }) {
-  const { fileName, daysHeaders, rows } = args
+  const { fileName, clientNom, secteurLabel, services, semaine, userName, daysHeaders, rows } = args
+
   const doc = new jsPDF({ orientation: "l", unit: "pt", format: "a4" })
   const page = doc.internal.pageSize
   const W = page.getWidth()
   const H = page.getHeight()
-  const Mx = 28
-  const My = 28
+  const Mx = 32
+  const MyTop = 36
+  const MyBottom = 40
 
-  // largeur colonnes
-  const firstColW = 260 // plus étroit
+  /* ==================== EN-TÊTE ==================== */
+  // Fond header
+  doc.setFillColor("#f9fafb")
+  doc.rect(0, 0, W, MyTop + 60, "F")
+
+  // Logo ADAPTEL (rectangle rouge pour l'instant, on ajoutera l'image plus tard)
+  doc.setFillColor("#840404")
+  doc.roundedRect(Mx, MyTop - 4, 140, 32, 4, 4, "F")
+  doc.setTextColor("#ffffff")
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(14)
+  doc.text("ADAPTEL LYON", Mx + 70, MyTop + 16, { align: "center" })
+
+  // Titre principal
+  doc.setTextColor("#111827")
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(18)
+  doc.text("CONFIRMATION DE PLANNING", W / 2, MyTop + 8, { align: "center" })
+
+  // Sous-titre : Client - Secteur - Service - Semaine
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(12)
+  doc.setTextColor("#4b5563")
+  const svc = services.length > 0 ? ` — ${services.join(" / ")}` : ""
+  doc.text(`${clientNom} — ${secteurLabel}${svc} — Semaine ${semaine}`, W / 2, MyTop + 28, { align: "center" })
+
+  // Ligne de séparation
+  doc.setDrawColor("#e5e7eb")
+  doc.setLineWidth(1)
+  doc.line(Mx, MyTop + 46, W - Mx, MyTop + 46)
+
+  /* ==================== TABLEAU ==================== */
+  const startY = MyTop + 56
+  const firstColW = 200
   const usableW = W - Mx * 2 - firstColW
   const dayColW = usableW / 7
 
-  // paramètres typographiques (ajustés dynamique si trop haut)
-  let FONT = 9.5
-  let CARD_H = 46
-  let CARD_RADIUS = 6
-  let PAD = 6
-  const HEADER_H = 30
+  let FONT = 9
+  let CARD_H = 44
+  let CARD_RADIUS = 5
+  let PAD = 5
 
-  // estimer hauteur totale
+  // Estimation hauteur pour ajustement si nécessaire
   const estimateTotalHeight = () => {
-    const header = HEADER_H + 10
     const rowsH = rows.map(r => {
       const maxPerDay = Math.max(1, ...r.days.map(list => list.length || 0))
-      return PAD * 2 + (CARD_H * maxPerDay) + (4 * (maxPerDay - 1))
+      return PAD * 2 + (CARD_H * maxPerDay) + (3 * (maxPerDay - 1))
     }).reduce((a, b) => a + b, 0)
-    const tableMargins = 0 // on gère nos marges via AutoTable
-    return My + header + rowsH + tableMargins + 20
+    return startY + rowsH + MyBottom
   }
 
-  // si ça dépasse → on réduit proportionnellement
-  const available = H - My * 2
+  const available = H - MyBottom
   let total = estimateTotalHeight()
   if (total > H) {
-    const ratio = Math.max(0.6, available / (total - My)) // clamp à 60%
+    const ratio = Math.max(0.65, available / total)
     FONT = FONT * ratio
-    CARD_H = Math.max(34, CARD_H * ratio)
-    CARD_RADIUS = Math.max(4, CARD_RADIUS * ratio)
-    PAD = Math.max(4, PAD * ratio)
-    // recalcul pour info (non bloquant)
-    total = estimateTotalHeight()
+    CARD_H = Math.max(36, CARD_H * ratio)
+    CARD_RADIUS = Math.max(3, CARD_RADIUS * ratio)
+    PAD = Math.max(3, PAD * ratio)
   }
 
-  // entêtes colonnes (jours)
+  // En-têtes colonnes
   const head = [[
-    { content: "Secteur / Candidat — Total", styles: { halign: "left" as const } },
-    ...daysHeaders.map(d => ({ content: `${d.label}`, styles: { halign: "center" as const } })),
+    { content: "Candidat", styles: { halign: "left" as const, fontStyle: "bold" } },
+    ...daysHeaders.map(d => ({
+      content: `${d.dayName.substring(0, 3)}. ${d.dayNum}`,
+      styles: { halign: "center" as const, fontStyle: "bold" }
+    })),
   ]]
 
-  // autoTable body "vide" (on dessine dans didDrawCell)
-  const body = rows.map(_ => {
-    const row: any[] = new Array(8).fill("")
-    return row
-  })
+  // Body vide (on dessine dans didDrawCell)
+  const body = rows.map(() => new Array(8).fill(""))
 
   autoTable(doc, {
-    startY: My,
+    startY,
     head,
     body,
-    theme: "plain",
-    styles: { font: "helvetica", fontSize: FONT, cellPadding: 0, valign: "top", lineColor: [229, 231, 235], lineWidth: 0.6 } as any,
-    headStyles: { fontStyle: "bold", fillColor: [245, 245, 245], textColor: 0, halign: "center" },
+    theme: "grid",
+    styles: {
+      font: "helvetica",
+      fontSize: FONT,
+      cellPadding: PAD,
+      valign: "top",
+      lineColor: [229, 231, 235],
+      lineWidth: 0.8,
+    } as any,
+    headStyles: {
+      fillColor: [245, 245, 245],
+      textColor: [0, 0, 0],
+      fontStyle: "bold",
+      halign: "center",
+      minCellHeight: 28,
+    },
     columnStyles: {
       0: { cellWidth: firstColW },
       1: { cellWidth: dayColW }, 2: { cellWidth: dayColW }, 3: { cellWidth: dayColW },
       4: { cellWidth: dayColW }, 5: { cellWidth: dayColW }, 6: { cellWidth: dayColW }, 7: { cellWidth: dayColW },
     } as any,
-    margin: { left: Mx, right: Mx, top: 0, bottom: My },
+    margin: { left: Mx, right: Mx, top: 0, bottom: MyBottom },
     didParseCell: (data: any) => {
-      if (data.section === "head") {
-        data.cell.styles.minCellHeight = HEADER_H
-        return
-      }
       if (data.section === "body") {
         const r = rows[data.row.index]
         const maxPerDay = Math.max(1, ...r.days.map(list => list.length || 0))
-        const h = PAD * 2 + (CARD_H * maxPerDay) + (4 * (maxPerDay - 1))
+        const h = PAD * 2 + (CARD_H * maxPerDay) + (3 * (maxPerDay - 1))
         data.cell.styles.minCellHeight = h
       }
     },
     didDrawCell: (data: any) => {
       const { cell, column, row, section } = data
-      if (section === "head") {
-        // dessiner le badge jour : déjà dans le texte → pas de custom
-        return
-      }
       if (section !== "body") return
 
       const r: PdfRow = rows[row.index]
 
-      // contour cellule
-      doc.setDrawColor(229, 231, 235)
-      doc.rect(cell.x, cell.y, cell.width, cell.height)
-
       if (column.index === 0) {
-        // Col 1 : pastille secteur + Nom Prénom + total heures
+        // Colonne 1 : Pastille secteur + Nom candidat + Total heures
         const x = cell.x + 8
-        let y = cell.y + 8
+        let y = cell.y + 10
 
-        // pastille secteur
-        doc.setFillColor("#e5e7eb")
-        doc.circle(x + 10, y + 10, 9, "F")
-        doc.setTextColor("#374151"); doc.setFont("helvetica", "bold"); doc.setFontSize(Math.max(7, FONT - 2))
-        doc.text(sectorInitials(r.secteurCode), x + 10, y + 13, { align: "center" })
+        // Pastille secteur avec couleur de l'app
+        const secteurColor = SECTEUR_COLORS[r.secteurLabel] || "#e5e7eb"
+        const [sr, sg, sb] = hexToRGB(secteurColor)
+        doc.setFillColor(sr, sg, sb)
+        doc.circle(x + 8, y + 6, 8, "F")
+        doc.setTextColor("#374151")
+        doc.setFont("helvetica", "bold")
+        doc.setFontSize(Math.max(7, FONT - 1))
+        doc.text(sectorInitials(r.secteurCode), x + 8, y + 9, { align: "center" })
 
-        // libellés
-        const sx = x + 26
-        doc.setTextColor("#111827"); doc.setFont("helvetica", "bold"); doc.setFontSize(Math.max(10, FONT + 1))
-        // service (optionnel) — demandé: si pas de service, on n'affiche rien
+        // Service (si existe)
+        const sx = x + 22
         if (r.service) {
-          doc.text(r.service, sx, y + 8)
-          y += 16
+          doc.setTextColor("#111827")
+          doc.setFont("helvetica", "bold")
+          doc.setFontSize(Math.max(9, FONT))
+          doc.text(r.service, sx, y + 4)
+          y += 14
         }
-        // Nom - Prénom
-        doc.setFont("helvetica", "normal"); doc.setFontSize(Math.max(10, FONT + 0.5))
-        doc.text(r.label, sx, y + 8)
+
+        // Nom - Prénom candidat
+        doc.setTextColor("#111827")
+        doc.setFont("helvetica", "bold")
+        doc.setFontSize(Math.max(10, FONT + 1))
+        doc.text(r.label, sx, y + 4)
         y += 16
 
         // Total heures
-        doc.setFont("helvetica", "bold"); doc.setFontSize(FONT + 0.5)
+        doc.setFont("helvetica", "bold")
+        doc.setFontSize(Math.max(9, FONT))
         doc.setTextColor("#840404")
-        doc.text(`🕒 ${minToHHMM(r.totalMinutes)}`, sx, y + 8)
+        doc.text(`Total: ${minToHHMM(r.totalMinutes)}`, sx, y + 4)
         return
       }
 
-      // Colonnes jour : dessiner les vignettes statut
+      // Colonnes jours : vignettes statut/candidat
       const dayIdx = column.index - 1
       const list = r.days[dayIdx] || []
       if (!list.length) return
@@ -271,30 +339,64 @@ function buildPlanningPDF(args: {
         const bg = STATUT_BG[c.statut] || STATUT_BG[""]
         const fg = STATUT_TEXT[c.statut] || STATUT_TEXT[""]
 
-        // fond vignette
-        doc.setFillColor(bg)
+        // Fond vignette avec couleurs de l'app
+        const [bgR, bgG, bgB] = hexToRGB(bg)
+        doc.setFillColor(bgR, bgG, bgB)
         doc.roundedRect(x0, y0, w, CARD_H, CARD_RADIUS, CARD_RADIUS, "F")
 
-        // contenu vignette
-        doc.setTextColor(fg)
+        // Texte vignette
+        const [fgR, fgG, fgB] = hexToRGB(fg)
+        doc.setTextColor(fgR, fgG, fgB)
+
         if (c.statut === "Validé" && c.candidat) {
-          doc.setFont("helvetica", "bold"); doc.setFontSize(FONT + 1.5)
-          doc.text(c.candidat.nom, x0 + 6, y0 + 14)
-          doc.setFont("helvetica", "normal"); doc.setFontSize(FONT + 0.5)
-          doc.text(c.candidat.prenom, x0 + 6, y0 + 28)
+          doc.setFont("helvetica", "bold")
+          doc.setFontSize(FONT + 1.5)
+          doc.text(c.candidat.nom, x0 + 4, y0 + 12)
+          doc.setFont("helvetica", "normal")
+          doc.setFontSize(FONT + 0.5)
+          doc.text(c.candidat.prenom, x0 + 4, y0 + 24)
         } else {
-          doc.setFont("helvetica", "bold"); doc.setFontSize(FONT + 1.5)
-          doc.text(c.statut || "—", x0 + 6, y0 + 18)
+          doc.setFont("helvetica", "bold")
+          doc.setFontSize(FONT + 1)
+          doc.text(c.statut || "—", x0 + 4, y0 + 16)
         }
 
-        doc.setFont("helvetica", "bold"); doc.setFontSize(FONT + 0.5)
-        let yy = y0 + 42
-        if (c.hMatin) { doc.text(c.hMatin, x0 + 6, yy); yy += 12 }
-        if (c.hSoir)  { doc.text(c.hSoir,  x0 + 6, yy) }
+        // Heures
+        doc.setFont("helvetica", "bold")
+        doc.setFontSize(FONT)
+        let yy = y0 + 36
+        if (c.hMatin) {
+          doc.text(c.hMatin, x0 + 4, yy)
+          yy += 10
+        }
+        if (c.hSoir) {
+          doc.text(c.hSoir, x0 + 4, yy)
+        }
 
-        y0 += CARD_H + 4
+        y0 += CARD_H + 3
         if (y0 > cell.y + cell.height - CARD_H) break
       }
+    },
+    didDrawPage: () => {
+      // Pied de page
+      const y = H - MyBottom + 12
+      doc.setDrawColor("#e5e7eb")
+      doc.line(Mx, y, W - Mx, y)
+
+      doc.setTextColor("#6b7280")
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(9)
+      doc.text(`Généré par : ${userName}`, Mx, y + 14)
+      doc.text(`${format(new Date(), "dd/MM/yyyy à HH:mm", { locale: fr })}`, W / 2, y + 14, { align: "center" })
+
+      // Badge ADAPTEL
+      doc.setFillColor("#840404")
+      const bw = 160, bh = 20
+      doc.roundedRect(W - Mx - bw, y + 6, bw, bh, 4, 4, "F")
+      doc.setTextColor("#ffffff")
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(10)
+      doc.text(`ADAPTEL LYON — S${semaine}`, W - Mx - bw / 2, y + 20, { align: "center" })
     },
   })
 
@@ -318,41 +420,21 @@ export default function PlanningClientExportDialog() {
   const [selectedServices, setSelectedServices] = useState<string[]>([])
 
   const { user } = useAuth() as any
-  const [userDisplayName, setUserDisplayName] = useState("Utilisateur ADAPTEL")
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const authId = user?.id || ""
-        if (authId) {
-          const { data } = await supabase
-            .from("utilisateurs")
-            .select("prenom, nom")
-            .eq("auth_user_id", authId)
-            .maybeSingle()
-          if (data?.prenom || data?.nom) {
-            setUserDisplayName(`${data.prenom ?? ""} ${data.nom ?? ""}`.trim())
-            return
-          }
-        }
-        setUserDisplayName(user?.email || "Utilisateur ADAPTEL")
-      } catch {
-        setUserDisplayName(user?.email || "Utilisateur ADAPTEL")
-      }
-    }
-    load()
-  }, [user])
+  const userDisplayName = user?.email || "Utilisateur ADAPTEL"
 
   const semaines: SemaineOption[] = useMemo(() => {
     const base = startOfWeek(new Date(), { weekStartsOn: 1 })
     return Array.from({ length: 10 }, (_, i) => {
       const monday = addDays(base, i * 7)
       const iso = format(monday, "yyyy-MM-dd")
-      return { value: iso, label: `Semaine ${format(monday, "I")} — ${format(monday, "dd/MM")} → ${format(addDays(monday, 6), "dd/MM")}` }
+      return {
+        value: iso,
+        label: `Semaine ${format(monday, "I")} — ${format(monday, "dd/MM")} → ${format(addDays(monday, 6), "dd/MM")}`,
+      }
     })
   }, [])
 
-  // Clients filtrés par secteur (Cuisine ⇄ Plonge)
+  // Clients filtrés par secteur
   useEffect(() => {
     const load = async () => {
       const selCode = labelToCode[secteurLabel] || ""
@@ -364,12 +446,18 @@ export default function PlanningClientExportDialog() {
         .eq("actif", true)
         .order("nom")
 
-      if (error) { console.error(error); setClients([]); return }
+      if (error) {
+        console.error(error)
+        setClients([])
+        return
+      }
 
       const filtered = (data || []).filter((c: any) => {
         const secteurs: string[] = Array.isArray(c.secteurs)
           ? c.secteurs
-          : typeof c.secteurs === "string" ? c.secteurs.split(",").map((s: string) => s.trim()) : []
+          : typeof c.secteurs === "string"
+            ? c.secteurs.split(",").map((s: string) => s.trim())
+            : []
         if (pair) return secteurs.some(s => /^(cuisine|plonge)$/i.test(s))
         return selCode ? secteurs.some(s => s === selCode || s === codeToLabel(selCode)) : true
       })
@@ -378,7 +466,9 @@ export default function PlanningClientExportDialog() {
         const raw = c.services
         const services: string[] = Array.isArray(raw)
           ? raw
-          : typeof raw === "string" ? raw.split(",").map((s: string) => s.trim()).filter(Boolean) : []
+          : typeof raw === "string"
+            ? raw.split(",").map((s: string) => s.trim()).filter(Boolean)
+            : []
         return { id: String(c.id), nom: String(c.nom || ""), services }
       })
 
@@ -403,21 +493,7 @@ export default function PlanningClientExportDialog() {
     return clients.filter((c) => c.nom.toLowerCase().includes(q))
   }, [clientSearch, clients])
 
-  const buildDaysHeaders = (mondayISO: string): DayHeader[] => {
-    const monday = new Date(mondayISO)
-    return Array.from({ length: 7 }).map((_, i) => {
-      const d = addDays(monday, i)
-      return {
-        date: format(d, "yyyy-MM-dd"),
-        label: format(d, "EEE dd", { locale: fr }),
-        dayName: format(d, "EEEE", { locale: fr }),
-        dayNum: format(d, "d", { locale: fr }),
-        monthShort: format(d, "LLL", { locale: fr }),
-      }
-    })
-  }
-
-  /* ------------------- Chargement commandes robustes ------------------- */
+  /* ------------------- Chargement commandes ------------------- */
   const fetchClientPlanning = async (): Promise<CommandeRow[]> => {
     if (!selectedClientId) return []
     const { monday, nextMonday } = getWeekMeta(semaineISO)
@@ -435,7 +511,7 @@ export default function PlanningClientExportDialog() {
       .select(`
         id, date, secteur, service, statut,
         heure_debut_matin, heure_fin_matin,
-        heure_debut_soir,  heure_fin_soir,
+        heure_debut_soir, heure_fin_soir,
         candidat:candidat_id ( id, nom, prenom )
       `)
       .eq("client_id", selectedClientId)
@@ -447,7 +523,10 @@ export default function PlanningClientExportDialog() {
     if (selCode) q = q.or(secteurOr)
 
     const { data, error } = await q
-    if (error) { console.error("ERR commandes", error); return [] }
+    if (error) {
+      console.error("ERR commandes", error)
+      return []
+    }
 
     let rows: CommandeRow[] = (data || []).map((r: any) => ({
       id: String(r.id),
@@ -459,7 +538,9 @@ export default function PlanningClientExportDialog() {
       heure_fin_matin: r.heure_fin_matin ?? null,
       heure_debut_soir: r.heure_debut_soir ?? null,
       heure_fin_soir: r.heure_fin_soir ?? null,
-      candidat: r.candidat ? { id: String(r.candidat.id), nom: r.candidat.nom || "", prenom: r.candidat.prenom || "" } : null,
+      candidat: r.candidat
+        ? { id: String(r.candidat.id), nom: r.candidat.nom || "", prenom: r.candidat.prenom || "" }
+        : null,
     }))
 
     if (selectedServices.length > 0) {
@@ -509,11 +590,18 @@ export default function PlanningClientExportDialog() {
       const cell: PdfCell = {
         statut: c.statut,
         candidat: c.candidat ? { nom: c.candidat.nom, prenom: c.candidat.prenom } : null,
-        hMatin: (c.heure_debut_matin && c.heure_fin_matin) ? `${cutHM(c.heure_debut_matin)} ${cutHM(c.heure_fin_matin)}` : undefined,
-        hSoir:  (c.heure_debut_soir && c.heure_fin_soir)     ? `${cutHM(c.heure_debut_soir)} ${cutHM(c.heure_fin_soir)}`   : undefined,
+        hMatin:
+          c.heure_debut_matin && c.heure_fin_matin
+            ? `${cutHM(c.heure_debut_matin)} ${cutHM(c.heure_fin_matin)}`
+            : undefined,
+        hSoir:
+          c.heure_debut_soir && c.heure_fin_soir
+            ? `${cutHM(c.heure_debut_soir)} ${cutHM(c.heure_fin_soir)}`
+            : undefined,
       }
 
-      const minutes = diffMin(c.heure_debut_matin, c.heure_fin_matin) + diffMin(c.heure_debut_soir, c.heure_fin_soir)
+      const minutes =
+        diffMin(c.heure_debut_matin, c.heure_fin_matin) + diffMin(c.heure_debut_soir, c.heure_fin_soir)
 
       if (c.statut === "Validé" && c.candidat) {
         const key = `cand|${secVal}|${c.service ?? ""}|${c.candidat.id}`
@@ -530,16 +618,18 @@ export default function PlanningClientExportDialog() {
 
     const rows = Array.from(byKey.values())
 
-    // bucketing pour l’ordre demandé
     function rowBucket(r: PdfRow): number {
-      let hasValide = false, hasMatin = false, hasSoirOnly = false
-      for (const dayCells of r.days) for (const m of dayCells) {
-        if (m.statut === "Validé") {
-          hasValide = true
-          if (m.hMatin) hasMatin = true
-          else if (m.hSoir) hasSoirOnly = true
+      let hasValide = false,
+        hasMatin = false,
+        hasSoirOnly = false
+      for (const dayCells of r.days)
+        for (const m of dayCells) {
+          if (m.statut === "Validé") {
+            hasValide = true
+            if (m.hMatin) hasMatin = true
+            else if (m.hSoir) hasSoirOnly = true
+          }
         }
-      }
       if (hasValide && hasMatin) return 0
       if (hasValide && hasSoirOnly) return 1
 
@@ -550,19 +640,18 @@ export default function PlanningClientExportDialog() {
       return 4
     }
 
-    // tri global
     rows.sort((a, b) => {
       const s = sectorRank(a.secteurCode) - sectorRank(b.secteurCode)
       if (s !== 0) return s
       const sa = (a.service || "").toLowerCase()
       const sb = (b.service || "").toLowerCase()
       if (sa !== sb) return sa.localeCompare(sb)
-      const ba = rowBucket(a), bb = rowBucket(b)
+      const ba = rowBucket(a),
+        bb = rowBucket(b)
       if (ba !== bb) return ba - bb
       return a.label.localeCompare(b.label)
     })
 
-    // Dans chaque jour, Validé en premier
     for (const r of rows) {
       for (let i = 0; i < 7; i++) {
         r.days[i].sort((x, y) => (x.statut === "Validé" ? 0 : 1) - (y.statut === "Validé" ? 0 : 1))
@@ -573,7 +662,10 @@ export default function PlanningClientExportDialog() {
   }
 
   const onGenerate = async () => {
-    if (!selectedClientId) { alert("Sélectionnez un client."); return }
+    if (!selectedClientId) {
+      alert("Sélectionnez un client.")
+      return
+    }
 
     const client = clients.find(c => c.id === selectedClientId)!
     const { weekNum, days } = getWeekMeta(semaineISO)
@@ -589,17 +681,26 @@ export default function PlanningClientExportDialog() {
     const commandes = await fetchClientPlanning()
     const rows = buildRows(commandes, daysISO)
 
-    const fileName = `Planning de Confirmation - ${client.nom} - Semaine ${weekNum}.pdf`
-    buildPlanningPDF({ fileName, daysHeaders, rows })
-
     if (rows.length === 0) {
       alert("Aucun créneau trouvé pour cette sélection (semaine/secteur/service).")
+      return
     }
+
+    const fileName = `Planning de Confirmation - ${client.nom} - Semaine ${weekNum}.pdf`
+    buildPlanningPDF({
+      fileName,
+      clientNom: client.nom,
+      secteurLabel,
+      services: selectedServices,
+      semaine: weekNum,
+      userName: userDisplayName,
+      daysHeaders,
+      rows,
+    })
 
     setOpen(false)
   }
 
-  // ⚠️ Typage simplifié pour éviter TS2589
   const secteursBtn: Array<{ label: string; icon: any }> = secteursListRaw as any
 
   return (
@@ -627,18 +728,21 @@ export default function PlanningClientExportDialog() {
                       type="button"
                       className={cn(
                         "py-2 h-10 w-full text-sm font-medium",
-                        selected ? "bg-[#840404] text-white hover:bg-[#750303]" : "bg-gray-100 text-black hover:bg-gray-200"
+                        selected
+                          ? "bg-[#840404] text-white hover:bg-[#750303]"
+                          : "bg-gray-100 text-black hover:bg-gray-200"
                       )}
                       onClick={() => setSecteurLabel(label)}
                     >
                       <Icon className="h-4 w-4 mr-1" />
-                      {label}{selected && <Check className="ml-1 h-4 w-4" />}
+                      {label}
+                      {selected && <Check className="ml-1 h-4 w-4" />}
                     </Button>
                   )
                 })}
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Cuisine et Plonge sont regroupés (Cuisine d’abord, puis Plonge).
+                Cuisine et Plonge sont regroupés (Cuisine d'abord, puis Plonge).
               </p>
             </div>
 
@@ -646,8 +750,16 @@ export default function PlanningClientExportDialog() {
             <div className="grid grid-cols-3 gap-3 items-center">
               <Label>Semaine</Label>
               <div className="col-span-2">
-                <select className="w-full border rounded px-2 py-2" value={semaineISO} onChange={(e) => setSemaineISO(e.target.value)}>
-                  {semaines.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                <select
+                  className="w-full border rounded px-2 py-2"
+                  value={semaineISO}
+                  onChange={(e) => setSemaineISO(e.target.value)}
+                >
+                  {semaines.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -656,13 +768,20 @@ export default function PlanningClientExportDialog() {
             <div className="grid grid-cols-3 gap-3 items-start">
               <Label className="mt-2">Client</Label>
               <div className="col-span-2 space-y-2">
-                <Input placeholder="Rechercher un client…" value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} />
+                <Input
+                  placeholder="Rechercher un client…"
+                  value={clientSearch}
+                  onChange={(e) => setClientSearch(e.target.value)}
+                />
                 <div className="max-h-44 overflow-auto border rounded">
                   {filteredClients.map((c) => (
                     <button
                       key={c.id}
                       onClick={() => setSelectedClientId(c.id)}
-                      className={cn("w-full text-left px-3 py-2 text-sm hover:bg-muted", selectedClientId === c.id && "bg-muted")}
+                      className={cn(
+                        "w-full text-left px-3 py-2 text-sm hover:bg-muted",
+                        selectedClientId === c.id && "bg-muted"
+                      )}
                     >
                       {c.nom}
                     </button>
@@ -683,13 +802,21 @@ export default function PlanningClientExportDialog() {
             <div className="grid grid-cols-3 gap-3 items-start">
               <Label className="mt-2">Services</Label>
               <div className="col-span-2 space-y-2">
-                <div className={cn("max-h-40 overflow-auto border rounded", availableServices.length === 0 && "opacity-50 pointer-events-none")}>
+                <div
+                  className={cn(
+                    "max-h-40 overflow-auto border rounded",
+                    availableServices.length === 0 && "opacity-50 pointer-events-none"
+                  )}
+                >
                   {(availableServices.length ? availableServices : ["Aucun service"]).map((s) => {
                     const active = selectedServices.includes(s)
                     return (
                       <button
                         key={s}
-                        onClick={() => availableServices.length && setSelectedServices(active ? selectedServices.filter(x => x !== s) : [...selectedServices, s])}
+                        onClick={() =>
+                          availableServices.length &&
+                          setSelectedServices(active ? selectedServices.filter(x => x !== s) : [...selectedServices, s])
+                        }
                         className={cn("w-full text-left px-3 py-2 text-sm hover:bg-muted", active && "bg-muted")}
                       >
                         {availableServices.length ? (active ? "✓ " : "") + s : s}
@@ -699,7 +826,11 @@ export default function PlanningClientExportDialog() {
                 </div>
                 {selectedServices.length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {selectedServices.map((s) => <span key={s} className="px-2 py-1 text-xs bg-muted rounded">{s}</span>)}
+                    {selectedServices.map((s) => (
+                      <span key={s} className="px-2 py-1 text-xs bg-muted rounded">
+                        {s}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
@@ -712,8 +843,12 @@ export default function PlanningClientExportDialog() {
             </div>
 
             <div className="pt-2 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setOpen(false)}>Annuler</Button>
-              <Button className="bg-[#840404] text-white hover:bg-[#750303]" onClick={onGenerate}>Générer le PDF</Button>
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                Annuler
+              </Button>
+              <Button className="bg-[#840404] text-white hover:bg-[#750303]" onClick={onGenerate}>
+                Générer le PDF
+              </Button>
             </div>
           </div>
         </DialogContent>
