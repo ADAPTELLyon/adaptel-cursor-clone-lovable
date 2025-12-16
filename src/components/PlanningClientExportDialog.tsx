@@ -498,35 +498,54 @@ export default function PlanningClientExportDialog() {
     if (!selectedClientId) return []
     const { monday, nextMonday } = getWeekMeta(semaineISO)
     const mondayISO = format(monday, "yyyy-MM-dd")
-    const nextMondayISO = format(nextMonday, "yyyy-MM-dd")
+    const sunday = addDays(nextMonday, -1)
+    const sundayISO = format(sunday, "yyyy-MM-dd")
+
+    console.log("📅 Génération PDF pour:", {
+      client: selectedClientId,
+      secteur: secteurLabel,
+      semaine: semaineISO,
+      dateRange: `${mondayISO} → ${sundayISO}`
+    })
 
     const selCode = labelToCode[secteurLabel] || ""
-    const pair = selCode === "cuisine" || selCode === "plonge"
-    const secteurOr = pair
-      ? "secteur.eq.cuisine,secteur.eq.Cuisine,secteur.eq.plonge,secteur.eq.Plonge"
-      : `secteur.eq.${selCode},secteur.eq.${codeToLabel(selCode)}`
+    const label = codeToLabel(selCode)
 
-    let q = supabase
+    // ✅ Construction requête EXACTEMENT comme dans Commandes.tsx
+    let query = supabase
       .from("commandes")
       .select(`
-        id, date, secteur, service, statut,
+        id, date, statut, secteur, service, mission_slot, client_id, candidat_id,
         heure_debut_matin, heure_fin_matin,
         heure_debut_soir, heure_fin_soir,
-        candidat:candidat_id ( id, nom, prenom )
+        heure_debut_nuit, heure_fin_nuit,
+        commentaire, created_at, updated_at,
+        motif_contrat, complement_motif,
+        candidats (id, nom, prenom),
+        clients (nom)
       `)
       .eq("client_id", selectedClientId)
       .gte("date", mondayISO)
-      .lt("date", nextMondayISO)
+      .lte("date", sundayISO)
+
+    // ✅ Filtre secteur avec .in() comme dans Commandes.tsx
+    if (selCode === "cuisine" || selCode === "plonge") {
+      query = query.in("secteur", ["cuisine", "Cuisine", "plonge", "Plonge"])
+    } else if (selCode) {
+      query = query.in("secteur", [selCode, label])
+    }
+
+    query = query
       .neq("statut", "Annule ADA")
       .order("date", { ascending: true })
 
-    if (selCode) q = q.or(secteurOr)
-
-    const { data, error } = await q
+    const { data, error } = await query
     if (error) {
-      console.error("ERR commandes", error)
+      console.error("❌ Erreur Supabase:", error)
       return []
     }
+
+    console.log("✅ Données récupérées:", data?.length, "commandes")
 
     let rows: CommandeRow[] = (data || []).map((r: any) => ({
       id: String(r.id),
@@ -538,15 +557,17 @@ export default function PlanningClientExportDialog() {
       heure_fin_matin: r.heure_fin_matin ?? null,
       heure_debut_soir: r.heure_debut_soir ?? null,
       heure_fin_soir: r.heure_fin_soir ?? null,
-      candidat: r.candidat
-        ? { id: String(r.candidat.id), nom: r.candidat.nom || "", prenom: r.candidat.prenom || "" }
+      candidat: r.candidats
+        ? { id: String(r.candidats.id), nom: r.candidats.nom || "", prenom: r.candidats.prenom || "" }
         : null,
     }))
 
     if (selectedServices.length > 0) {
       rows = rows.filter(r => r.service && selectedServices.includes(r.service))
+      console.log("✅ Lignes après filtre services:", rows.length)
     }
 
+    console.log("✅ Exemple de ligne:", rows[0])
     return rows
   }
 
@@ -679,7 +700,9 @@ export default function PlanningClientExportDialog() {
     }))
 
     const commandes = await fetchClientPlanning()
+    console.log("✅ Construction des lignes PDF à partir de", commandes.length, "commandes")
     const rows = buildRows(commandes, daysISO)
+    console.log("✅ Lignes PDF construites:", rows.length)
 
     if (rows.length === 0) {
       alert("Aucun créneau trouvé pour cette sélection (semaine/secteur/service).")
