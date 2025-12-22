@@ -1,20 +1,27 @@
-// src/pages/Parametrages.tsx
-import MainLayout from "@/components/main-layout";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import OngletServices from "@/components/parametrages/OngletServices";
-import OngletGroupes from "@/components/parametrages/OngletGroupes";
-import OngletTenues from "@/components/parametrages/OngletTenues";
-import OngletUtilisateurs from "@/components/parametrages/OngletUtilisateurs";
-import OngletPostes from "@/components/parametrages/OngletPostes";
-import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router-dom";
-import { Settings, BarChart3 } from "lucide-react";
+import MainLayout from "@/components/main-layout"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import OngletServices from "@/components/parametrages/OngletServices"
+import OngletGroupes from "@/components/parametrages/OngletGroupes"
+import OngletTenues from "@/components/parametrages/OngletTenues"
+import OngletUtilisateurs from "@/components/parametrages/OngletUtilisateurs"
+import OngletPostes from "@/components/parametrages/OngletPostes"
+import { Button } from "@/components/ui/button"
+import { useNavigate } from "react-router-dom"
+import { Settings, BarChart3, Calendar } from "lucide-react"
 
-// ✅ Bouton + pop-up de génération PDF (test)
-import PlanningClientExportDialog from "@/components/PlanningClientExportDialog";
+/**
+ * ✅ Bouton EXISTANT – génération PDF (on ne touche à RIEN)
+ */
+import PlanningClientExportDialog from "@/components/PlanningClientExportDialog"
+
+/**
+ * ✅ NOUVEAU bouton – génération PLANNING (même pop-up, autre usage ensuite)
+ * 👉 volontairement le MÊME composant pour l’instant
+ */
+import PlanningClientExportDialogPlanning from "@/components/PlanningClientExportDialog"
 
 export default function Parametrages() {
-  const navigate = useNavigate();
+  const navigate = useNavigate()
 
   return (
     <MainLayout>
@@ -39,15 +46,19 @@ export default function Parametrages() {
             <TabsContent value="services">
               <OngletServices />
             </TabsContent>
+
             <TabsContent value="groupes">
               <OngletGroupes />
             </TabsContent>
+
             <TabsContent value="tenues">
               <OngletTenues />
             </TabsContent>
+
             <TabsContent value="utilisateurs">
               <OngletUtilisateurs />
             </TabsContent>
+
             <TabsContent value="postes">
               <OngletPostes />
             </TabsContent>
@@ -63,11 +74,32 @@ export default function Parametrages() {
                     onClick={() => navigate("/reporting")}
                     className="bg-[#840404] hover:bg-[#750303] text-white flex items-center gap-2"
                   >
-                    <BarChart3 className="w-4 h-4" /> Accéder au reporting
+                    <BarChart3 className="w-4 h-4" />
+                    Accéder au reporting
                   </Button>
 
-                  {/* ✅ Nouveau bouton de test : ouvre le pop-up secteur/semaine/client puis génère le PDF local */}
+                  {/* 🔴 BOUTON EXISTANT – PDF (inchangé) */}
                   <PlanningClientExportDialog />
+
+                  {/* 🟢 NOUVEAU BOUTON – PLANNING CLIENT */}
+                  <div>
+                    <Button
+                      variant="outline"
+                      className="bg-[#840404] hover:bg-[#750303] text-white flex items-center gap-2"
+                      onClick={() => {
+                        // 👉 on déclenche EXACTEMENT le même pop-up
+                        // la différence sera gérée DANS le composant ensuite
+                        document
+                          .querySelector<HTMLButtonElement>(
+                            '[data-planning-client-export]'
+                          )
+                          ?.click()
+                      }}
+                    >
+                      <Calendar className="w-4 h-4" />
+                      Générer planning
+                    </Button>
+                  </div>
                 </div>
               </div>
             </TabsContent>
@@ -75,5 +107,5 @@ export default function Parametrages() {
         </Tabs>
       </div>
     </MainLayout>
-  );
+  )
 }

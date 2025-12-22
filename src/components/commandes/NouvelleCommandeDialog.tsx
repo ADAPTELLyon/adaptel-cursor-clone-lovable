@@ -7,7 +7,14 @@ import {
 import { useClientsBySecteur } from "@/hooks/useClientsBySecteur"
 import { usePostesTypesByClient } from "@/hooks/usePostesTypesByClient"
 import { useEffect, useState } from "react"
-import { format, addWeeks, startOfWeek, addDays } from "date-fns"
+import {
+  format,
+  addWeeks,
+  startOfWeek,
+  addDays,
+  getISOWeek,
+  getISOWeekYear,
+} from "date-fns"
 import { fr } from "date-fns/locale"
 import { supabase } from "@/lib/supabase"
 import CommandeFormGauche from "./CommandeFormGauche"
@@ -45,7 +52,7 @@ export default function NouvelleCommandeDialog({
     { value: string; label: string; startDate: Date }[]
   >([])
 
-  // Quand on change de semaine (value = numéro de semaine dans ton système actuel)
+  // Quand on change de semaine
   useEffect(() => {
     const semaineObj = semainesDisponibles.find((s) => s.value === semaine)
     if (!semaineObj) return
@@ -80,30 +87,31 @@ export default function NouvelleCommandeDialog({
       })
     : []
 
-  // Construction de la liste des semaines (identique à ta base, sans sélection auto)
+  // Construction de la liste des semaines (cohérente + pas de 53)
   useEffect(() => {
-    const semaines: any[] = []
+    const semaines: { value: string; label: string; startDate: Date }[] = []
     const today = new Date()
     const start = addWeeks(today, -6)
     const end = addWeeks(today, 16)
     let current = startOfWeek(start, { weekStartsOn: 1 })
 
     while (current <= end) {
-      const weekNumber = getWeekNumber(current)
+      const { week, year, value } = getWeekMeta(current)
+
       const weekStart = format(current, "dd MMM", { locale: fr })
       const weekEnd = format(addDays(current, 6), "dd MMM", { locale: fr })
+
       semaines.push({
-        value: weekNumber.toString(),
-        label: `Semaine ${weekNumber} - ${weekStart} au ${weekEnd}`,
+        value,
+        label: `Semaine ${String(week).padStart(2, "0")} - ${weekStart} au ${weekEnd}`,
         startDate: current,
       })
+
       current = addWeeks(current, 1)
     }
 
     setSemainesDisponibles(semaines)
-    // ❌ AVANT : setSemaine(getWeekNumber(new Date()).toString())
-    // ✅ MAINTENANT : on laisse vide, l'user choisit la semaine
-    setSemaine("")
+    setSemaine("") // l'user choisit
   }, [])
 
   // Reset / pré-remplissage à l'ouverture
@@ -115,7 +123,7 @@ export default function NouvelleCommandeDialog({
       setSecteur("")
       setClientId("")
       setService("")
-      setSemaine("") // 👈 plus de semaine en cours par défaut
+      setSemaine("")
       setCommentaire("")
       setComplementMotif("")
       setMotif("Extra Usage constant")
@@ -130,7 +138,8 @@ export default function NouvelleCommandeDialog({
     const run = async () => {
       const dateCmd = new Date(commande.date)
       const monday = startOfWeek(dateCmd, { weekStartsOn: 1 })
-      const weekValue = getWeekNumber(dateCmd).toString()
+
+      const { value: weekValue } = getWeekMeta(dateCmd)
 
       setSecteur(commande.secteur || "")
       setClientId(commande.client_id || "")
@@ -328,7 +337,7 @@ export default function NouvelleCommandeDialog({
     )
     const baseSlot = existingSlots.length > 0 ? Math.max(...existingSlots) + 1 : 1
 
-    for (const [key, isActive] of joursCommandes) {
+    for (const [key] of joursCommandes) {
       const heure = heuresParJour[key] || {}
       const nb = heure.nbPersonnes || 1
       for (let i = 0; i < nb; i++) {
@@ -423,24 +432,17 @@ export default function NouvelleCommandeDialog({
 
           updates.push({ id: cmd.id, candidat_id: candId })
 
-          const nomPrenom = candidatNames.get(candId) || {
-            nom: "",
-            prenom: "",
-          }
+          const nomPrenom = candidatNames.get(candId) || { nom: "", prenom: "" }
           histPlanif.push({
             table_cible: "commandes",
             ligne_id: cmd.id,
             action: "planification",
-            description:
-              "Planification via création de commande (pré-sélection)",
+            description: "Planification via création de commande (pré-sélection)",
             user_id: userId,
             date_action: new Date().toISOString(),
             apres: {
               date: dateStr,
-              candidat: {
-                nom: nomPrenom.nom,
-                prenom: nomPrenom.prenom,
-              },
+              candidat: { nom: nomPrenom.nom, prenom: nomPrenom.prenom },
               heure_debut_matin: cmd.heure_debut_matin,
               heure_fin_matin: cmd.heure_fin_matin,
               heure_debut_soir: cmd.heure_debut_soir,
@@ -451,9 +453,7 @@ export default function NouvelleCommandeDialog({
       }
 
       if (planifRows.length > 0) {
-        const { error: perr } = await supabase
-          .from("planification")
-          .insert(planifRows)
+        const { error: perr } = await supabase.from("planification").insert(planifRows)
         if (!perr) {
           await Promise.all(
             updates.map((u) =>
@@ -469,12 +469,8 @@ export default function NouvelleCommandeDialog({
 
           try {
             window.dispatchEvent(new CustomEvent("planif:updated"))
-            window.dispatchEvent(
-              new CustomEvent("adaptel:refresh-planning-client")
-            )
-            window.dispatchEvent(
-              new CustomEvent("adaptel:refresh-commandes")
-            )
+            window.dispatchEvent(new CustomEvent("adaptel:refresh-planning-client"))
+            window.dispatchEvent(new CustomEvent("adaptel:refresh-commandes"))
           } catch {}
         }
       }
@@ -552,11 +548,19 @@ export default function NouvelleCommandeDialog({
   )
 }
 
-function getWeekNumber(date: Date) {
-  const start = new Date(date.getFullYear(), 0, 1)
-  const diff =
-    (+date - +start +
-      (start.getTimezoneOffset() - date.getTimezoneOffset()) * 60 * 1000) /
-    86400000
-  return Math.floor((diff + start.getDay() + 6) / 7)
+/**
+ * Cohérence app : ISO week + normalisation "pas de 53".
+ * Si une date tombe en ISO week 53, on force semaine 01 de l'année suivante.
+ */
+function getWeekMeta(date: Date) {
+  let week = getISOWeek(date)
+  let year = getISOWeekYear(date)
+
+  if (week === 53) {
+    week = 1
+    year = year + 1
+  }
+
+  const value = `${year}-W${String(week).padStart(2, "0")}`
+  return { week, year, value }
 }

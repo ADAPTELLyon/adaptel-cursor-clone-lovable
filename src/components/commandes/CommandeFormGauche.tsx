@@ -14,6 +14,7 @@ import type { PosteType } from "@/types/types-front"
 import { Card } from "@/components/ui/card"
 import { PieChart, User, Calendar, ClipboardList, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getISOWeek, getISOWeekYear } from "date-fns"
 
 interface CommandeFormGaucheProps {
   secteur: string
@@ -32,7 +33,6 @@ interface CommandeFormGaucheProps {
   setComplementMotif: (s: string) => void
   clients: { id: string; nom: string; services?: string[] }[]
   services: string[]
-  // ⚠️ On réutilise ce qui vient du parent (value, label, startDate)
   semainesDisponibles: { value: string; label: string; startDate?: Date }[]
   posteTypeId: string
   setPosteTypeId: (s: string) => void
@@ -56,6 +56,17 @@ function formatLabelPoste(pt: PosteType) {
       : null
   const heures = [matin, soir].filter(Boolean).join(" / ")
   return heures ? `${pt.nom} – ${heures}` : pt.nom
+}
+
+// Même règle "pas de 53" pour l'affichage du header année
+function getWeekMetaFromStartDate(d: Date) {
+  let week = getISOWeek(d)
+  let year = getISOWeekYear(d)
+  if (week === 53) {
+    week = 1
+    year = year + 1
+  }
+  return { week, year }
 }
 
 export default function CommandeFormGauche({
@@ -193,13 +204,11 @@ export default function CommandeFormGauche({
             <SelectContent>
               {(() => {
                 let currentYearHeader: number | null = null
-                const nodes: React.ReactNode[] = []
+                const nodes: any[] = []
 
                 for (const opt of semainesDisponibles) {
-                  const year =
-                    opt.startDate instanceof Date
-                      ? opt.startDate.getFullYear()
-                      : undefined
+                  const d = opt.startDate instanceof Date ? opt.startDate : undefined
+                  const year = d ? getWeekMetaFromStartDate(d).year : undefined
 
                   if (year && year !== currentYearHeader) {
                     currentYearHeader = year
@@ -269,15 +278,9 @@ export default function CommandeFormGauche({
               <SelectValue placeholder="Sélectionner un motif" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="Extra Usage constant">
-                Extra Usage constant
-              </SelectItem>
-              <SelectItem value="Accroissement d’activité">
-                Accroissement d’activité
-              </SelectItem>
-              <SelectItem value="Remplacement de personnel">
-                Remplacement de personnel
-              </SelectItem>
+              <SelectItem value="Extra Usage constant">Extra Usage constant</SelectItem>
+              <SelectItem value="Accroissement d’activité">Accroissement d’activité</SelectItem>
+              <SelectItem value="Remplacement de personnel">Remplacement de personnel</SelectItem>
             </SelectContent>
           </Select>
 
