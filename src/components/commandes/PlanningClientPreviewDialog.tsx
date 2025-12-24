@@ -6,12 +6,7 @@ import { Calendar } from "lucide-react"
 import { PlanningClientTableClientPreview } from "@/components/commandes/PlanningClientTableClientPreview"
 import type { JourPlanning, CommandeWithCandidat } from "@/types/types-front"
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 type Props = {
   open: boolean
@@ -73,6 +68,7 @@ export default function PlanningClientPreviewDialog({
             heure_debut_soir, heure_fin_soir,
             heure_debut_nuit, heure_fin_nuit,
             created_at,
+            candidat_id,
             candidats (id, nom, prenom, telephone),
             clients (nom)
           `)
@@ -80,7 +76,8 @@ export default function PlanningClientPreviewDialog({
           .eq("secteur", secteur)
           .gte("date", lundiStr)
           .lte("date", dimancheStr)
-          .neq("statut", "Annule ADA")
+          // ✅ On ne garde QUE ces statuts
+          .in("statut", ["Validé", "En recherche", "Non pourvue", "Absence"])
           .order("date", { ascending: true })
 
         if (service) q = q.eq("service", service)
@@ -107,7 +104,7 @@ export default function PlanningClientPreviewDialog({
             heure_fin_soir: item.heure_fin_soir,
             heure_debut_nuit: item.heure_debut_nuit,
             heure_fin_nuit: item.heure_fin_nuit,
-            // ⬇️ On garde candidat mais on ajoute telephone via cast (sans toucher tes types globaux)
+            // ✅ candidat direct depuis join (Absence/Validé ont un candidat, En recherche/Non pourvue non)
             candidat: item.candidats
               ? ({
                   nom: item.candidats.nom,
@@ -115,6 +112,7 @@ export default function PlanningClientPreviewDialog({
                   telephone: item.candidats.telephone ?? null,
                 } as any)
               : null,
+            ...(item.candidat_id ? ({ candidat_id: item.candidat_id } as any) : {}),
             client: item.clients?.nom ? { nom: item.clients.nom } : { nom: nomClient },
           } as any
 
@@ -141,7 +139,6 @@ export default function PlanningClientPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* ✅ Scroll fiable : header fixe + contenu scroll */}
       <DialogContent className="w-[98vw] max-w-[1600px] max-h-[85vh] overflow-hidden p-0">
         <div className="flex flex-col max-h-[85vh]">
           <DialogHeader className="p-6 pb-3">

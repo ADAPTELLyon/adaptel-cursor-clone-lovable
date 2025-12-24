@@ -7,14 +7,6 @@ import { indicateurColors } from "@/lib/colors"
 import { secteursList } from "@/lib/secteurs"
 import { Clock, Check } from "lucide-react"
 
-/**
- * Version PREVIEW CLIENT :
- * - Visuel identique à PlanningClientTable (grille, headers, heights)
- * - 1 ligne = 1 candidat ✅ (par service)
- * - Absence / Annule Client restent SUR la ligne du candidat ✅
- * - En recherche + Non pourvue = lignes sans candidat en bas du service ✅
- */
-
 interface Props {
   planning: Record<string, JourPlanning[]>
   selectedSecteurs: string[]
@@ -95,7 +87,6 @@ function CellulePlanningPreview({
   return <CellulePlanningPreviewInner commande={commande} secteur={secteur} />
 }
 
-// --- import statuts
 import { statutColors, statutBorders } from "@/lib/colors"
 
 function CellulePlanningPreviewInner({
@@ -215,7 +206,7 @@ function ColonneCandidatPreview({
       <div className="flex items-center justify-between text-[13px] text-gray-600 pr-8">
         <div className="truncate">{telephone ? telephone : "—"}</div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1 shrink-0 ml-auto">
           <Clock className="w-4 h-4" />
           <span>{totalHeures}</span>
         </div>
@@ -224,69 +215,14 @@ function ColonneCandidatPreview({
   )
 }
 
-/** ordre des blocs dans un service : candidats -> En recherche -> Non pourvue -> autres */
-const kindOrder = (kind: string) => {
-  if (kind === "cand") return 0
-  if (kind === "recherche") return 1
-  if (kind === "nonpourvue") return 2
-  return 3
-}
+type Bucket = "cand" | "recherche" | "nonpourvue" | "absence"
 
-function parseGroupKey(groupKey: string) {
-  const p = groupKey.split("||")
-  const head = p[0]
-
-  if (head === "__RECHERCHE__") {
-    return {
-      kind: "recherche" as const,
-      candidatNom: "En recherche",
-      candidatPrenom: "",
-      telephone: "",
-      service: p[4] || "",
-      slot: parseInt(p[5] || "0", 10) || 0,
-      nomTri: "zzzz_en_recherche",
-      prenomTri: "",
-    }
-  }
-
-  if (head === "__NONPOURVUE__") {
-    return {
-      kind: "nonpourvue" as const,
-      candidatNom: "Non pourvue",
-      candidatPrenom: "",
-      telephone: "",
-      service: p[4] || "",
-      slot: parseInt(p[5] || "0", 10) || 0,
-      nomTri: "zzzz_non_pourvue",
-      prenomTri: "",
-    }
-  }
-
-  if (head === "__STATUT__") {
-    const statut = p[1] || "—"
-    return {
-      kind: "statut" as const,
-      candidatNom: statut,
-      candidatPrenom: "",
-      telephone: "",
-      service: p[4] || "",
-      slot: parseInt(p[5] || "0", 10) || 0,
-      nomTri: "zzzz_" + statut,
-      prenomTri: "",
-    }
-  }
-
-  // candidatKey||nom||prenom||telephone||service
-  return {
-    kind: "cand" as const,
-    candidatNom: p[1] || "",
-    candidatPrenom: p[2] || "",
-    telephone: p[3] || "",
-    service: p[4] || "",
-    slot: 0,
-    nomTri: p[1] || "",
-    prenomTri: p[2] || "",
-  }
+const bucketOrder = (b: Bucket) => {
+  if (b === "cand") return 0
+  if (b === "absence") return 1
+  if (b === "recherche") return 2
+  if (b === "nonpourvue") return 3
+  return 99
 }
 
 export function PlanningClientTableClientPreview({
@@ -297,72 +233,180 @@ export function PlanningClientTableClientPreview({
   const groupesParSemaineEtSecteur = useMemo(() => {
     const groupes: Record<string, Record<string, Record<string, JourPlanning[]>>> = {}
 
+    type Row = {
+      rowKey: string
+      bucket: Bucket
+      service: string
+      candidatKey?: string
+      nom?: string
+      prenom?: string
+      telephone?: string
+      days: Record<string, JourPlanning>
+    }
+
+    const rowsIndex: Record<string, Record<string, Row[]>> = {}
+
+    const ensure = (semaineKey: string, secteur: string) => {
+      if (!rowsIndex[semaineKey]) rowsIndex[semaineKey] = {}
+      if (!rowsIndex[semaineKey][secteur]) rowsIndex[semaineKey][secteur] = []
+    }
+
+    const addToRow = (row: Row, jour: JourPlanning, commande: CommandeWithCandidat) => {
+      const dateStr = format(new Date(jour.date), "yyyy-MM-dd")
+      if (!row.days[dateStr]) row.days[dateStr] = { ...jour, commandes: [commande] }
+      else row.days[dateStr].commandes.push(commande)
+    }
+
+    // Packing (En recherche / Non pourvue) : 1 statut max par jour et par ligne -> sinon nouvelle ligne
+    const placePacked = (
+      semaineKey: string,
+      secteur: string,
+      bucket: Bucket,
+      service: string,
+      labelKey: string,
+      jour: JourPlanning,
+      commande: CommandeWithCandidat
+    ) => {
+      ensure(semaineKey, secteur)
+      const dateStr = format(new Date(jour.date), "yyyy-MM-dd")
+
+      const candidates = rowsIndex[semaineKey][secteur].filter(
+        (r) => r.bucket === bucket && r.service === service && r.rowKey.startsWith(`__${bucket.toUpperCase()}__||${service}||${labelKey}||`)
+      )
+
+      const target = candidates.find((r) => !r.days[dateStr])
+      if (target) {
+        addToRow(target, jour, commande)
+        return
+      }
+
+      const idx = candidates.length + 1
+      const rowKey = `__${bucket.toUpperCase()}__||${service}||${labelKey}||${idx}`
+
+      const newRow: Row = {
+        rowKey,
+        bucket,
+        service,
+        days: {},
+      }
+
+      addToRow(newRow, jour, commande)
+      rowsIndex[semaineKey][secteur].push(newRow)
+    }
+
+    // Candidate row (Validé + Absence sur même candidat/service)
+    const placeCandidate = (
+      semaineKey: string,
+      secteur: string,
+      service: string,
+      candidatKey: string,
+      nom: string,
+      prenom: string,
+      telephone: string,
+      jour: JourPlanning,
+      commande: CommandeWithCandidat
+    ) => {
+      ensure(semaineKey, secteur)
+
+      const rowKey = `${candidatKey}||${nom}||${prenom}||${telephone}||${service}`
+
+      let row = rowsIndex[semaineKey][secteur].find((r) => r.rowKey === rowKey)
+      if (!row) {
+        row = {
+          rowKey,
+          bucket: "cand",
+          service,
+          candidatKey,
+          nom,
+          prenom,
+          telephone,
+          days: {},
+        }
+        rowsIndex[semaineKey][secteur].push(row)
+      }
+
+      addToRow(row, jour, commande)
+    }
+
+    // Absence candidate-only : si pas de ligne candidat existante, on crée une ligne dédiée "cand" (avec nom/prénom)
+    const placeAbsenceNamed = (
+      semaineKey: string,
+      secteur: string,
+      service: string,
+      candidatKey: string,
+      nom: string,
+      prenom: string,
+      telephone: string,
+      jour: JourPlanning,
+      commande: CommandeWithCandidat
+    ) => {
+      // on force une ligne "cand" dédiée (ça reste une ligne nominative)
+      placeCandidate(semaineKey, secteur, service, candidatKey, nom, prenom, telephone, jour, commande)
+    }
+
+    // PASS : build
     Object.entries(planning).forEach(([, jours]) => {
       jours.forEach((jour) => {
+        const secteur = jour.secteur
+        if (selectedSecteurs.length > 0 && !selectedSecteurs.includes(secteur)) return
+
+        const d = new Date(jour.date)
+        const week = getWeek(d, { weekStartsOn: 1 })
+        const weekYear = getWeekYear(d, { weekStartsOn: 1 })
+        const semaineKey = `${weekYear}-W${String(week).padStart(2, "0")}`
+
         jour.commandes.forEach((commande) => {
-          if (selectedSecteurs.length > 0 && !selectedSecteurs.includes(jour.secteur)) return
-
-          const d = new Date(jour.date)
-          const week = getWeek(d, { weekStartsOn: 1 })
-          const weekYear = getWeekYear(d, { weekStartsOn: 1 })
-          const semaineKey = `${weekYear}-W${String(week).padStart(2, "0")}`
-
-          const secteur = jour.secteur
+          const statut = commande.statut || ""
           const service = (commande.service as any) || ""
-          const missionSlot = (commande as any).mission_slot ?? 0
 
           const cand = (commande as any).candidat
           const candidatId = (commande as any).candidat_id || ""
           const candidatNom = cand?.nom || ""
           const candidatPrenom = cand?.prenom || ""
           const telephone = cand?.telephone || ""
-
-          /**
-           * ✅ Regroupement :
-           * - VALIDÉ + ABSENCE + ANNULE CLIENT = sur la ligne candidat (candidat + service, sans slot)
-           * - EN RECHERCHE = ligne sans candidat en bas du service (par slot)
-           * - NON POURVUE = ligne sans candidat en bas du service (par slot)
-           */
-          const statut = commande.statut
-
+          const candidatKey = candidatId || `${candidatNom}__${candidatPrenom}`
           const hasCandidat = Boolean(candidatId || candidatNom || candidatPrenom)
-          const isCandidatLineStatut = statut === "Validé" || statut === "Absence" || statut === "Annule Client"
 
-          let groupKey = ""
-
-          if (hasCandidat && isCandidatLineStatut) {
-            const candidatKey = candidatId || `${candidatNom}__${candidatPrenom}`
-            groupKey = `${candidatKey}||${candidatNom}||${candidatPrenom}||${telephone}||${service}`
-          } else if (statut === "En recherche") {
-            groupKey = `__RECHERCHE__||En recherche|| || ||${service}||${missionSlot}`
-          } else if (statut === "Non pourvue") {
-            groupKey = `__NONPOURVUE__||Non pourvue|| || ||${service}||${missionSlot}`
-          } else {
-            // fallback (au cas où) : reste visible mais séparé, sans polluer les lignes candidats
-            groupKey = `__STATUT__||${statut}|| || ||${service}||${missionSlot}`
+          if (statut === "Validé") {
+            if (hasCandidat) {
+              placeCandidate(semaineKey, secteur, service, candidatKey, candidatNom, candidatPrenom, telephone, jour, commande)
+            }
+            return
           }
 
-          if (!groupes[semaineKey]) groupes[semaineKey] = {}
-          if (!groupes[semaineKey][secteur]) groupes[semaineKey][secteur] = {}
-          if (!groupes[semaineKey][secteur][groupKey]) groupes[semaineKey][secteur][groupKey] = []
-
-          const arr = groupes[semaineKey][secteur][groupKey]
-
-          const existing = arr.find(
-            (j) =>
-              j.date === jour.date &&
-              j.secteur === jour.secteur &&
-              ((j.service ?? "") === (jour.service ?? ""))
-          )
-
-          if (existing) {
-            existing.commandes.push(commande)
-          } else {
-            arr.push({
-              ...jour,
-              commandes: [commande],
-            })
+          if (statut === "Absence") {
+            // Absence ne doit exister que si candidat
+            if (hasCandidat) {
+              // Si le candidat a déjà une ligne (Validé ou autre Absence) elle est la même rowKey -> OK
+              placeAbsenceNamed(semaineKey, secteur, service, candidatKey, candidatNom, candidatPrenom, telephone, jour, commande)
+            }
+            return
           }
+
+          if (statut === "En recherche") {
+            placePacked(semaineKey, secteur, "recherche", service, "GEN", jour, commande)
+            return
+          }
+
+          if (statut === "Non pourvue") {
+            placePacked(semaineKey, secteur, "nonpourvue", service, "GEN", jour, commande)
+            return
+          }
+        })
+      })
+    })
+
+    // convert to groupes
+    Object.entries(rowsIndex).forEach(([semaineKey, bySecteur]) => {
+      if (!groupes[semaineKey]) groupes[semaineKey] = {}
+      Object.entries(bySecteur).forEach(([secteur, rows]) => {
+        if (!groupes[semaineKey][secteur]) groupes[semaineKey][secteur] = {}
+        rows.forEach((r) => {
+          groupes[semaineKey][secteur][r.rowKey] = Object.values(r.days).sort((a, b) => {
+            const da = format(new Date(a.date), "yyyy-MM-dd")
+            const db = format(new Date(b.date), "yyyy-MM-dd")
+            return da.localeCompare(db)
+          })
         })
       })
     })
@@ -393,12 +437,16 @@ export function PlanningClientTableClientPreview({
           return Object.entries(secteurs).map(([secteur, groupes]) => {
             const semaineTexte = `Semaine ${String(weekNum)} • ${secteur} • ${year}`
 
+            const parseRowKey = (rowKey: string) => {
+              const parts = rowKey.split("||")
+              if (rowKey.startsWith("__RECHERCHE__")) return { bucket: "recherche" as Bucket, service: parts[1] || "", idx: parseInt(parts[3] || "0", 10) || 0, nom: "", prenom: "" }
+              if (rowKey.startsWith("__NONPOURVUE__")) return { bucket: "nonpourvue" as Bucket, service: parts[1] || "", idx: parseInt(parts[3] || "0", 10) || 0, nom: "", prenom: "" }
+              // candidatKey||nom||prenom||telephone||service
+              return { bucket: "cand" as Bucket, service: parts[4] || "", idx: 0, nom: parts[1] || "", prenom: parts[2] || "" }
+            }
+
             return (
-              <div
-                key={`${semaineKey}-${secteur}`}
-                className="border rounded-lg overflow-hidden shadow-sm"
-              >
-                {/* En-tête */}
+              <div key={`${semaineKey}-${secteur}`} className="border rounded-lg overflow-hidden shadow-sm">
                 <div className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-gray-800 text-sm font-medium text-white sticky z-[10]">
                   <div className="p-4 border-r flex items-center justify-center min-h-[64px]">
                     {semaineTexte}
@@ -410,9 +458,7 @@ export function PlanningClientTableClientPreview({
                     let nbValides = 0
 
                     Object.values(groupes).forEach((ligne) => {
-                      const jourCell = ligne.find(
-                        (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
-                      )
+                      const jourCell = ligne.find((j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr)
                       if (jourCell) {
                         totalMissions += jourCell.commandes.length
                         nbEnRecherche += jourCell.commandes.filter((cmd) => cmd.statut === "En recherche").length
@@ -421,10 +467,7 @@ export function PlanningClientTableClientPreview({
                     })
 
                     return (
-                      <div
-                        key={index}
-                        className="p-4 border-r text-center relative leading-tight min-h-[64px]"
-                      >
+                      <div key={index} className="p-4 border-r text-center relative leading-tight min-h-[64px]">
                         <div className="text-sm font-semibold leading-tight">
                           {jour.label.split(" ")[0]}
                         </div>
@@ -441,10 +484,7 @@ export function PlanningClientTableClientPreview({
                         ) : nbEnRecherche > 0 ? (
                           <div
                             className="absolute top-1 right-1 h-5 w-5 text-xs rounded-full flex items-center justify-center"
-                            style={{
-                              backgroundColor: indicateurColors["En recherche"],
-                              color: "#1f2937",
-                            }}
+                            style={{ backgroundColor: indicateurColors["En recherche"], color: "#1f2937" }}
                           >
                             {nbEnRecherche}
                           </div>
@@ -460,34 +500,49 @@ export function PlanningClientTableClientPreview({
                   })}
                 </div>
 
-                {/* Lignes */}
                 {Object.entries(groupes)
                   .sort(([aKey], [bKey]) => {
-                    const a = parseGroupKey(aKey)
-                    const b = parseGroupKey(bKey)
+                    const a = parseRowKey(aKey)
+                    const b = parseRowKey(bKey)
 
-                    // 1) par service
                     const cmpService = norm(a.service).localeCompare(norm(b.service))
                     if (cmpService !== 0) return cmpService
 
-                    // 2) ordre : candidats -> En recherche -> Non pourvue -> autres
-                    const ko = kindOrder(a.kind) - kindOrder(b.kind)
-                    if (ko !== 0) return ko
+                    const cmpBucket = bucketOrder(a.bucket) - bucketOrder(b.bucket)
+                    if (cmpBucket !== 0) return cmpBucket
 
-                    // 3) candidats : nom/prénom
-                    if (a.kind === "cand" && b.kind === "cand") {
-                      const cmpNom = norm(a.nomTri).localeCompare(norm(b.nomTri))
+                    if (a.bucket === "cand" && b.bucket === "cand") {
+                      const cmpNom = norm(a.nom).localeCompare(norm(b.nom))
                       if (cmpNom !== 0) return cmpNom
-                      const cmpPrenom = norm(a.prenomTri).localeCompare(norm(b.prenomTri))
-                      if (cmpPrenom !== 0) return cmpPrenom
-                      return 0
+                      return norm(a.prenom).localeCompare(norm(b.prenom))
                     }
 
-                    // 4) recherche / non pourvue : slot
-                    return (a.slot || 0) - (b.slot || 0)
+                    return (a.idx || 0) - (b.idx || 0)
                   })
                   .map(([groupKey, ligne]) => {
-                    const info = parseGroupKey(groupKey)
+                    const parts = groupKey.split("||")
+
+                    let candidatNom = ""
+                    let candidatPrenom = ""
+                    let telephone = ""
+                    let service = ""
+
+                    if (groupKey.startsWith("__RECHERCHE__")) {
+                      service = parts[1] || ""
+                      candidatNom = "En recherche"
+                      candidatPrenom = ""
+                      telephone = ""
+                    } else if (groupKey.startsWith("__NONPOURVUE__")) {
+                      service = parts[1] || ""
+                      candidatNom = "Non pourvue"
+                      candidatPrenom = ""
+                      telephone = ""
+                    } else {
+                      candidatNom = parts[1] || "–"
+                      candidatPrenom = parts[2] || ""
+                      telephone = parts[3] || ""
+                      service = parts[4] || ""
+                    }
 
                     const nbEnRecherche = ligne
                       .flatMap((j) => j.commandes)
@@ -501,19 +556,17 @@ export function PlanningClientTableClientPreview({
                         className="grid grid-cols-[260px_repeat(7,minmax(0,1fr))] bg-white text-sm font-medium text-gray-800 border-b"
                       >
                         <ColonneCandidatPreview
-                          candidatNom={info.candidatNom}
-                          candidatPrenom={info.candidatPrenom}
-                          telephone={info.telephone}
+                          candidatNom={candidatNom}
+                          candidatPrenom={candidatPrenom}
+                          telephone={telephone}
                           secteur={secteur}
-                          service={info.service}
+                          service={service}
                           nbEnRecherche={nbEnRecherche}
                           commandes={toutesCommandes}
                         />
 
                         {jours.map((jour, index) => {
-                          const jourCell = ligne.find(
-                            (j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr
-                          )
+                          const jourCell = ligne.find((j) => format(new Date(j.date), "yyyy-MM-dd") === jour.dateStr)
                           const commande = jourCell?.commandes[0]
 
                           return (

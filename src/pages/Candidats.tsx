@@ -1,16 +1,14 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Plus, Search } from "lucide-react"
-import { supabase } from "@/integrations/supabase/client"
+
+// ✅ IMPORTANT : on utilise TON client unique
+import { supabase } from "@/lib/supabase"
+
 import MainLayout from "@/components/main-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { CandidateList } from "@/components/candidates/candidate-list"
 import { CandidateFormTabs } from "@/components/candidates/candidate-form-tabs"
@@ -31,6 +29,7 @@ export default function Candidats() {
         .order("nom")
 
       if (error) {
+        console.error("[Candidats] Chargement candidats error:", error)
         toast({
           title: "Erreur",
           description: "Impossible de charger les candidats",
@@ -39,7 +38,7 @@ export default function Candidats() {
         return []
       }
 
-      return data
+      return data || []
     },
   })
 
@@ -50,23 +49,55 @@ export default function Candidats() {
     return () => clearTimeout(debounce)
   }, [search, refetch])
 
+  // Helpers payload (sans casser tes forms)
+  const emptyToNull = (v: any) => (typeof v === "string" && v.trim() === "" ? null : v)
+  const normalizeSecteurs = (v: any): string[] => {
+    if (!v) return []
+    if (Array.isArray(v)) return v.filter(Boolean).map(String)
+    if (typeof v === "string") return v.split(",").map((x) => x.trim()).filter(Boolean)
+    return []
+  }
+  const normalizeDateNaissance = (v: any) => {
+    if (!v) return null
+    if (typeof v !== "string") return null
+    if (v.includes("/")) {
+      const [day, month, year] = v.split("/")
+      if (day && month && year) return `${year}-${month}-${day}`
+      return null
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v
+    return null
+  }
+
   const handleSubmit = async (data: any) => {
-    const formattedData = { ...data }
-    if (formattedData.date_naissance) {
-      const [day, month, year] = formattedData.date_naissance.split("/")
-      if (day && month && year) {
-        formattedData.date_naissance = `${year}-${month}-${day}`
-      }
+    // ✅ Payload whitelist pour éviter d’envoyer n’importe quoi (id, undefined, etc.)
+    const payload = {
+      nom: emptyToNull(data?.nom),
+      prenom: emptyToNull(data?.prenom),
+      email: emptyToNull(data?.email),
+      telephone: emptyToNull(data?.telephone),
+      vehicule: !!data?.vehicule,
+      actif: data?.actif ?? true,
+      prioritaire: !!data?.prioritaire,
+      commentaire: emptyToNull(data?.commentaire),
+      secteurs: normalizeSecteurs(data?.secteurs),
+      adresse: emptyToNull(data?.adresse),
+      code_postal: emptyToNull(data?.code_postal),
+      ville: emptyToNull(data?.ville),
+      date_naissance: normalizeDateNaissance(data?.date_naissance),
     }
 
+    console.log("[Candidats] Submit payload:", payload)
+
     const { error } = editingCandidate
-      ? await supabase.from("candidats").update(formattedData).eq("id", editingCandidate.id)
-      : await supabase.from("candidats").insert([formattedData])
+      ? await supabase.from("candidats").update(payload).eq("id", editingCandidate.id)
+      : await supabase.from("candidats").insert([payload])
 
     if (error) {
+      console.error("[Candidats] Sauvegarde candidat error:", error)
       toast({
         title: "Erreur",
-        description: "Impossible de sauvegarder le candidat",
+        description: `Impossible de sauvegarder le candidat${error?.message ? ` : ${error.message}` : ""}`,
         variant: "destructive",
       })
       return
@@ -74,9 +105,7 @@ export default function Candidats() {
 
     toast({
       title: "Succès",
-      description: editingCandidate
-        ? "Candidat modifié avec succès"
-        : "Candidat ajouté avec succès",
+      description: editingCandidate ? "Candidat modifié avec succès" : "Candidat ajouté avec succès",
     })
 
     setDialogOpen(false)
@@ -92,6 +121,7 @@ export default function Candidats() {
       .single()
 
     if (error || !data) {
+      console.error("[Candidats] Chargement candidat pour edit error:", error)
       toast({
         title: "Erreur",
         description: "Impossible de charger le candidat",
@@ -108,6 +138,7 @@ export default function Candidats() {
     const { error } = await supabase.from("candidats").update({ actif: active }).eq("id", id)
 
     if (error) {
+      console.error("[Candidats] Toggle actif error:", error)
       toast({
         title: "Erreur",
         description: "Impossible de modifier le statut du candidat",
@@ -159,11 +190,7 @@ export default function Candidats() {
 
         {/* Liste des candidats */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <CandidateList
-            candidates={candidates}
-            onEdit={handleEdit}
-            onToggleActive={handleToggleActive}
-          />
+          <CandidateList candidates={candidates} onEdit={handleEdit} onToggleActive={handleToggleActive} />
         </div>
 
         {/* Formulaire candidat */}
@@ -174,6 +201,7 @@ export default function Candidats() {
                 {editingCandidate ? "Modifier le candidat" : "Ajouter un candidat"}
               </DialogTitle>
             </DialogHeader>
+
             <CandidateFormTabs
               initialData={editingCandidate}
               onSubmit={handleSubmit}

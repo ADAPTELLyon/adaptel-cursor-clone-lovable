@@ -11,7 +11,15 @@ interface CandidatEditDialogProps {
   onRefresh?: () => void
 }
 
-export function CandidatEditDialog({ candidatId, open, onOpenChange, onRefresh }: CandidatEditDialogProps) {
+/**
+ * ✅ Export nommé + default (évite toute casse selon les imports)
+ */
+export function CandidatEditDialog({
+  candidatId,
+  open,
+  onOpenChange,
+  onRefresh,
+}: CandidatEditDialogProps) {
   const [editingCandidate, setEditingCandidate] = useState<any>(null)
 
   useEffect(() => {
@@ -25,7 +33,12 @@ export function CandidatEditDialog({ candidatId, open, onOpenChange, onRefresh }
         .single()
 
       if (error || !data) {
-        toast({ title: "Erreur", description: "Chargement du candidat échoué", variant: "destructive" })
+        console.error("[CandidatEditDialog] Chargement candidat échoué:", error)
+        toast({
+          title: "Erreur",
+          description: "Chargement du candidat échoué",
+          variant: "destructive",
+        })
         return
       }
 
@@ -38,29 +51,62 @@ export function CandidatEditDialog({ candidatId, open, onOpenChange, onRefresh }
   }, [open, candidatId])
 
   const handleSubmit = async (data: any) => {
-    // SÉCURISATION : s’assurer que les données sont bien formées
-    const updatePayload = { ...data }
-
-    if (!updatePayload.id && editingCandidate?.id) {
-      updatePayload.id = editingCandidate.id
+    // 1) On sécurise l'id (cible de l'update)
+    const id = data?.id || editingCandidate?.id
+    if (!id) {
+      console.error("[CandidatEditDialog] Update annulé : ID manquant", { data, editingCandidate })
+      toast({
+        title: "Erreur",
+        description: "ID candidat manquant (mise à jour impossible).",
+        variant: "destructive",
+      })
+      return
     }
 
-    // FORMATAGE de la date_naissance
-    if (typeof updatePayload.date_naissance === "string" && updatePayload.date_naissance.includes("/")) {
+    // 2) Payload : on enlève l'id (jamais dans le payload)
+    const updatePayload = { ...data }
+    delete updatePayload.id
+
+    // 3) Format date_naissance (jj/mm/aaaa -> yyyy-mm-dd)
+    if (
+      typeof updatePayload.date_naissance === "string" &&
+      updatePayload.date_naissance.includes("/")
+    ) {
       const [jour, mois, annee] = updatePayload.date_naissance.split("/")
       if (jour && mois && annee) {
         updatePayload.date_naissance = `${annee}-${mois}-${jour}`
       }
     }
 
-    const { error } = await supabase
+    // 4) Update avec retour : si 0 ligne modifiée, on le sait (sinon tu crois que c’est OK)
+    const { data: updatedRow, error } = await supabase
       .from("candidats")
       .update(updatePayload)
-      .eq("id", updatePayload.id)
+      .eq("id", id)
+      .select("id")
+      .maybeSingle()
 
     if (error) {
-      console.error("Erreur mise à jour candidat :", error)
-      toast({ title: "Erreur", description: "Échec de la mise à jour", variant: "destructive" })
+      console.error("[CandidatEditDialog] Erreur mise à jour candidat:", error, { id, updatePayload })
+      toast({
+        title: "Erreur",
+        description: `Échec de la mise à jour${error?.message ? ` : ${error.message}` : ""}`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    // ✅ Cas clé : aucune ligne modifiée (souvent RLS/policy ou id non match ou update ignoré)
+    if (!updatedRow?.id) {
+      console.error(
+        "[CandidatEditDialog] Aucune ligne modifiée (0 row). Causes possibles: RLS/policy, session, id non match, payload identique.",
+        { id, updatePayload }
+      )
+      toast({
+        title: "Échec",
+        description: "Modification non enregistrée (aucune ligne modifiée).",
+        variant: "destructive",
+      })
       return
     }
 
@@ -96,3 +142,5 @@ export function CandidatEditDialog({ candidatId, open, onOpenChange, onRefresh }
     </Dialog>
   )
 }
+
+export default CandidatEditDialog
