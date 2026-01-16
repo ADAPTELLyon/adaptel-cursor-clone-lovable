@@ -15,10 +15,17 @@ import { Button } from "@/components/ui/button"
 import { pdf, Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer"
 import { statutColors } from "@/lib/colors"
 
+// ✅ IMPORTANT : import RELATIF pour être sûr d'appeler le bon fichier
+import { PlanningClientPdfPortraitDoc } from "./PlanningClientPdfPortraitDoc"
+
 const BRAND = "#8a0000"
 
 // ✅ largeur exacte du tableau : 170 + (7*90) = 800
 const TABLE_WIDTH = 800
+
+// ✅ TAILLES AUGMENTÉES pour meilleur visuel (section haute)
+const CHIP_W = 86
+const CHIP_FS = 8.4
 
 const styles = StyleSheet.create({
   page: {
@@ -28,7 +35,6 @@ const styles = StyleSheet.create({
     color: "#0b1220",
   },
 
-  /* ---------------- HEADER ---------------- */
   headerWrapper: {
     marginBottom: 8,
   },
@@ -99,28 +105,51 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
-  chipRow: {
+  headerChipRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    flexWrap: "wrap",
-    gap: 6,
+    gap: 8,
+    marginTop: 3,
+    flexWrap: "nowrap",
   },
-
-  chip: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: "#f1f3f7",
-    borderWidth: 1,
-    borderColor: "#e6e8ee",
+  headerChipSecteur: {
+    width: CHIP_W,
+    paddingVertical: 4.5,
+    paddingHorizontal: 7,
+    borderRadius: 4,
+    backgroundColor: BRAND,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 22,
   },
-  chipText: {
-    fontSize: 9.6,
+  headerChipSecteurText: {
+    fontSize: CHIP_FS,
+    fontWeight: "bold",
+    color: "#ffffff",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+    textAlign: "center",
+    lineHeight: 1.1,
+  },
+  headerChipService: {
+    width: CHIP_W,
+    paddingVertical: 4.5,
+    paddingHorizontal: 7,
+    borderRadius: 4,
+    backgroundColor: "#e5e7eb",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 22,
+  },
+  headerChipServiceText: {
+    fontSize: CHIP_FS,
     fontWeight: "bold",
     color: "#111827",
-    letterSpacing: 0.3,
     textTransform: "uppercase",
+    letterSpacing: 0.3,
+    textAlign: "center",
+    lineHeight: 1.1,
   },
 
   rightSection: {
@@ -186,12 +215,12 @@ const styles = StyleSheet.create({
     color: "#0b1220",
   },
 
-  /* ---------------- PLANNING TABLE ---------------- */
-  // ✅ Cadre complet fermé (gauche/haut/droite/bas) + ✅ largeur FIXE
   tableContainer: {
     width: TABLE_WIDTH,
     borderWidth: 1,
     borderColor: "#d1d5db",
+    overflow: "hidden",
+    backgroundColor: "#ffffff",
   },
 
   tableHeader: {
@@ -223,7 +252,6 @@ const styles = StyleSheet.create({
   thDayLast: {
     width: 90,
     padding: 8,
-    borderRightWidth: 0,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -254,14 +282,8 @@ const styles = StyleSheet.create({
   tableRow: {
     width: TABLE_WIDTH,
     flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e5e7eb",
     height: 56,
     backgroundColor: "#ffffff",
-  },
-
-  tableRowLast: {
-    borderBottomWidth: 0,
   },
 
   cellFirst: {
@@ -270,7 +292,12 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRightWidth: 1,
     borderRightColor: "#e5e7eb",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
     justifyContent: "center",
+  },
+  cellFirstLast: {
+    borderBottomWidth: 0,
   },
 
   chipsRow: {
@@ -280,43 +307,52 @@ const styles = StyleSheet.create({
     gap: 4,
   },
 
-  // ✅ largeur fixe (RECEPTION) + plus haut
   chipSecteur: {
-    width: 78,
+    width: 80,
     paddingVertical: 4,
     paddingHorizontal: 6,
     borderRadius: 4,
     backgroundColor: BRAND,
     alignItems: "center",
   },
-
   chipSecteurText: {
-    fontSize: 7.2,
+    fontSize: 8.0,
     fontWeight: "bold",
     color: "#ffffff",
     textTransform: "uppercase",
     letterSpacing: 0.2,
   },
 
-  // ✅ largeur fixe (RESTAURANT) + même largeur que secteur + plus haut
   chipService: {
-    width: 78,
+    width: 80,
     paddingVertical: 4,
     paddingHorizontal: 6,
     borderRadius: 4,
     backgroundColor: "#e5e7eb",
     alignItems: "center",
   },
-
   chipServiceText: {
-    fontSize: 7.2,
+    fontSize: 8.0,
     fontWeight: "bold",
-    color: "#000000",
+    color: "#111827",
     textTransform: "uppercase",
     letterSpacing: 0.2,
   },
 
-  // ✅ un peu moins d'écart avec les étiquettes
+  chipStatut: {
+    width: 80,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderRadius: 4,
+    alignItems: "center",
+  },
+  chipStatutText: {
+    fontSize: 8.0,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.2,
+  },
+
   firstColInfoBlock: {
     marginTop: 4,
   },
@@ -352,6 +388,8 @@ const styles = StyleSheet.create({
     padding: 4,
     borderRightWidth: 1,
     borderRightColor: "#e5e7eb",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
     backgroundColor: "#ffffff",
   },
 
@@ -359,8 +397,13 @@ const styles = StyleSheet.create({
     width: 90,
     height: 56,
     padding: 4,
-    borderRightWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5e7eb",
     backgroundColor: "#ffffff",
+  },
+
+  cellDayLastRow: {
+    borderBottomWidth: 0,
   },
 
   vignetteOuter: {
@@ -414,32 +457,6 @@ const styles = StyleSheet.create({
     marginBottom: 1,
   },
 
-  emptyBox: {
-    height: 48,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
-    backgroundColor: "#f8fafc",
-    overflow: "hidden",
-    position: "relative",
-  },
-  emptyStripesLayer: {
-    position: "absolute",
-    left: -30,
-    top: -30,
-    right: -30,
-    bottom: -30,
-  },
-  emptyStripe: {
-    position: "absolute",
-    width: 10,
-    height: 120,
-    backgroundColor: "#e5e7eb",
-    opacity: 0.35,
-    transform: "rotate(35deg)",
-  },
-
-  /* ---------------- FOOTER ---------------- */
   footerWrapper: {
     marginTop: 10,
     flexDirection: "row",
@@ -448,13 +465,12 @@ const styles = StyleSheet.create({
   },
 
   footerWeekBadge: {
-    width: 150,
+    width: 170,
     height: 24,
     borderRadius: 4,
     backgroundColor: BRAND,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 10,
   },
   footerWeekBadgeText: {
     fontSize: 9.6,
@@ -464,49 +480,36 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
 
-  footerContactRow: {
-    flex: 1,
-    marginLeft: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-
-  footerContactPill: {
+  footerContactItem: {
     flex: 1,
     height: 24,
     backgroundColor: "#ffffff",
-    borderRadius: 6,
-    overflow: "hidden",
     flexDirection: "row",
     alignItems: "center",
+    borderLeftWidth: 4,
+    borderLeftColor: BRAND,
+    paddingLeft: 8,
+    paddingRight: 8,
+    minWidth: 0,
   },
 
-  footerContactAccent: {
-    width: 6,
-    height: "100%",
-    backgroundColor: BRAND,
-  },
-
-  footerContactInner: {
+  footerContactContent: {
     flex: 1,
-    paddingHorizontal: 10,
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 4,
+    flexDirection: "column",
+    justifyContent: "center",
   },
 
-  footerLabel: {
-    fontSize: 9,
+  footerContactLabel: {
+    fontSize: 8.5,
     fontWeight: "bold",
-    color: "#0b1220",
+    color: "#6b7280",
+    marginBottom: 1,
   },
 
-  footerValue: {
+  footerContactValue: {
     fontSize: 9,
-    fontWeight: "normal",
-    color: "#0b1220",
+    fontWeight: "semibold",
+    color: "#111827",
   },
 })
 
@@ -519,12 +522,25 @@ type Props = {
   semaineDate: string
 }
 
+function safeFilePart(s: string) {
+  return String(s || "")
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ")
+}
+
+function buildPdfFileName(weekNum: string, secteur: string, service?: string | null, variant?: "landscape" | "portrait") {
+  const sec = safeFilePart(secteur).toUpperCase()
+  const srv = service && String(service).trim() ? ` - ${safeFilePart(service).toUpperCase()}` : ""
+  const v = variant === "portrait" ? " - PORTRAIT_TEST" : ""
+  return `Planning confirmation ADAPTEL - Semaine ${safeFilePart(weekNum)} - ${sec}${srv}${v}.pdf`
+}
+
 function formatHeure(h?: any): string {
   if (!h) return ""
   return String(h).slice(0, 5)
 }
 
-// ✅ Total heures basé sur les horaires présents (même si En recherche)
 function calcTotal(missions: any[]): string {
   if (!missions || missions.length === 0) return ""
   let totalMin = 0
@@ -586,17 +602,20 @@ function getStatusOrder(statut: string): number {
 function EmptyCell() {
   const stripes = Array.from({ length: 10 }, (_, i) => i)
   return (
-    <View style={styles.emptyBox}>
-      <View style={styles.emptyStripesLayer}>
+    <View style={{ height: 48, borderRadius: 6, borderWidth: 1, borderColor: "#e5e7eb", backgroundColor: "#f8fafc", overflow: "hidden", position: "relative" }}>
+      <View style={{ position: "absolute", left: -30, top: -30, right: -30, bottom: -30 }}>
         {stripes.map((i) => (
           <View
             key={i}
-            style={[
-              styles.emptyStripe,
-              {
-                left: i * 22,
-              },
-            ]}
+            style={{
+              position: "absolute",
+              width: 10,
+              height: 120,
+              backgroundColor: "#e5e7eb",
+              opacity: 0.35,
+              transform: "rotate(35deg)",
+              left: i * 22,
+            }}
           />
         ))}
       </View>
@@ -634,6 +653,18 @@ function PlanningPdfDoc({
       monthName: monthFormatted,
     }
   })
+
+  const headerServices = useMemo(() => {
+    if (service && String(service).trim()) return [String(service)]
+    const set = new Set<string>()
+    for (const j of jours || []) {
+      for (const c of (j as any)?.commandes || []) {
+        const s = String((c as any)?.service || "").trim()
+        if (s) set.add(s)
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [jours, service])
 
   const candidatsMap = new Map<string, any>()
 
@@ -680,11 +711,11 @@ function PlanningPdfDoc({
   rows = rows.slice(0, 7)
 
   const formattedDate = format(new Date(), "eeee d MMMM - HH:mm", { locale: fr })
-  const secteurServiceHeader = `${secteur.toUpperCase()}${service ? ` • ${service.toUpperCase()}` : ""}`
 
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={styles.page}>
+        {/* header */}
         <View style={styles.headerWrapper}>
           <View style={styles.headerCard}>
             <View style={styles.headerAccent} />
@@ -702,12 +733,20 @@ function PlanningPdfDoc({
                   {clientNom}
                 </Text>
 
-                <View style={styles.chipRow}>
-                  <View style={styles.chip}>
-                    <Text style={styles.chipText} wrap={false}>
-                      {secteurServiceHeader}
+                <View style={styles.headerChipRow}>
+                  <View style={styles.headerChipSecteur}>
+                    <Text style={styles.headerChipSecteurText} wrap={false}>
+                      {String(secteur || "").toUpperCase()}
                     </Text>
                   </View>
+
+                  {headerServices.map((s) => (
+                    <View key={s} style={styles.headerChipService}>
+                      <Text style={styles.headerChipServiceText} wrap={false}>
+                        {String(s).toUpperCase()}
+                      </Text>
+                    </View>
+                  ))}
                 </View>
               </View>
 
@@ -736,10 +775,11 @@ function PlanningPdfDoc({
           </View>
         </View>
 
+        {/* table */}
         <View style={styles.tableContainer}>
           <View style={styles.tableHeader}>
             <View style={styles.thFirst}>
-              <Text style={styles.thText}>{secteurServiceHeader}</Text>
+              <Text style={styles.thText}>{String(secteur || "").toUpperCase()}</Text>
               <Text style={styles.thText}>SEMAINE {weekNum}</Text>
             </View>
 
@@ -759,9 +799,14 @@ function PlanningPdfDoc({
             const total = !isTrulyEmpty ? calcTotal(missions as any[]) : ""
             const isLastRow = idx === rows.length - 1
 
+            const rowStatut = String(row.statut || "En recherche")
+            const rowStatutUpper = rowStatut.toUpperCase()
+            const rowStatusColor = statutColors[rowStatut as keyof typeof statutColors]?.bg || "#9ca3af"
+            const rowStatutTextColor = rowStatut === "En recherche" ? "#111827" : "#ffffff"
+
             return (
-              <View key={idx} style={[styles.tableRow, isLastRow && styles.tableRowLast]}>
-                <View style={styles.cellFirst}>
+              <View key={idx} style={styles.tableRow}>
+                <View style={[styles.cellFirst, isLastRow && styles.cellFirstLast]}>
                   {!isTrulyEmpty && (
                     <>
                       <View style={styles.chipsRow}>
@@ -786,7 +831,11 @@ function PlanningPdfDoc({
                             {row.nom.toUpperCase()} {row.prenom}
                           </Text>
                         ) : (
-                          <Text style={styles.candidatNom}>{(row.statut || "EN RECHERCHE").toUpperCase()}</Text>
+                          <View style={{ width: 80, paddingVertical: 4, paddingHorizontal: 6, borderRadius: 4, alignItems: "center", backgroundColor: rowStatusColor }}>
+                            <Text style={{ fontSize: 8.0, fontWeight: "bold", textTransform: "uppercase", letterSpacing: 0.2, color: rowStatutTextColor }} wrap={false}>
+                              {rowStatutUpper}
+                            </Text>
+                          </View>
                         )}
 
                         <View style={styles.infoRow}>
@@ -800,11 +849,12 @@ function PlanningPdfDoc({
 
                 {dayKeys.map((day, i) => {
                   const mission = row.missions[day.key]
-                  const cellStyle = i === 6 ? styles.cellDayLast : styles.cellDay
+                  const baseCellStyle = i === 6 ? styles.cellDayLast : styles.cellDay
+                  const cellStyle = [baseCellStyle, isLastRow && styles.cellDayLastRow]
 
                   if (!mission) {
                     return (
-                      <View key={day.key} style={cellStyle}>
+                      <View key={day.key} style={cellStyle as any}>
                         <EmptyCell />
                       </View>
                     )
@@ -821,7 +871,7 @@ function PlanningPdfDoc({
                   const soirOk = !!(mission.heure_debut_soir && mission.heure_fin_soir)
 
                   return (
-                    <View key={day.key} style={cellStyle}>
+                    <View key={day.key} style={cellStyle as any}>
                       <View style={styles.vignetteOuter}>
                         <View style={[styles.vignetteLeftBar, { backgroundColor: statusColor }]} />
 
@@ -830,15 +880,11 @@ function PlanningPdfDoc({
                           {!!prenomLine && <Text style={styles.vignettePrenom}>{prenomLine}</Text>}
 
                           <Text style={matinOk ? styles.vignetteHoraire : styles.vignetteHoraireEmpty}>
-                            {matinOk
-                              ? `${formatHeure(mission.heure_debut_matin)}  ${formatHeure(mission.heure_fin_matin)}`
-                              : "—  —"}
+                            {matinOk ? `${formatHeure(mission.heure_debut_matin)}  ${formatHeure(mission.heure_fin_matin)}` : "—  —"}
                           </Text>
 
                           <Text style={soirOk ? styles.vignetteHoraire : styles.vignetteHoraireEmpty}>
-                            {soirOk
-                              ? `${formatHeure(mission.heure_debut_soir)}  ${formatHeure(mission.heure_fin_soir)}`
-                              : "—  —"}
+                            {soirOk ? `${formatHeure(mission.heure_debut_soir)}  ${formatHeure(mission.heure_fin_soir)}` : "—  —"}
                           </Text>
                         </View>
                       </View>
@@ -848,39 +894,6 @@ function PlanningPdfDoc({
               </View>
             )
           })}
-        </View>
-
-        {/* ✅ FOOTER */}
-        <View style={styles.footerWrapper}>
-          <View style={styles.footerWeekBadge}>
-            <Text style={styles.footerWeekBadgeText}>SEMAINE {weekNum}</Text>
-          </View>
-
-          <View style={styles.footerContactRow}>
-            <View style={styles.footerContactPill}>
-              <View style={styles.footerContactAccent} />
-              <View style={styles.footerContactInner}>
-                <Text style={styles.footerLabel}>Tél :</Text>
-                <Text style={styles.footerValue}>04 37 65 25 90</Text>
-              </View>
-            </View>
-
-            <View style={styles.footerContactPill}>
-              <View style={styles.footerContactAccent} />
-              <View style={styles.footerContactInner}>
-                <Text style={styles.footerLabel}>Mail :</Text>
-                <Text style={styles.footerValue}>commandes@adaptel-lyon.fr</Text>
-              </View>
-            </View>
-
-            <View style={styles.footerContactPill}>
-              <View style={styles.footerContactAccent} />
-              <View style={styles.footerContactInner}>
-                <Text style={styles.footerLabel}>SMS :</Text>
-                <Text style={styles.footerValue}>06 09 22 00 80</Text>
-              </View>
-            </View>
-          </View>
         </View>
       </Page>
     </Document>
@@ -900,6 +913,7 @@ export default function PlanningClientPreviewDialog({
   const [clientNom, setClientNom] = useState<string>("")
   const [errorMsg, setErrorMsg] = useState<string>("")
   const [generating, setGenerating] = useState(false)
+  const [generatingPortrait, setGeneratingPortrait] = useState(false)
 
   const { lundiStr, dimancheStr, weekNum } = useMemo(() => {
     const base = new Date(semaineDate)
@@ -998,41 +1012,44 @@ export default function PlanningClientPreviewDialog({
     fetchPlanning()
   }, [open, clientId, secteur, service, lundiStr, dimancheStr])
 
+  const resolveUserDisplayName = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    const md: any = user?.user_metadata || {}
+    const email = user?.email || ""
+
+    let prenomDb = ""
+    let nomDb = ""
+
+    if (email) {
+      const { data: urow } = await supabase.from("utilisateurs").select("prenom, nom").eq("email", email).maybeSingle()
+      if (urow) {
+        prenomDb = (urow as any).prenom || ""
+        nomDb = (urow as any).nom || ""
+      }
+    }
+
+    const prenomMeta =
+      md.prenom || md.first_name || (typeof md.full_name === "string" ? md.full_name.split(/\s+/)[0] : "") || ""
+
+    const nomMeta =
+      md.nom ||
+      md.last_name ||
+      (typeof md.full_name === "string" ? md.full_name.split(/\s+/).slice(1).join(" ") : "") ||
+      ""
+
+    const fallback = email ? email.split("@")[0] : "—"
+    return `${prenomDb || prenomMeta} ${nomDb || nomMeta}`.trim() || fallback
+  }
+
   const handleGeneratePdf = async () => {
     if (generating || !clientNom) return
 
     setGenerating(true)
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      const md: any = user?.user_metadata || {}
-      const email = user?.email || ""
-
-      let prenomDb = ""
-      let nomDb = ""
-
-      if (email) {
-        const { data: urow } = await supabase.from("utilisateurs").select("prenom, nom").eq("email", email).maybeSingle()
-
-        if (urow) {
-          prenomDb = (urow as any).prenom || ""
-          nomDb = (urow as any).nom || ""
-        }
-      }
-
-      const prenomMeta =
-        md.prenom || md.first_name || (typeof md.full_name === "string" ? md.full_name.split(/\s+/)[0] : "") || ""
-
-      const nomMeta =
-        md.nom ||
-        md.last_name ||
-        (typeof md.full_name === "string" ? md.full_name.split(/\s+/).slice(1).join(" ") : "") ||
-        ""
-
-      const fallback = email ? email.split("@")[0] : "—"
-      const userDisplayName = `${prenomDb || prenomMeta} ${nomDb || nomMeta}`.trim() || fallback
+      const userDisplayName = await resolveUserDisplayName()
 
       const doc = (
         <PlanningPdfDoc
@@ -1051,7 +1068,7 @@ export default function PlanningClientPreviewDialog({
 
       const link = document.createElement("a")
       link.href = url
-      link.download = `Planning_${clientNom.replace(/\s+/g, "_")}_Sem${weekNum}_${secteur}.pdf`
+      link.download = buildPdfFileName(weekNum, secteur, service, "landscape")
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -1062,6 +1079,45 @@ export default function PlanningClientPreviewDialog({
       alert("Erreur génération PDF")
     } finally {
       setGenerating(false)
+    }
+  }
+
+  const handleGeneratePdfPortrait = async () => {
+    if (generatingPortrait || !clientNom) return
+
+    setGeneratingPortrait(true)
+    try {
+      const userDisplayName = await resolveUserDisplayName()
+
+      // ✅ doc portrait via import RELATIF (donc le bon fichier)
+      const doc = (
+        <PlanningClientPdfPortraitDoc
+          clientNom={clientNom}
+          secteur={secteur}
+          service={service || null}
+          weekNum={weekNum}
+          lundiStr={lundiStr}
+          jours={joursForPdf}
+          userDisplayName={userDisplayName}
+        />
+      )
+
+      const blob = await pdf(doc).toBlob()
+      const url = URL.createObjectURL(blob)
+
+      const link = document.createElement("a")
+      link.href = url
+      link.download = buildPdfFileName(weekNum, secteur, service, "portrait")
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (e) {
+      console.error("PDF portrait error:", e)
+      alert("Erreur génération PDF")
+    } finally {
+      setGeneratingPortrait(false)
     }
   }
 
@@ -1077,14 +1133,26 @@ export default function PlanningClientPreviewDialog({
                 {service && ` — ${service}`}
               </DialogTitle>
 
-              <Button
-                className="bg-[#840404] hover:bg-[#6f0303] text-white"
-                onClick={handleGeneratePdf}
-                disabled={loading || !!errorMsg || generating}
-              >
-                <FileDown className="h-4 w-4 mr-2" />
-                {generating ? "Génération…" : "Générer le PDF"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  className="bg-[#840404] hover:bg-[#6f0303] text-white"
+                  onClick={handleGeneratePdf}
+                  disabled={loading || !!errorMsg || generating || generatingPortrait}
+                >
+                  <FileDown className="h-4 w-4 mr-2" />
+                  {generating ? "Génération…" : "Générer le PDF"}
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="border-[#840404] text-[#840404] hover:bg-[#840404]/10"
+                  onClick={handleGeneratePdfPortrait}
+                  disabled={loading || !!errorMsg || generatingPortrait || generating}
+                >
+                  <FileDown className="h-4 w-4 mr-2" />
+                  {generatingPortrait ? "Génération…" : "PDF portrait (test)"}
+                </Button>
+              </div>
             </div>
           </DialogHeader>
 

@@ -25,6 +25,7 @@ import PopoverSelectCandidat from "./PopoverSelectCandidat"
 import PopoverSelectClient from "@/components/commandes/PopoverSelectClient"
 import { useAgentBadge } from "@/hooks/useAgent"
 import AgentWidget from "@/components/agent/AgentWidget"
+import PointageDialog from "@/components/commandes/PointageDialog"
 
 export function SectionFixeCommandes({
   selectedSecteurs,
@@ -76,6 +77,9 @@ export function SectionFixeCommandes({
   const [agentOpen, setAgentOpen] = useState(false)
   const { badgeCount } = useAgentBadge()
 
+  // Pointage
+  const [openPointage, setOpenPointage] = useState(false)
+
   useEffect(() => {
     let d = 0, v = 0, r = 0, np = 0
     if (!planningContext || Object.keys(planningContext).length === 0) return
@@ -95,6 +99,13 @@ export function SectionFixeCommandes({
       const semaineActuelle = getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
       setSelectedSemaine(semaineActuelle)
     }
+  }, [])
+
+  // écoute l’event global déclenché par le bouton "Pointage"
+  useEffect(() => {
+    const handler = () => setOpenPointage(true)
+    window.addEventListener("adaptel:open-pointage", handler as any)
+    return () => window.removeEventListener("adaptel:open-pointage", handler as any)
   }, [])
 
   return (
@@ -310,11 +321,14 @@ export function SectionFixeCommandes({
 
           <Separator orientation="vertical" className="h-8" />
 
+          {/* Bouton Pointage : émet juste l’événement */}
           <Button
             variant="outline"
-            onClick={() => setAgentOpen((v) => !v)}
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("adaptel:open-pointage"))
+            }}
             aria-expanded={agentOpen}
-            title="Ouvrir l’agent (rappels & notes)"
+            title="Ouvrir Pointage (feuilles de pointage)"
             className={cn(
               "relative h-9 px-3 rounded-lg border border-gray-300 bg-white",
               "flex items-center gap-2 text-sm font-medium",
@@ -322,7 +336,7 @@ export function SectionFixeCommandes({
             )}
           >
             <MessageSquare size={16} />
-            <span>Agent</span>
+            <span>Pointage</span>
             {badgeCount > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] px-1 rounded-full bg-red-600 text-white text-xs flex items-center justify-center">
                 {badgeCount}
@@ -336,6 +350,24 @@ export function SectionFixeCommandes({
       <NouvelleCommandeDialog open={openNouvelleCommande} onOpenChange={setOpenNouvelleCommande} onRefreshDone={() => {}} />
       <AjoutDispoCandidat open={openDispo} onOpenChange={setOpenDispo} onSuccess={() => {}} />
       <SaisirIncidentDialog open={openIncident} onOpenChange={setOpenIncident} />
+
+      {/* ✅ Nouveau Dialog Pointage */}
+      <PointageDialog
+        open={openPointage}
+        onOpenChange={setOpenPointage}
+        semainesDisponibles={semainesDisponibles}
+        clientsDisponibles={clientsDisponibles}
+        defaultSecteur={Array.isArray(selectedSecteurs) && selectedSecteurs.length === 1 ? selectedSecteurs[0] : "Étages"}
+        defaultSemaine={
+          semaineEnCours
+            ? getWeek(startOfWeek(new Date(), { weekStartsOn: 1 })).toString()
+            : (selectedSemaine && selectedSemaine !== "Toutes" ? selectedSemaine : undefined)
+        }
+        onGenerate={(payload) => {
+          // Pour l’instant: juste pour debug (étape suivante : fetch données + build PDF)
+          console.log("POINTAGE payload:", payload)
+        }}
+      />
 
       {/* Popovers existants */}
       <PopoverSelectCandidat
