@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { format, startOfWeek, addDays, getWeek } from "date-fns"
+import { format, startOfWeek, addDays, addWeeks, getISOWeek, getISOWeekYear } from "date-fns"
 import { fr } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -28,11 +28,14 @@ function getMondayOfWeek(weekStr: string) {
   const week = Number(weekStr)
   if (!Number.isFinite(week) || week <= 0) return startOfWeek(new Date(), { weekStartsOn: 1 })
 
+  // Toujours année courante (comportement existant). OK car on limite aux semaines proches.
   const now = new Date()
   const y = now.getFullYear()
   const jan4 = new Date(y, 0, 4)
   const jan4Monday = startOfWeek(jan4, { weekStartsOn: 1 })
-  const target = addDays(jan4Monday, (week - getWeek(jan4Monday, { weekStartsOn: 1 })) * 7)
+  // ISO week number du lundi de jan4Monday
+  const baseWeek = getISOWeek(jan4Monday)
+  const target = addDays(jan4Monday, (week - baseWeek) * 7)
   return startOfWeek(target, { weekStartsOn: 1 })
 }
 
@@ -57,9 +60,8 @@ export default function PointageDialog({
   const [client, setClient] = useState("")
   const [searchClient, setSearchClient] = useState("")
 
-  const [semaine, setSemaine] = useState<string>(
-    defaultSemaine || getWeek(startOfWeek(new Date(), { weekStartsOn: 1 }), { weekStartsOn: 1 }).toString()
-  )
+  // ✅ MODIF: aucune semaine sélectionnée par défaut
+  const [semaine, setSemaine] = useState<string>("")
 
   // 7 jours lun..dim
   const [selectedDays, setSelectedDays] = useState<boolean[]>([true, true, true, true, true, true, true])
@@ -87,11 +89,37 @@ export default function PointageDialog({
     setServicesSelected([])
     setServicesLoading(false)
     setGenerating(false)
-    setSemaine(
-      defaultSemaine || getWeek(startOfWeek(new Date(), { weekStartsOn: 1 }), { weekStartsOn: 1 }).toString()
-    )
+
+    // ✅ MODIF: on ne présélectionne PAS la semaine
+    setSemaine("")
+
     setSelectedDays([true, true, true, true, true, true, true])
   }, [open, defaultSemaine])
+
+  // ✅ MODIF: liste semaines limitée à S-2 -> S+3, groupée par année
+  const semainesRange = useMemo(() => {
+    const baseMonday = startOfWeek(new Date(), { weekStartsOn: 1 })
+    const entries = Array.from({ length: 6 }, (_, i) => {
+      const d = addWeeks(baseMonday, i - 2) // -2, -1, 0, +1, +2, +3
+      return {
+        year: getISOWeekYear(d),
+        week: getISOWeek(d),
+      }
+    })
+
+    const map = new Map<number, number[]>()
+    for (const e of entries) {
+      const arr = map.get(e.year) ?? []
+      if (!arr.includes(e.week)) arr.push(e.week)
+      map.set(e.year, arr)
+    }
+
+    const out = Array.from(map.entries())
+      .map(([year, weeks]) => ({ year, weeks: weeks.sort((a, b) => a - b) }))
+      .sort((a, b) => a.year - b.year)
+
+    return out
+  }, [])
 
   const monday = useMemo(() => getMondayOfWeek(semaine), [semaine])
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(monday, i)), [monday])
@@ -205,7 +233,8 @@ export default function PointageDialog({
     run()
   }, [client, open])
 
-  const canGenerate = client && selectedDatesISO.length > 0 && !generating
+  // ✅ MODIF: on exige que l'user sélectionne une semaine
+  const canGenerate = client && semaine && selectedDatesISO.length > 0 && !generating
 
   const titleSuffix = useMemo(() => {
     const parts: string[] = []
@@ -219,6 +248,7 @@ export default function PointageDialog({
 
   const handleGenerate = async () => {
     if (!client) return
+    if (!semaine) return
     if (selectedDatesISO.length === 0) return
 
     const payload = {
@@ -376,29 +406,21 @@ export default function PointageDialog({
                     value={semaine}
                     onChange={(e) => setSemaine(e.target.value)}
                   >
-                    {Array.isArray(semainesDisponibles) && semainesDisponibles.length > 0 ? (
-                      <>
-                        {semainesDisponibles.map(({ year, weeks }) => (
-                          <optgroup key={year} label={`Année ${year}`}>
-                            {weeks.map((w) => (
-                              <option key={`${year}-${w}`} value={w.toString()}>
-                                Semaine {w}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </>
-                    ) : (
-                      Array.from({ length: 17 }, (_, i) => {
-                        const w = Number(getWeek(new Date(), { weekStartsOn: 1 })) - 8 + i
-                        const value = w <= 0 ? 1 : w
-                        return (
-                          <option key={value} value={value.toString()}>
-                            Semaine {value}
+                    {/* ✅ MODIF: placeholder + aucune sélection */}
+                    <option value="" disabled>
+                      — Sélectionner une semaine —
+                    </option>
+
+                    {/* ✅ MODIF: liste limitée (S-2 → S+3) groupée par année */}
+                    {semainesRange.map(({ year, weeks }) => (
+                      <optgroup key={year} label={`Année ${year}`}>
+                        {weeks.map((w) => (
+                          <option key={`${year}-${w}`} value={w.toString()}>
+                            Semaine {w}
                           </option>
-                        )
-                      })
-                    )}
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
 
                   <div className="text-xs text-gray-500">
@@ -506,9 +528,11 @@ export default function PointageDialog({
                 title={
                   !client
                     ? "Sélectionne un client"
-                    : selectedDatesISO.length === 0
-                      ? "Sélectionne au moins une journée"
-                      : "Générer le PDF"
+                    : !semaine
+                      ? "Sélectionne une semaine"
+                      : selectedDatesISO.length === 0
+                        ? "Sélectionne au moins une journée"
+                        : "Générer le PDF"
                 }
               >
                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
