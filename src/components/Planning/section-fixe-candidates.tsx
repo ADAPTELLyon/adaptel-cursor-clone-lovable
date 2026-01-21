@@ -9,6 +9,7 @@ import {
   AlertCircle,
   RotateCcw,
   User2,
+  Send,
 } from "lucide-react"
 import { secteursList } from "@/lib/secteurs"
 import { startOfWeek } from "date-fns"
@@ -22,6 +23,9 @@ import PopoverSelectCandidat from "@/components/commandes/PopoverSelectCandidat"
 import { Building2 } from "lucide-react"
 import PopoverSelectClient from "@/components/commandes/PopoverSelectClient"
 import FicheMemoClient from "@/components/clients/FicheMemoClient"
+
+// NEW: popup "Envoyer planning candidat" (on le crée juste après)
+import EnvoyerPlanningCandidatDialog from "./EnvoyerPlanningCandidatDialog"
 
 export function SectionFixeCandidates({
   selectedSecteurs,
@@ -77,6 +81,9 @@ export function SectionFixeCandidates({
   const [showSelectClient, setShowSelectClient] = useState(false)
   const [openFicheClient, setOpenFicheClient] = useState(false)
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
+
+  // NEW: ouverture popup "Envoyer planning"
+  const [openSendPlanning, setOpenSendPlanning] = useState(false)
 
   // Groupement des semaines par année pour l'affichage <optgroup>, à partir des clés "YYYY-WW"
   const groupedSemaines = (() => {
@@ -295,6 +302,16 @@ export function SectionFixeCandidates({
         >
           <Building2 size={18} />
         </Button>
+
+        <Separator orientation="vertical" className="h-8" />
+
+        <Button
+          variant="outline"
+          className="flex items-center gap-2"
+          onClick={() => setOpenSendPlanning(true)}
+        >
+          <Send size={16} /> Envoyer planning
+        </Button>
       </div>
 
       <AjoutDispoCandidat
@@ -346,6 +363,11 @@ export function SectionFixeCandidates({
           clientId={selectedClientId}
         />
       )}
+
+      <EnvoyerPlanningCandidatDialog
+        open={openSendPlanning}
+        onOpenChange={setOpenSendPlanning}
+      />
     </div>
   )
 }
