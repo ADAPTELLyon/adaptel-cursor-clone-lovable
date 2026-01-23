@@ -8,8 +8,8 @@ import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, Send, Check, ChevronDown } from "lucide-react"
 import { supabase } from "@/lib/supabase"
-import { openMailMessage } from "@/lib/email/openMailMessage"
 import { buildPlanningCandidatEmail, type PlanningCandidatItem } from "@/lib/email/buildPlanningCandidatEmail"
+import EmailPreviewDialog from "@/components/Planning/EmailPreviewDialog"
 
 type EnvoyerPlanningCandidatDialogProps = {
   open: boolean
@@ -67,6 +67,13 @@ export default function EnvoyerPlanningCandidatDialog({
   const [loadingCandidats, setLoadingCandidats] = useState(false)
   const [buildingMail, setBuildingMail] = useState(false)
 
+  // ✅ Preview state (EmailPreviewDialog)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewTo, setPreviewTo] = useState("")
+  const [previewSubject, setPreviewSubject] = useState("")
+  const [previewHtml, setPreviewHtml] = useState("")
+  const [candidatNom, setCandidatNom] = useState("") // Pour afficher dans le preview
+
   const CONTENT_W = "w-[582px]"
 
   useEffect(() => {
@@ -80,6 +87,13 @@ export default function EnvoyerPlanningCandidatDialog({
     setMissingField(null)
     setSemaineSelectOpen(false)
     setBuildingMail(false)
+
+    // reset preview
+    setPreviewOpen(false)
+    setPreviewTo("")
+    setPreviewSubject("")
+    setPreviewHtml("")
+    setCandidatNom("")
   }, [open])
 
   const semainesRange = useMemo(() => {
@@ -303,10 +317,10 @@ export default function EnvoyerPlanningCandidatDialog({
         })
       }
     } catch {
-      // on passe au fallback
+      // fallback
     }
 
-    // 2) Fallback via commandes (si planification/join foire)
+    // 2) Fallback via commandes
     const { data: data2 } = await supabase
       .from("commandes")
       .select(
@@ -346,12 +360,14 @@ export default function EnvoyerPlanningCandidatDialog({
     })
   }
 
+  // ✅ Message = prépare le mail + ouvre EmailPreviewDialog
   const handleMessage = async () => {
     if (!secteur || !semaineKey || !candidatId) return
 
     const cand = candidats.find((c) => c.id === candidatId)
     const to = cand?.email?.trim() || ""
     const prenom = (cand?.prenom || "").trim()
+    const nom = (cand?.nom || "").trim()
 
     if (!to) {
       setMissingField("candidat")
@@ -367,7 +383,7 @@ export default function EnvoyerPlanningCandidatDialog({
       const weekNum = Number(semaineKey.split("-")[1])
       const items = await fetchPlanningItems(candidatId, mondayISO)
 
-      // IMPORTANT : on garde uniquement le secteur sélectionné (cohérent avec l’écran)
+      // IMPORTANT : on garde uniquement le secteur sélectionné
       const itemsFiltered = items.filter((x) => (x.secteur || "") === secteur)
 
       const { subject, body } = buildPlanningCandidatEmail({
@@ -377,224 +393,174 @@ export default function EnvoyerPlanningCandidatDialog({
         items: itemsFiltered,
       })
 
-      openMailMessage({ to, subject, body })
-      onOpenChange(false)
+      setPreviewTo(to)
+      setPreviewSubject(subject)
+      setPreviewHtml(body)
+      setCandidatNom(`${nom} ${prenom}`.trim()) // Stocke le nom pour le preview
+      setPreviewOpen(true)
     } finally {
       setBuildingMail(false)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[720px] max-w-[720px] h-[720px] max-h-[720px] p-0 overflow-hidden bg-gray-50">
-        <div className="p-6 h-full flex flex-col">
-          {/* Header */}
-          <DialogHeader className="space-y-0">
-            <DialogTitle className="text-xl font-semibold flex items-center gap-2 mb-2">
-              <Send className="h-5 w-5 text-[#8a0000]" />
-              Envoyer planning candidat
-            </DialogTitle>
+    <>
+      {/* ✅ Dialog de prévisualisation mail */}
+      <EmailPreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        initialTo={previewTo}
+        initialSubject={previewSubject}
+        initialHtml={previewHtml}
+        candidatNom={candidatNom}
+      />
 
-            {/* Zone badges - 3 sur la même ligne */}
-            <div className="h-[44px] mb-2 flex items-center gap-2">
-              {/* Secteur */}
-              <div
-                className={cn(
-                  "w-[140px] h-8 rounded-lg flex items-center justify-center",
-                  secteur ? "bg-[#8a0000]" : "bg-gray-200"
-                )}
-              >
-                {secteur ? (
-                  <span className="text-sm font-semibold text-white truncate px-2">{secteur}</span>
-                ) : (
-                  <span className="text-sm text-gray-500">Secteur</span>
-                )}
-              </div>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="w-[720px] max-w-[720px] h-[720px] max-h-[720px] p-0 overflow-hidden bg-gray-50">
+          <div className="p-6 h-full flex flex-col">
+            {/* Header */}
+            <DialogHeader className="space-y-0">
+              <DialogTitle className="text-xl font-semibold flex items-center gap-2 mb-2">
+                <Send className="h-5 w-5 text-[#8a0000]" />
+                Envoyer planning candidat
+              </DialogTitle>
 
-              {/* Semaine */}
-              <div
-                className={cn(
-                  "w-[140px] h-8 rounded-lg flex items-center justify-center",
-                  semaineKey ? "bg-[#8a0000]" : "bg-gray-200"
-                )}
-              >
-                {semaineKey ? (
-                  <span className="text-sm font-semibold text-white truncate px-2">{semaineBadgeLabel}</span>
-                ) : (
-                  <span className="text-sm text-gray-500">Semaine</span>
-                )}
-              </div>
-
-              {/* Candidat */}
-              <div
-                className={cn(
-                  "w-[280px] h-8 rounded-lg flex items-center justify-center",
-                  candidatLabel ? "bg-[#8a0000]" : "bg-gray-200"
-                )}
-              >
-                {candidatLabel ? (
-                  <span className="text-sm font-semibold text-white truncate px-2">{candidatLabel}</span>
-                ) : (
-                  <span className="text-sm text-gray-500">Candidat</span>
-                )}
-              </div>
-            </div>
-          </DialogHeader>
-
-          <Separator className="mb-6" />
-
-          {/* Body */}
-          <div className="flex-1 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
-            <div className="p-4 h-full flex flex-col gap-6 items-center">
-              {/* Secteur */}
-              <div className={cn("space-y-3", CONTENT_W)}>
-                <div className="flex items-center gap-2">
-                  <div className={cn("text-sm font-semibold text-gray-800", missingField === "secteur" && "text-red-600")}>
-                    Secteur
-                  </div>
-                  {secteur && <Check className="h-4 w-4 text-green-600" />}
-                </div>
-                <div className={cn("flex gap-2", CONTENT_W)}>
-                  {SECTEURS.map((s) => {
-                    const active = secteur === s
-                    const missing = missingField === "secteur"
-                    return (
-                      <Button
-                        key={s}
-                        type="button"
-                        variant="outline"
-                        className={cn(
-                          "h-9 w-[110px] rounded-lg text-sm font-medium px-2 transition-all",
-                          active
-                            ? "bg-[#8a0000] hover:bg-[#8a0000]/90 text-white"
-                            : missing && !secteur
-                              ? "border-red-300"
-                              : "hover:bg-gray-50"
-                        )}
-                        onClick={() => {
-                          setSecteur((prev) => (prev === s ? "" : s))
-                          setMissingField(null)
-                        }}
-                      >
-                        {s}
-                      </Button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Semaine - Custom Select */}
-              <div className={cn("space-y-3", CONTENT_W)}>
-                <div className="flex items-center gap-2">
-                  <div className={cn("text-sm font-semibold text-gray-800", missingField === "semaine" && "text-red-600")}>
-                    Semaine
-                  </div>
-                  {semaineKey && <Check className="h-4 w-4 text-green-600" />}
-                </div>
-
-                <div className="semaine-select-container relative">
-                  <button
-                    type="button"
-                    className={cn(
-                      "w-full h-9 rounded-lg border px-3 py-2 text-sm text-left flex items-center justify-between",
-                      "bg-white transition-colors",
-                      semaineKey ? "border-[#8a0000]" : "border-gray-300",
-                      missingField === "semaine" && !semaineKey && "border-red-300"
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setSemaineSelectOpen(!semaineSelectOpen)
-                    }}
-                  >
-                    <div className="flex-1 overflow-hidden">{renderSelectedSemaine()}</div>
-                    <ChevronDown
-                      className={cn("h-4 w-4 transition-transform flex-shrink-0", semaineSelectOpen && "transform rotate-180")}
-                    />
-                  </button>
-
-                  {semaineSelectOpen && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
-                      {weekOptions.map((option) => {
-                        const selected = option.key === semaineKey
-                        return (
-                          <button
-                            key={option.key}
-                            type="button"
-                            className={cn("w-full text-left px-3 py-2 hover:bg-gray-50 text-sm", selected && "bg-[#8a0000]/10")}
-                            onClick={() => {
-                              setSemaineKey(option.key)
-                              setMissingField(null)
-                              setSemaineSelectOpen(false)
-                            }}
-                          >
-                            <div className="flex">
-                              <span className="font-semibold">{option.weekPart}</span>
-                              <span className="ml-1">- {option.datePart}</span>
-                              {selected && <div className="ml-auto text-[#8a0000]">✓</div>}
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Candidat */}
-              <div className={cn("space-y-3", CONTENT_W)}>
-                <div className="flex items-center gap-2">
-                  <div className={cn("text-sm font-semibold text-gray-800", missingField === "candidat" && "text-red-600")}>
-                    Candidat
-                  </div>
-                  {candidatId && <Check className="h-4 w-4 text-green-600" />}
-                </div>
-
-                <Input
-                  placeholder="Rechercher..."
-                  value={searchCandidat}
-                  onChange={(e) => setSearchCandidat(e.target.value)}
+              {/* Zone badges - 3 sur la même ligne */}
+              <div className="h-[44px] mb-2 flex items-center gap-2">
+                {/* Secteur */}
+                <div
                   className={cn(
-                    "border-gray-300 focus:ring-2 focus:ring-[#8a0000]/20 focus:border-[#8a0000]",
-                    CONTENT_W,
-                    missingField === "candidat" && !candidatId && "border-red-300"
+                    "w-[140px] h-8 rounded-lg flex items-center justify-center",
+                    secteur ? "bg-[#8a0000]" : "bg-gray-200"
                   )}
-                />
+                >
+                  {secteur ? (
+                    <span className="text-sm font-semibold text-white truncate px-2">{secteur}</span>
+                  ) : (
+                    <span className="text-sm text-gray-500">Secteur</span>
+                  )}
+                </div>
 
-                <div className={cn("border border-gray-200 rounded-lg overflow-hidden bg-white", CONTENT_W)}>
-                  <div className="h-[200px] overflow-auto">
-                    {loadingCandidats ? (
-                      <div className="p-3 text-sm text-gray-500 flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Chargement...
-                      </div>
-                    ) : filteredCandidats.length === 0 ? (
-                      <div className="p-3 text-sm text-gray-500">Aucun candidat.</div>
-                    ) : (
-                      <div className="divide-y">
-                        {filteredCandidats.map((c) => {
-                          const label = `${c.nom ?? ""} ${c.prenom ?? ""}`.trim() || "Candidat"
-                          const selected = candidatId === c.id
+                {/* Semaine */}
+                <div
+                  className={cn(
+                    "w-[140px] h-8 rounded-lg flex items-center justify-center",
+                    semaineKey ? "bg-[#8a0000]" : "bg-gray-200"
+                  )}
+                >
+                  {semaineKey ? (
+                    <span className="text-sm font-semibold text-white truncate px-2">{semaineBadgeLabel}</span>
+                  ) : (
+                    <span className="text-sm text-gray-500">Semaine</span>
+                  )}
+                </div>
+
+                {/* Candidat */}
+                <div
+                  className={cn(
+                    "w-[280px] h-8 rounded-lg flex items-center justify-center",
+                    candidatLabel ? "bg-[#8a0000]" : "bg-gray-200"
+                  )}
+                >
+                  {candidatLabel ? (
+                    <span className="text-sm font-semibold text-white truncate px-2">{candidatLabel}</span>
+                  ) : (
+                    <span className="text-sm text-gray-500">Candidat</span>
+                  )}
+                </div>
+              </div>
+            </DialogHeader>
+
+            <Separator className="mb-6" />
+
+            {/* Body */}
+            <div className="flex-1 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+              <div className="p-4 h-full flex flex-col gap-6 items-center">
+                {/* Secteur */}
+                <div className={cn("space-y-3", CONTENT_W)}>
+                  <div className="flex items-center gap-2">
+                    <div className={cn("text-sm font-semibold text-gray-800", missingField === "secteur" && "text-red-600")}>
+                      Secteur
+                    </div>
+                    {secteur && <Check className="h-4 w-4 text-green-600" />}
+                  </div>
+                  <div className={cn("flex gap-2", CONTENT_W)}>
+                    {SECTEURS.map((s) => {
+                      const active = secteur === s
+                      const missing = missingField === "secteur"
+                      return (
+                        <Button
+                          key={s}
+                          type="button"
+                          variant="outline"
+                          className={cn(
+                            "h-9 w-[110px] rounded-lg text-sm font-medium px-2 transition-all",
+                            active
+                              ? "bg-[#8a0000] hover:bg-[#8a0000]/90 text-white"
+                              : missing && !secteur
+                                ? "border-red-300"
+                                : "hover:bg-gray-50"
+                          )}
+                          onClick={() => {
+                            setSecteur((prev) => (prev === s ? "" : s))
+                            setMissingField(null)
+                          }}
+                        >
+                          {s}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Semaine - Custom Select */}
+                <div className={cn("space-y-3", CONTENT_W)}>
+                  <div className="flex items-center gap-2">
+                    <div className={cn("text-sm font-semibold text-gray-800", missingField === "semaine" && "text-red-600")}>
+                      Semaine
+                    </div>
+                    {semaineKey && <Check className="h-4 w-4 text-green-600" />}
+                  </div>
+
+                  <div className="semaine-select-container relative">
+                    <button
+                      type="button"
+                      className={cn(
+                        "w-full h-9 rounded-lg border px-3 py-2 text-sm text-left flex items-center justify-between",
+                        "bg-white transition-colors",
+                        semaineKey ? "border-[#8a0000]" : "border-gray-300",
+                        missingField === "semaine" && !semaineKey && "border-red-300"
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSemaineSelectOpen(!semaineSelectOpen)
+                      }}
+                    >
+                      <div className="flex-1 overflow-hidden">{renderSelectedSemaine()}</div>
+                      <ChevronDown
+                        className={cn("h-4 w-4 transition-transform flex-shrink-0", semaineSelectOpen && "transform rotate-180")}
+                      />
+                    </button>
+
+                    {semaineSelectOpen && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
+                        {weekOptions.map((option) => {
+                          const selected = option.key === semaineKey
                           return (
                             <button
-                              key={c.id}
+                              key={option.key}
                               type="button"
+                              className={cn("w-full text-left px-3 py-2 hover:bg-gray-50 text-sm", selected && "bg-[#8a0000]/10")}
                               onClick={() => {
-                                setCandidatId(c.id)
+                                setSemaineKey(option.key)
                                 setMissingField(null)
+                                setSemaineSelectOpen(false)
                               }}
-                              className={cn(
-                                "w-full text-left px-3 py-2 text-sm transition-all",
-                                selected
-                                  ? "bg-[#8a0000]/10 border-l-3 border-l-[#8a0000]"
-                                  : missingField === "candidat"
-                                    ? "bg-red-50 hover:bg-red-100"
-                                    : "hover:bg-gray-50"
-                              )}
                             >
-                              <div className="flex items-center">
-                                <div className={cn("h-2 w-2 rounded-full mr-3", selected ? "bg-[#8a0000]" : "bg-gray-300")} />
-                                <div className="font-medium text-gray-900 truncate flex-1">{label}</div>
-                                {selected && <div className="text-xs text-[#8a0000] font-medium ml-2">✓</div>}
+                              <div className="flex">
+                                <span className="font-semibold">{option.weekPart}</span>
+                                <span className="ml-1">- {option.datePart}</span>
+                                {selected && <div className="ml-auto text-[#8a0000]">✓</div>}
                               </div>
                             </button>
                           )
@@ -603,37 +569,102 @@ export default function EnvoyerPlanningCandidatDialog({
                     )}
                   </div>
                 </div>
+
+                {/* Candidat */}
+                <div className={cn("space-y-3", CONTENT_W)}>
+                  <div className="flex items-center gap-2">
+                    <div className={cn("text-sm font-semibold text-gray-800", missingField === "candidat" && "text-red-600")}>
+                      Candidat
+                    </div>
+                    {candidatId && <Check className="h-4 w-4 text-green-600" />}
+                  </div>
+
+                  <Input
+                    placeholder="Rechercher..."
+                    value={searchCandidat}
+                    onChange={(e) => setSearchCandidat(e.target.value)}
+                    className={cn(
+                      "border-gray-300 focus:ring-2 focus:ring-[#8a0000]/20 focus:border-[#8a0000]",
+                      CONTENT_W,
+                      missingField === "candidat" && !candidatId && "border-red-300"
+                    )}
+                  />
+
+                  <div className={cn("border border-gray-200 rounded-lg overflow-hidden bg-white", CONTENT_W)}>
+                    <div className="h-[200px] overflow-auto">
+                      {loadingCandidats ? (
+                        <div className="p-3 text-sm text-gray-500 flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Chargement...
+                        </div>
+                      ) : filteredCandidats.length === 0 ? (
+                        <div className="p-3 text-sm text-gray-500">Aucun candidat.</div>
+                      ) : (
+                        <div className="divide-y">
+                          {filteredCandidats.map((c) => {
+                            const label = `${c.nom ?? ""} ${c.prenom ?? ""}`.trim() || "Candidat"
+                            const selected = candidatId === c.id
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => {
+                                  setCandidatId(c.id)
+                                  setMissingField(null)
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-2 text-sm transition-all",
+                                  selected
+                                    ? "bg-[#8a0000]/10 border-l-3 border-l-[#8a0000]"
+                                    : missingField === "candidat"
+                                      ? "bg-red-50 hover:bg-red-100"
+                                      : "hover:bg-gray-50"
+                                )}
+                              >
+                                <div className="flex items-center">
+                                  <div className={cn("h-2 w-2 rounded-full mr-3", selected ? "bg-[#8a0000]" : "bg-gray-300")} />
+                                  <div className="font-medium text-gray-900 truncate flex-1">{label}</div>
+                                  {selected && <div className="text-xs text-[#8a0000] font-medium ml-2">✓</div>}
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
+
+            <Separator className="my-4" />
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" className="h-10 rounded-lg border-gray-300 hover:bg-gray-50" onClick={handleAnnuler}>
+                Annuler
+              </Button>
+
+              <Button
+                variant="outline"
+                className={cn("h-10 rounded-lg", "border-[#8a0000] text-[#8a0000] hover:bg-[#8a0000]/10 hover:border-[#8a0000]")}
+                onClick={() => validateAndAction("envoyer")}
+                disabled={buildingMail}
+              >
+                Envoyer
+              </Button>
+
+              <Button
+                className={cn("h-10 rounded-lg bg-[#8a0000] hover:bg-[#7a0000] text-white")}
+                onClick={() => validateAndAction("message")}
+                disabled={!canAction}
+              >
+                {buildingMail ? "Préparation..." : "Message"}
+              </Button>
+            </div>
           </div>
-
-          <Separator className="my-4" />
-
-          {/* Footer */}
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" className="h-10 rounded-lg border-gray-300 hover:bg-gray-50" onClick={handleAnnuler}>
-              Annuler
-            </Button>
-
-            <Button
-              variant="outline"
-              className={cn("h-10 rounded-lg", "border-[#8a0000] text-[#8a0000] hover:bg-[#8a0000]/10 hover:border-[#8a0000]")}
-              onClick={() => validateAndAction("envoyer")}
-              disabled={buildingMail}
-            >
-              Envoyer
-            </Button>
-
-            <Button
-              className={cn("h-10 rounded-lg bg-[#8a0000] hover:bg-[#7a0000] text-white")}
-              onClick={() => validateAndAction("message")}
-              disabled={!canAction}
-            >
-              {buildingMail ? "Préparation..." : "Message"}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
