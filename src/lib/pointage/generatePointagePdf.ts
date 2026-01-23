@@ -32,6 +32,15 @@ function drawRoundedBadge(page: any, x: number, y: number, w: number, h: number,
   page.drawCircle({ x: x + w - rr, y: y + h - rr, size: rr, color })
 }
 
+// Normalisation robuste (accents / casse / espaces)
+function norm(str: string) {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+}
+
 function normTime(t?: string | null): string | null {
   if (!t || t === "00:00") return null
   const m = t.match(/^(\d{2}):(\d{2})/)
@@ -57,14 +66,55 @@ function calculateTotal(start: string | null, end: string | null): string {
 export async function generatePointagePdf(payload: PointageGeneratePayload) {
   const { datesISO, client, secteurs, services, semaine } = payload
 
-  const { data: clientData } = await supabase.from("clients").select("id").eq("nom", client).maybeSingle()
+  // ✅ sécurités simples
+  if (!client) throw new Error("Client manquant")
+  if (!Array.isArray(datesISO) || datesISO.length === 0) throw new Error("Aucune date sélectionnée")
+  if (!Array.isArray(secteurs) || secteurs.length === 0) throw new Error("Aucun secteur sélectionné")
 
-  const { data: rawCommandes } = await supabase
+  const { data: clientData, error: clientErr } = await supabase
+    .from("clients")
+    .select("id")
+    .eq("nom", client)
+    .maybeSingle()
+
+  if (clientErr) throw clientErr
+  if (!clientData?.id) throw new Error("Client introuvable")
+
+  // ✅ FIX URGENT :
+  // Avant : on prenait TOUS les validés du client sur la semaine => mélange Cuisine/Salle possible
+  // Maintenant : filtre strict par secteurs + (si choisi) services
+  let query = supabase
     .from("commandes")
     .select("*, candidats(nom, prenom)")
-    .eq("client_id", clientData?.id)
+    .eq("client_id", clientData.id)
     .in("date", datesISO)
     .eq("statut", "Validé")
+    // ✅ filtre secteur direct en DB
+    .in("secteur", secteurs)
+
+  // ✅ filtre service uniquement si l'user a coché des services
+  // (si services = [], on garde "tous services" MAIS TOUJOURS dans le(s) secteur(s) choisi(s))
+  if (Array.isArray(services) && services.length > 0) {
+    query = query.in("service", services)
+  }
+
+  const { data: rawFromDb, error: cmdErr } = await query
+  if (cmdErr) throw cmdErr
+
+  // ✅ Filtre de sécurité côté front (accents/casse/espaces) pour éviter les cas tordus en base
+  const wantedSecteurs = secteurs.map(norm)
+  const wantedServices = (services || []).map(norm)
+
+  const rawCommandes = (rawFromDb || []).filter((r: any) => {
+    const secOk = wantedSecteurs.includes(norm(r?.secteur || ""))
+    if (!secOk) return false
+
+    // si aucun service sélectionné => on accepte tous les services (y compris null/"")
+    if (!services || services.length === 0) return true
+
+    // sinon service doit matcher
+    return wantedServices.includes(norm(r?.service || ""))
+  })
 
   const pdfDoc = await PDFDocument.create()
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
@@ -74,7 +124,7 @@ export async function generatePointagePdf(payload: PointageGeneratePayload) {
   try {
     const response = await fetch("/logo-adaptel.png")
     logoImg = await pdfDoc.embedPng(await response.arrayBuffer())
-  } catch (e) {
+  } catch {
     console.warn("Logo non chargé")
   }
 
@@ -91,9 +141,7 @@ export async function generatePointagePdf(payload: PointageGeneratePayload) {
     const page = pdfDoc.addPage([PAGE_W, PAGE_H])
 
     // ==========================================
-    // HEADER (logo + séparation inchangés)
-    // Ligne 1 (noir gras): FEUILLE DE POINTAGE | CLIENT
-    // Ligne 2 (rouge gras): SECTEUR | SERVICE - DATE
+    // HEADER
     // ==========================================
     const headerH = 65
     const hTopY = PAGE_H - M_TOP
@@ -104,7 +152,6 @@ export async function generatePointagePdf(payload: PointageGeneratePayload) {
     const sizeL1 = 19
     const sizeL2 = 19
 
-    // Logo
     if (logoImg) {
       const dims = logoImg.scaleToFit(160, headerH)
       page.drawImage(logoImg, {
@@ -115,16 +162,12 @@ export async function generatePointagePdf(payload: PointageGeneratePayload) {
       })
     }
 
-    // Séparation verticale
     const sepX = M_SIDE + 175
     page.drawRectangle({ x: sepX, y: hBotY, width: 4, height: headerH, color: BRAND_RED })
-
     const leftX = sepX + 15
 
-    // Date en MAJ (comme demandé précédemment)
     const dateUpper = format(new Date(dateISO + "T00:00:00"), "EEEE dd MMMM yyyy", { locale: fr }).toUpperCase()
 
-    // Ligne 1 : FEUILLE DE POINTAGE | client
     const headerTitle = `FEUILLE DE POINTAGE | ${client}`.toUpperCase()
     page.drawText(headerTitle, {
       x: leftX,
@@ -134,7 +177,6 @@ export async function generatePointagePdf(payload: PointageGeneratePayload) {
       color: TEXT_DARK,
     })
 
-    // Ligne 2 : secteur | service - date
     const line2 = `${labelInfosUpper} - ${dateUpper}`
     page.drawText(line2, {
       x: leftX,
@@ -144,7 +186,6 @@ export async function generatePointagePdf(payload: PointageGeneratePayload) {
       color: BRAND_RED,
     })
 
-    // Ligne horizontale sous header
     page.drawLine({
       start: { x: M_SIDE, y: hBotY - 15 },
       end: { x: PAGE_W - M_SIDE, y: hBotY - 15 },
@@ -153,7 +194,7 @@ export async function generatePointagePdf(payload: PointageGeneratePayload) {
     })
 
     // ==========================================
-    // TABLEAU (inchangé)
+    // TABLEAU
     // ==========================================
     const tableTop = hBotY - 10
     const tableW = PAGE_W - M_SIDE * 2
@@ -262,16 +303,12 @@ export async function generatePointagePdf(payload: PointageGeneratePayload) {
     })
 
     // ==========================================
-    // FOOTER (modifié selon ta demande)
-    // Gauche : NOM CLIENT + SECTEUR | SERVICE (NOIR)
-    // Droite : date dans étiquette rouge, texte blanc gras (gère dates longues)
+    // FOOTER
     // ==========================================
     const footerY = 18
-
     const footerLeft = `${client} ${labelInfosUpper}`.toUpperCase()
     page.drawText(footerLeft, { x: M_SIDE, y: footerY, size: 12, font: fontBold, color: TEXT_DARK })
 
-    // Date badge (largeur auto => accepte dates longues)
     const dateBadgeText = dateUpper
     const dateBadgeSize = 11.5
     const dateBadgeTextW = fontBold.widthOfTextAtSize(dateBadgeText, dateBadgeSize)

@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, Send, Check, ChevronDown } from "lucide-react"
 import { supabase } from "@/lib/supabase"
-import { openMailMessage } from "@/lib/email/openMailMessage" // ✅ AJOUT
+import { openMailMessage } from "@/lib/email/openMailMessage"
+import { buildPlanningCandidatEmail, type PlanningCandidatItem } from "@/lib/email/buildPlanningCandidatEmail"
 
 type EnvoyerPlanningCandidatDialogProps = {
   open: boolean
@@ -64,6 +65,7 @@ export default function EnvoyerPlanningCandidatDialog({
 
   const [candidats, setCandidats] = useState<CandidatRow[]>([])
   const [loadingCandidats, setLoadingCandidats] = useState(false)
+  const [buildingMail, setBuildingMail] = useState(false)
 
   const CONTENT_W = "w-[582px]"
 
@@ -77,6 +79,7 @@ export default function EnvoyerPlanningCandidatDialog({
     setLoadingCandidats(false)
     setMissingField(null)
     setSemaineSelectOpen(false)
+    setBuildingMail(false)
   }, [open])
 
   const semainesRange = useMemo(() => {
@@ -127,7 +130,8 @@ export default function EnvoyerPlanningCandidatDialog({
       try {
         const { data: d1, error: e1 } = await supabase
           .from("candidats")
-          .select("id, nom, prenom, email, secteurs")
+          .select("id, nom, prenom, email, secteurs, actif")
+          .eq("actif", true)
           .order("nom", { ascending: true })
           .limit(2000)
 
@@ -194,37 +198,29 @@ export default function EnvoyerPlanningCandidatDialog({
   }, [semaineKey])
 
   const selectedSemaineOption = useMemo(() => {
-    return weekOptions.find(o => o.key === semaineKey)
+    return weekOptions.find((o) => o.key === semaineKey)
   }, [semaineKey, weekOptions])
 
-  const canAction = Boolean(secteur && semaineKey && candidatId) && !loadingCandidats
+  const canAction = Boolean(secteur && semaineKey && candidatId) && !loadingCandidats && !buildingMail
 
-  const validateAndAction = (action: 'envoyer' | 'message') => {
+  const validateAndAction = (action: "envoyer" | "message") => {
     setMissingField(null)
-    
+
     if (!secteur) {
-      setMissingField('secteur')
+      setMissingField("secteur")
       return
     }
     if (!semaineKey) {
-      setMissingField('semaine')
+      setMissingField("semaine")
       return
     }
     if (!candidatId) {
-      setMissingField('candidat')
+      setMissingField("candidat")
       return
     }
 
-    if (action === 'message') {
-      // ✅ AJOUT : ouvre Outlook (mailto) avec le candidat dans "À"
-      const c = candidats.find((x) => x.id === candidatId)
-      const email = (c?.email ?? "").trim()
-      if (!email) {
-        setMissingField('candidat')
-        return
-      }
-      openMailMessage({ to: email })
-      onOpenChange(false)
+    if (action === "message") {
+      handleMessage()
     } else {
       handleEnvoyer()
     }
@@ -239,26 +235,153 @@ export default function EnvoyerPlanningCandidatDialog({
   // Ferme la dropdown si on clique ailleurs
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (semaineSelectOpen && !(e.target as Element).closest('.semaine-select-container')) {
+      if (semaineSelectOpen && !(e.target as Element).closest(".semaine-select-container")) {
         setSemaineSelectOpen(false)
       }
     }
-    
-    document.addEventListener('click', handleClickOutside)
-    return () => document.removeEventListener('click', handleClickOutside)
+
+    document.addEventListener("click", handleClickOutside)
+    return () => document.removeEventListener("click", handleClickOutside)
   }, [semaineSelectOpen])
 
-  // Formatage de l'affichage de la semaine sélectionnée
   const renderSelectedSemaine = () => {
     if (!selectedSemaineOption) {
       return <span className="text-gray-500">— Sélectionner une semaine —</span>
     }
-    
+
     return (
       <div className="truncate">
         <span className="font-semibold">{selectedSemaineOption.weekPart}</span> - {selectedSemaineOption.datePart}
       </div>
     )
+  }
+
+  const fetchPlanningItems = async (cId: string, mondayISO: string): Promise<PlanningCandidatItem[]> => {
+    const mon = new Date(`${mondayISO}T00:00:00`)
+    const sun = addDays(mon, 6)
+    const sunISO = format(sun, "yyyy-MM-dd")
+
+    // 1) Tentative via planification + join commandes + clients
+    try {
+      const { data, error } = await supabase
+        .from("planification")
+        .select(
+          `
+          date,
+          secteur,
+          heure_debut_matin, heure_fin_matin,
+          heure_debut_soir, heure_fin_soir,
+          heure_debut_nuit, heure_fin_nuit,
+          commandes:commande_id (
+            service,
+            client:client_id ( nom, adresse, code_postal, ville )
+          )
+        `
+        )
+        .eq("candidat_id", cId)
+        .gte("date", mondayISO)
+        .lte("date", sunISO)
+
+      if (!error && Array.isArray(data)) {
+        return (data as any[]).map((r) => {
+          const client = r?.commandes?.client
+          return {
+            dateISO: r.date,
+            clientNom: client?.nom ?? null,
+            secteur: r.secteur ?? null,
+            service: r?.commandes?.service ?? null,
+            heure_debut_matin: r.heure_debut_matin ?? null,
+            heure_fin_matin: r.heure_fin_matin ?? null,
+            heure_debut_soir: r.heure_debut_soir ?? null,
+            heure_fin_soir: r.heure_fin_soir ?? null,
+            heure_debut_nuit: r.heure_debut_nuit ?? null,
+            heure_fin_nuit: r.heure_fin_nuit ?? null,
+            adresse: client?.adresse ?? null,
+            code_postal: client?.code_postal ?? null,
+            ville: client?.ville ?? null,
+          }
+        })
+      }
+    } catch {
+      // on passe au fallback
+    }
+
+    // 2) Fallback via commandes (si planification/join foire)
+    const { data: data2 } = await supabase
+      .from("commandes")
+      .select(
+        `
+        date,
+        secteur,
+        service,
+        heure_debut_matin, heure_fin_matin,
+        heure_debut_soir, heure_fin_soir,
+        heure_debut_nuit, heure_fin_nuit,
+        clients:client_id ( nom, adresse, code_postal, ville )
+      `
+      )
+      .eq("candidat_id", cId)
+      .gte("date", mondayISO)
+      .lte("date", sunISO)
+
+    if (!Array.isArray(data2)) return []
+
+    return (data2 as any[]).map((r) => {
+      const client = r?.clients
+      return {
+        dateISO: r.date,
+        clientNom: client?.nom ?? null,
+        secteur: r.secteur ?? null,
+        service: r.service ?? null,
+        heure_debut_matin: r.heure_debut_matin ?? null,
+        heure_fin_matin: r.heure_fin_matin ?? null,
+        heure_debut_soir: r.heure_debut_soir ?? null,
+        heure_fin_soir: r.heure_fin_soir ?? null,
+        heure_debut_nuit: r.heure_debut_nuit ?? null,
+        heure_fin_nuit: r.heure_fin_nuit ?? null,
+        adresse: client?.adresse ?? null,
+        code_postal: client?.code_postal ?? null,
+        ville: client?.ville ?? null,
+      }
+    })
+  }
+
+  const handleMessage = async () => {
+    if (!secteur || !semaineKey || !candidatId) return
+
+    const cand = candidats.find((c) => c.id === candidatId)
+    const to = cand?.email?.trim() || ""
+    const prenom = (cand?.prenom || "").trim()
+
+    if (!to) {
+      setMissingField("candidat")
+      return
+    }
+
+    try {
+      setBuildingMail(true)
+
+      const monday = mondayOfIsoKey(semaineKey)
+      const mondayISO = format(monday, "yyyy-MM-dd")
+
+      const weekNum = Number(semaineKey.split("-")[1])
+      const items = await fetchPlanningItems(candidatId, mondayISO)
+
+      // IMPORTANT : on garde uniquement le secteur sélectionné (cohérent avec l’écran)
+      const itemsFiltered = items.filter((x) => (x.secteur || "") === secteur)
+
+      const { subject, body } = buildPlanningCandidatEmail({
+        prenom: prenom || "Bonjour",
+        weekNumber: Number.isFinite(weekNum) ? weekNum : getISOWeek(monday),
+        mondayISO,
+        items: itemsFiltered,
+      })
+
+      openMailMessage({ to, subject, body })
+      onOpenChange(false)
+    } finally {
+      setBuildingMail(false)
+    }
   }
 
   return (
@@ -275,42 +398,42 @@ export default function EnvoyerPlanningCandidatDialog({
             {/* Zone badges - 3 sur la même ligne */}
             <div className="h-[44px] mb-2 flex items-center gap-2">
               {/* Secteur */}
-              <div className={cn(
-                "w-[140px] h-8 rounded-lg flex items-center justify-center",
-                secteur ? "bg-[#8a0000]" : "bg-gray-200"
-              )}>
+              <div
+                className={cn(
+                  "w-[140px] h-8 rounded-lg flex items-center justify-center",
+                  secteur ? "bg-[#8a0000]" : "bg-gray-200"
+                )}
+              >
                 {secteur ? (
-                  <span className="text-sm font-semibold text-white truncate px-2">
-                    {secteur}
-                  </span>
+                  <span className="text-sm font-semibold text-white truncate px-2">{secteur}</span>
                 ) : (
                   <span className="text-sm text-gray-500">Secteur</span>
                 )}
               </div>
 
               {/* Semaine */}
-              <div className={cn(
-                "w-[140px] h-8 rounded-lg flex items-center justify-center",
-                semaineKey ? "bg-[#8a0000]" : "bg-gray-200"
-              )}>
+              <div
+                className={cn(
+                  "w-[140px] h-8 rounded-lg flex items-center justify-center",
+                  semaineKey ? "bg-[#8a0000]" : "bg-gray-200"
+                )}
+              >
                 {semaineKey ? (
-                  <span className="text-sm font-semibold text-white truncate px-2">
-                    {semaineBadgeLabel}
-                  </span>
+                  <span className="text-sm font-semibold text-white truncate px-2">{semaineBadgeLabel}</span>
                 ) : (
                   <span className="text-sm text-gray-500">Semaine</span>
                 )}
               </div>
 
               {/* Candidat */}
-              <div className={cn(
-                "w-[280px] h-8 rounded-lg flex items-center justify-center",
-                candidatLabel ? "bg-[#8a0000]" : "bg-gray-200"
-              )}>
+              <div
+                className={cn(
+                  "w-[280px] h-8 rounded-lg flex items-center justify-center",
+                  candidatLabel ? "bg-[#8a0000]" : "bg-gray-200"
+                )}
+              >
                 {candidatLabel ? (
-                  <span className="text-sm font-semibold text-white truncate px-2">
-                    {candidatLabel}
-                  </span>
+                  <span className="text-sm font-semibold text-white truncate px-2">{candidatLabel}</span>
                 ) : (
                   <span className="text-sm text-gray-500">Candidat</span>
                 )}
@@ -326,10 +449,7 @@ export default function EnvoyerPlanningCandidatDialog({
               {/* Secteur */}
               <div className={cn("space-y-3", CONTENT_W)}>
                 <div className="flex items-center gap-2">
-                  <div className={cn(
-                    "text-sm font-semibold text-gray-800",
-                    missingField === 'secteur' && "text-red-600"
-                  )}>
+                  <div className={cn("text-sm font-semibold text-gray-800", missingField === "secteur" && "text-red-600")}>
                     Secteur
                   </div>
                   {secteur && <Check className="h-4 w-4 text-green-600" />}
@@ -337,7 +457,7 @@ export default function EnvoyerPlanningCandidatDialog({
                 <div className={cn("flex gap-2", CONTENT_W)}>
                   {SECTEURS.map((s) => {
                     const active = secteur === s
-                    const missing = missingField === 'secteur'
+                    const missing = missingField === "secteur"
                     return (
                       <Button
                         key={s}
@@ -345,9 +465,11 @@ export default function EnvoyerPlanningCandidatDialog({
                         variant="outline"
                         className={cn(
                           "h-9 w-[110px] rounded-lg text-sm font-medium px-2 transition-all",
-                          active ? "bg-[#8a0000] hover:bg-[#8a0000]/90 text-white" : 
-                          missing && !secteur ? "border-red-300" :
-                          "hover:bg-gray-50"
+                          active
+                            ? "bg-[#8a0000] hover:bg-[#8a0000]/90 text-white"
+                            : missing && !secteur
+                              ? "border-red-300"
+                              : "hover:bg-gray-50"
                         )}
                         onClick={() => {
                           setSecteur((prev) => (prev === s ? "" : s))
@@ -364,40 +486,32 @@ export default function EnvoyerPlanningCandidatDialog({
               {/* Semaine - Custom Select */}
               <div className={cn("space-y-3", CONTENT_W)}>
                 <div className="flex items-center gap-2">
-                  <div className={cn(
-                    "text-sm font-semibold text-gray-800",
-                    missingField === 'semaine' && "text-red-600"
-                  )}>
+                  <div className={cn("text-sm font-semibold text-gray-800", missingField === "semaine" && "text-red-600")}>
                     Semaine
                   </div>
                   {semaineKey && <Check className="h-4 w-4 text-green-600" />}
                 </div>
-                
+
                 <div className="semaine-select-container relative">
-                  {/* Bouton trigger */}
                   <button
                     type="button"
                     className={cn(
                       "w-full h-9 rounded-lg border px-3 py-2 text-sm text-left flex items-center justify-between",
                       "bg-white transition-colors",
                       semaineKey ? "border-[#8a0000]" : "border-gray-300",
-                      missingField === 'semaine' && !semaineKey && "border-red-300"
+                      missingField === "semaine" && !semaineKey && "border-red-300"
                     )}
                     onClick={(e) => {
                       e.stopPropagation()
                       setSemaineSelectOpen(!semaineSelectOpen)
                     }}
                   >
-                    <div className="flex-1 overflow-hidden">
-                      {renderSelectedSemaine()}
-                    </div>
-                    <ChevronDown className={cn(
-                      "h-4 w-4 transition-transform flex-shrink-0",
-                      semaineSelectOpen && "transform rotate-180"
-                    )} />
+                    <div className="flex-1 overflow-hidden">{renderSelectedSemaine()}</div>
+                    <ChevronDown
+                      className={cn("h-4 w-4 transition-transform flex-shrink-0", semaineSelectOpen && "transform rotate-180")}
+                    />
                   </button>
-                  
-                  {/* Dropdown */}
+
                   {semaineSelectOpen && (
                     <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-auto">
                       {weekOptions.map((option) => {
@@ -406,10 +520,7 @@ export default function EnvoyerPlanningCandidatDialog({
                           <button
                             key={option.key}
                             type="button"
-                            className={cn(
-                              "w-full text-left px-3 py-2 hover:bg-gray-50 text-sm",
-                              selected && "bg-[#8a0000]/10"
-                            )}
+                            className={cn("w-full text-left px-3 py-2 hover:bg-gray-50 text-sm", selected && "bg-[#8a0000]/10")}
                             onClick={() => {
                               setSemaineKey(option.key)
                               setMissingField(null)
@@ -419,11 +530,7 @@ export default function EnvoyerPlanningCandidatDialog({
                             <div className="flex">
                               <span className="font-semibold">{option.weekPart}</span>
                               <span className="ml-1">- {option.datePart}</span>
-                              {selected && (
-                                <div className="ml-auto text-[#8a0000]">
-                                  ✓
-                                </div>
-                              )}
+                              {selected && <div className="ml-auto text-[#8a0000]">✓</div>}
                             </div>
                           </button>
                         )
@@ -436,10 +543,7 @@ export default function EnvoyerPlanningCandidatDialog({
               {/* Candidat */}
               <div className={cn("space-y-3", CONTENT_W)}>
                 <div className="flex items-center gap-2">
-                  <div className={cn(
-                    "text-sm font-semibold text-gray-800",
-                    missingField === 'candidat' && "text-red-600"
-                  )}>
+                  <div className={cn("text-sm font-semibold text-gray-800", missingField === "candidat" && "text-red-600")}>
                     Candidat
                   </div>
                   {candidatId && <Check className="h-4 w-4 text-green-600" />}
@@ -452,11 +556,10 @@ export default function EnvoyerPlanningCandidatDialog({
                   className={cn(
                     "border-gray-300 focus:ring-2 focus:ring-[#8a0000]/20 focus:border-[#8a0000]",
                     CONTENT_W,
-                    missingField === 'candidat' && !candidatId && "border-red-300"
+                    missingField === "candidat" && !candidatId && "border-red-300"
                   )}
                 />
 
-                {/* Liste candidats */}
                 <div className={cn("border border-gray-200 rounded-lg overflow-hidden bg-white", CONTENT_W)}>
                   <div className="h-[200px] overflow-auto">
                     {loadingCandidats ? (
@@ -481,24 +584,17 @@ export default function EnvoyerPlanningCandidatDialog({
                               }}
                               className={cn(
                                 "w-full text-left px-3 py-2 text-sm transition-all",
-                                selected ? "bg-[#8a0000]/10 border-l-3 border-l-[#8a0000]" : 
-                                missingField === 'candidat' ? "bg-red-50 hover:bg-red-100" :
-                                "hover:bg-gray-50"
+                                selected
+                                  ? "bg-[#8a0000]/10 border-l-3 border-l-[#8a0000]"
+                                  : missingField === "candidat"
+                                    ? "bg-red-50 hover:bg-red-100"
+                                    : "hover:bg-gray-50"
                               )}
                             >
                               <div className="flex items-center">
-                                <div className={cn(
-                                  "h-2 w-2 rounded-full mr-3",
-                                  selected ? "bg-[#8a0000]" : "bg-gray-300"
-                                )} />
-                                <div className="font-medium text-gray-900 truncate flex-1">
-                                  {label}
-                                </div>
-                                {selected && (
-                                  <div className="text-xs text-[#8a0000] font-medium ml-2">
-                                    ✓
-                                  </div>
-                                )}
+                                <div className={cn("h-2 w-2 rounded-full mr-3", selected ? "bg-[#8a0000]" : "bg-gray-300")} />
+                                <div className="font-medium text-gray-900 truncate flex-1">{label}</div>
+                                {selected && <div className="text-xs text-[#8a0000] font-medium ml-2">✓</div>}
                               </div>
                             </button>
                           )
@@ -515,32 +611,25 @@ export default function EnvoyerPlanningCandidatDialog({
 
           {/* Footer */}
           <div className="flex justify-end gap-2">
-            <Button 
-              variant="outline" 
-              className="h-10 rounded-lg border-gray-300 hover:bg-gray-50"
-              onClick={handleAnnuler}
-            >
+            <Button variant="outline" className="h-10 rounded-lg border-gray-300 hover:bg-gray-50" onClick={handleAnnuler}>
               Annuler
             </Button>
 
             <Button
               variant="outline"
-              className={cn(
-                "h-10 rounded-lg",
-                "border-[#8a0000] text-[#8a0000] hover:bg-[#8a0000]/10 hover:border-[#8a0000]"
-              )}
-              onClick={() => validateAndAction('envoyer')}
+              className={cn("h-10 rounded-lg", "border-[#8a0000] text-[#8a0000] hover:bg-[#8a0000]/10 hover:border-[#8a0000]")}
+              onClick={() => validateAndAction("envoyer")}
+              disabled={buildingMail}
             >
               Envoyer
             </Button>
 
             <Button
-              className={cn(
-                "h-10 rounded-lg bg-[#8a0000] hover:bg-[#7a0000] text-white"
-              )}
-              onClick={() => validateAndAction('message')}
+              className={cn("h-10 rounded-lg bg-[#8a0000] hover:bg-[#7a0000] text-white")}
+              onClick={() => validateAndAction("message")}
+              disabled={!canAction}
             >
-              Message
+              {buildingMail ? "Préparation..." : "Message"}
             </Button>
           </div>
         </div>
