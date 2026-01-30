@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, Send, Check, ChevronDown } from "lucide-react"
 import { supabase } from "@/lib/supabase"
-import { buildPlanningCandidatEmail, type PlanningCandidatItem } from "@/lib/email/buildPlanningCandidatEmail"
+import { buildPlanningCandidatEmail, buildPlanningCandidatText, type PlanningCandidatItem } from "@/lib/email/buildPlanningCandidatEmail"
 import EmailPreviewDialog from "@/components/Planning/EmailPreviewDialog"
 
 type EnvoyerPlanningCandidatDialogProps = {
@@ -52,10 +52,15 @@ function mondayOfIsoKey(key: string) {
   return addDays(firstMonday, (isoWeek - 1) * 7)
 }
 
-export default function EnvoyerPlanningCandidatDialog({
-  open,
-  onOpenChange,
-}: EnvoyerPlanningCandidatDialogProps) {
+async function safeReadJson(res: Response) {
+  try {
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+export default function EnvoyerPlanningCandidatDialog({ open, onOpenChange }: EnvoyerPlanningCandidatDialogProps) {
   const [secteur, setSecteur] = useState<string>("")
   const [semaineKey, setSemaineKey] = useState<string>("")
   const [searchCandidat, setSearchCandidat] = useState("")
@@ -67,12 +72,15 @@ export default function EnvoyerPlanningCandidatDialog({
   const [loadingCandidats, setLoadingCandidats] = useState(false)
   const [buildingMail, setBuildingMail] = useState(false)
 
-  // ✅ Preview state (EmailPreviewDialog)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewTo, setPreviewTo] = useState("")
   const [previewSubject, setPreviewSubject] = useState("")
   const [previewHtml, setPreviewHtml] = useState("")
-  const [candidatNom, setCandidatNom] = useState("") // Pour afficher dans le preview
+  const [candidatNom, setCandidatNom] = useState("")
+  const [weekNumber, setWeekNumber] = useState(0)
+  const [previewItems, setPreviewItems] = useState<PlanningCandidatItem[]>([])
+  const [previewMondayISO, setPreviewMondayISO] = useState("")
+  const [previewPrenom, setPreviewPrenom] = useState("")
 
   const CONTENT_W = "w-[582px]"
 
@@ -88,12 +96,19 @@ export default function EnvoyerPlanningCandidatDialog({
     setSemaineSelectOpen(false)
     setBuildingMail(false)
 
-    // reset preview
     setPreviewOpen(false)
     setPreviewTo("")
     setPreviewSubject("")
     setPreviewHtml("")
     setCandidatNom("")
+    setWeekNumber(0)
+    setPreviewItems([])
+    setPreviewMondayISO("")
+    setPreviewPrenom("")
+
+    // par défaut : semaine actuelle
+    const monday = startOfWeek(new Date(), { weekStartsOn: 1 })
+    setSemaineKey(getIsoYearWeekKey(monday))
   }, [open])
 
   const semainesRange = useMemo(() => {
@@ -217,7 +232,7 @@ export default function EnvoyerPlanningCandidatDialog({
 
   const canAction = Boolean(secteur && semaineKey && candidatId) && !loadingCandidats && !buildingMail
 
-  const validateAndAction = (action: "envoyer" | "message") => {
+  const validateAndAction = async (action: "envoyer" | "message") => {
     setMissingField(null)
 
     if (!secteur) {
@@ -234,19 +249,14 @@ export default function EnvoyerPlanningCandidatDialog({
     }
 
     if (action === "message") {
-      handleMessage()
+      await handleMessage()
     } else {
-      handleEnvoyer()
+      await handleEnvoyer()
     }
   }
 
   const handleAnnuler = () => onOpenChange(false)
 
-  const handleEnvoyer = () => {
-    // TODO: envoi réel
-  }
-
-  // Ferme la dropdown si on clique ailleurs
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (semaineSelectOpen && !(e.target as Element).closest(".semaine-select-container")) {
@@ -275,7 +285,6 @@ export default function EnvoyerPlanningCandidatDialog({
     const sun = addDays(mon, 6)
     const sunISO = format(sun, "yyyy-MM-dd")
 
-    // 1) Tentative via planification + join commandes + clients
     try {
       const { data, error } = await supabase
         .from("planification")
@@ -320,7 +329,6 @@ export default function EnvoyerPlanningCandidatDialog({
       // fallback
     }
 
-    // 2) Fallback via commandes
     const { data: data2 } = await supabase
       .from("commandes")
       .select(
@@ -360,7 +368,61 @@ export default function EnvoyerPlanningCandidatDialog({
     })
   }
 
-  // ✅ Message = prépare le mail + ouvre EmailPreviewDialog
+  const sendEmailHtml = async (to: string, subject: string, html: string) => {
+    const res = await fetch("/api/send-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to, subject, html }),
+    })
+
+    if (!res.ok) {
+      const data = await safeReadJson(res)
+      const msg = (data && (data.error || data.message)) ? String(data.error || data.message) : `Erreur envoi mail (${res.status})`
+      throw new Error(msg)
+    }
+  }
+
+  // ✅ ENVOI DIRECT : envoie le HTML PRO (buildPlanningCandidatEmail)
+  const handleEnvoyer = async () => {
+    if (!secteur || !semaineKey || !candidatId) return
+
+    const cand = candidats.find((c) => c.id === candidatId)
+    const to = cand?.email?.trim() || ""
+    const prenom = (cand?.prenom || "").trim()
+    const nom = (cand?.nom || "").trim()
+
+    if (!to) {
+      setMissingField("candidat")
+      return
+    }
+
+    try {
+      setBuildingMail(true)
+
+      const monday = mondayOfIsoKey(semaineKey)
+      const mondayISO = format(monday, "yyyy-MM-dd")
+
+      const weekNum = Number(semaineKey.split("-")[1])
+      const items = await fetchPlanningItems(candidatId, mondayISO)
+      const itemsFiltered = items.filter((x) => (x.secteur || "") === secteur)
+
+      const { subject, body: html } = buildPlanningCandidatEmail({
+        prenom: prenom || "Bonjour",
+        weekNumber: Number.isFinite(weekNum) ? weekNum : getISOWeek(monday),
+        mondayISO,
+        items: itemsFiltered,
+      })
+
+      await sendEmailHtml(to, subject, html)
+
+      // fermeture propre
+      onOpenChange(false)
+    } finally {
+      setBuildingMail(false)
+    }
+  }
+
+  // ✅ MODE MESSAGE : ouvre la fenêtre formulaire structurée
   const handleMessage = async () => {
     if (!secteur || !semaineKey || !candidatId) return
 
@@ -382,21 +444,23 @@ export default function EnvoyerPlanningCandidatDialog({
 
       const weekNum = Number(semaineKey.split("-")[1])
       const items = await fetchPlanningItems(candidatId, mondayISO)
-
-      // IMPORTANT : on garde uniquement le secteur sélectionné
       const itemsFiltered = items.filter((x) => (x.secteur || "") === secteur)
 
-      const { subject, body } = buildPlanningCandidatEmail({
+      const { subject } = buildPlanningCandidatEmail({
         prenom: prenom || "Bonjour",
         weekNumber: Number.isFinite(weekNum) ? weekNum : getISOWeek(monday),
         mondayISO,
         items: itemsFiltered,
       })
 
+      // On ne génère PAS le HTML ici, on passe les données brutes
       setPreviewTo(to)
       setPreviewSubject(subject)
-      setPreviewHtml(body)
-      setCandidatNom(`${nom} ${prenom}`.trim()) // Stocke le nom pour le preview
+      setCandidatNom(`${nom} ${prenom}`.trim())
+      setWeekNumber(Number.isFinite(weekNum) ? weekNum : getISOWeek(monday))
+      setPreviewItems(itemsFiltered)
+      setPreviewMondayISO(mondayISO)
+      setPreviewPrenom(prenom)
       setPreviewOpen(true)
     } finally {
       setBuildingMail(false)
@@ -405,29 +469,28 @@ export default function EnvoyerPlanningCandidatDialog({
 
   return (
     <>
-      {/* ✅ Dialog de prévisualisation mail */}
       <EmailPreviewDialog
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         initialTo={previewTo}
         initialSubject={previewSubject}
-        initialHtml={previewHtml}
         candidatNom={candidatNom}
+        weekNumber={weekNumber}
+        items={previewItems}
+        mondayISO={previewMondayISO}
+        prenom={previewPrenom}
       />
 
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="w-[720px] max-w-[720px] h-[720px] max-h-[720px] p-0 overflow-hidden bg-gray-50">
           <div className="p-6 h-full flex flex-col">
-            {/* Header */}
             <DialogHeader className="space-y-0">
               <DialogTitle className="text-xl font-semibold flex items-center gap-2 mb-2">
                 <Send className="h-5 w-5 text-[#8a0000]" />
                 Envoyer planning candidat
               </DialogTitle>
 
-              {/* Zone badges - 3 sur la même ligne */}
               <div className="h-[44px] mb-2 flex items-center gap-2">
-                {/* Secteur */}
                 <div
                   className={cn(
                     "w-[140px] h-8 rounded-lg flex items-center justify-center",
@@ -441,7 +504,6 @@ export default function EnvoyerPlanningCandidatDialog({
                   )}
                 </div>
 
-                {/* Semaine */}
                 <div
                   className={cn(
                     "w-[140px] h-8 rounded-lg flex items-center justify-center",
@@ -455,7 +517,6 @@ export default function EnvoyerPlanningCandidatDialog({
                   )}
                 </div>
 
-                {/* Candidat */}
                 <div
                   className={cn(
                     "w-[280px] h-8 rounded-lg flex items-center justify-center",
@@ -473,10 +534,8 @@ export default function EnvoyerPlanningCandidatDialog({
 
             <Separator className="mb-6" />
 
-            {/* Body */}
             <div className="flex-1 rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
               <div className="p-4 h-full flex flex-col gap-6 items-center">
-                {/* Secteur */}
                 <div className={cn("space-y-3", CONTENT_W)}>
                   <div className="flex items-center gap-2">
                     <div className={cn("text-sm font-semibold text-gray-800", missingField === "secteur" && "text-red-600")}>
@@ -513,7 +572,6 @@ export default function EnvoyerPlanningCandidatDialog({
                   </div>
                 </div>
 
-                {/* Semaine - Custom Select */}
                 <div className={cn("space-y-3", CONTENT_W)}>
                   <div className="flex items-center gap-2">
                     <div className={cn("text-sm font-semibold text-gray-800", missingField === "semaine" && "text-red-600")}>
@@ -570,7 +628,6 @@ export default function EnvoyerPlanningCandidatDialog({
                   </div>
                 </div>
 
-                {/* Candidat */}
                 <div className={cn("space-y-3", CONTENT_W)}>
                   <div className="flex items-center gap-2">
                     <div className={cn("text-sm font-semibold text-gray-800", missingField === "candidat" && "text-red-600")}>
@@ -639,24 +696,23 @@ export default function EnvoyerPlanningCandidatDialog({
 
             <Separator className="my-4" />
 
-            {/* Footer */}
             <div className="flex justify-end gap-2">
-              <Button variant="outline" className="h-10 rounded-lg border-gray-300 hover:bg-gray-50" onClick={handleAnnuler}>
+              <Button variant="outline" className="h-10 rounded-lg border-gray-300 hover:bg-gray-50" onClick={handleAnnuler} disabled={buildingMail}>
                 Annuler
               </Button>
 
               <Button
                 variant="outline"
                 className={cn("h-10 rounded-lg", "border-[#8a0000] text-[#8a0000] hover:bg-[#8a0000]/10 hover:border-[#8a0000]")}
-                onClick={() => validateAndAction("envoyer")}
-                disabled={buildingMail}
+                onClick={() => void validateAndAction("envoyer")}
+                disabled={!canAction}
               >
-                Envoyer
+                {buildingMail ? "Envoi..." : "Envoyer"}
               </Button>
 
               <Button
                 className={cn("h-10 rounded-lg bg-[#8a0000] hover:bg-[#7a0000] text-white")}
-                onClick={() => validateAndAction("message")}
+                onClick={() => void validateAndAction("message")}
                 disabled={!canAction}
               >
                 {buildingMail ? "Préparation..." : "Message"}
