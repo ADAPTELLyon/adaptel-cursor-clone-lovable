@@ -9,9 +9,10 @@ interface MultiSelectProps {
   selected: string[]
   onChange: (selected: string[]) => void
   placeholder?: string
+  className?: string
 }
 
-export function MultiSelect({ options, selected, onChange, placeholder }: MultiSelectProps) {
+export function MultiSelect({ options, selected, onChange, placeholder, className }: MultiSelectProps) {
   const toggleOption = (option: string) => {
     if (selected.includes(option)) {
       onChange(selected.filter((s) => s !== option))
@@ -26,13 +27,21 @@ export function MultiSelect({ options, selected, onChange, placeholder }: MultiS
         <Button
           variant="outline"
           role="combobox"
-          className={cn("w-full justify-between", selected.length === 0 && "text-muted-foreground")}
+          className={cn(
+            "w-full justify-between",
+            selected.length === 0 && "text-muted-foreground",
+            className
+          )}
         >
           {selected.length > 0 ? `${selected.length} sélectionné(s)` : placeholder || "Sélectionner"}
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-full p-2 max-h-60 overflow-y-auto">
+
+      <PopoverContent
+        className="z-[9999] w-[320px] sm:w-[360px] p-2 max-h-60 overflow-y-auto"
+        align="start"
+      >
         {options.map((option) => (
           <div
             key={option}
