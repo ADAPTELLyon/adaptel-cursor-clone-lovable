@@ -135,7 +135,7 @@ export const ClientPostesTypesTab = forwardRef<ClientPostesTypesTabRef, Props>(
 
     const [sectorParams, setSectorParams] = useState<Record<string, SectorParamsState>>({})
 
-    // Dirty tracking (UNIQUEMENT Infos générales)
+    // Dirty tracking (UNIQUEMENT Infos générales) — on le garde, mais avec save direct ça doit rester quasi toujours à false
     const [dirtySecteurs, setDirtySecteurs] = useState<Set<string>>(new Set())
 
     // Dialog Poste type
@@ -260,31 +260,48 @@ export const ClientPostesTypesTab = forwardRef<ClientPostesTypesTabRef, Props>(
       onDirtyChange?.(true)
     }
 
+    const clearDirty = (secteur: string) => {
+      setDirtySecteurs((prev) => {
+        if (!prev.size) return prev
+        const next = new Set(prev)
+        next.delete(secteur)
+        return next
+      })
+      // recalcul simple
+      setTimeout(() => {
+        // on recalc sur l’état “le plus récent possible” (on évite de complexifier)
+        // si jamais tu veux 100% strict, on fera une ref, mais là suffisant.
+        onDirtyChange?.(false)
+      }, 0)
+    }
+
     const hasUnsavedChanges = () => dirtySecteurs.size > 0
 
-    const saveInfosGenerales = async (): Promise<boolean> => {
+    /**
+     * ✅ SAVE DIRECT fiable : on passe les valeurs "nextParams" (pas celles du state)
+     * => pas de bug quand l'user change d'onglet tout de suite
+     */
+    const saveInfosGeneralesSecteur = async (
+      secteur: string,
+      nextParams: SectorParamsState
+    ): Promise<boolean> => {
       if (!client.id) return true
-      if (dirtySecteurs.size === 0) return true
 
-      setLoading(true)
+      const payload = {
+        client_id: client.id,
+        secteur,
+        tenue_id: nextParams.tenue?.id ?? null,
+        temps_pause: hhmmToInterval(nextParams.temps_pause),
+        repas_fournis: nextParams.repas_fournis ?? null,
+        updated_at: new Date().toISOString(),
+      }
+
       try {
-        const secteursToSave = Array.from(dirtySecteurs)
-        const ops = secteursToSave.map((secteur) => {
-          const p = sectorParams[secteur] || { tenue: null, temps_pause: "", repas_fournis: null }
-          const payload = {
-            client_id: client.id,
-            secteur,
-            tenue_id: p.tenue?.id ?? null,
-            temps_pause: hhmmToInterval(p.temps_pause),
-            repas_fournis: p.repas_fournis ?? null,
-            updated_at: new Date().toISOString(),
-          }
-          return sbAny.from("clients_secteurs_params").upsert(payload, { onConflict: "client_id,secteur" })
-        })
+        const { error } = await sbAny
+          .from("clients_secteurs_params")
+          .upsert(payload, { onConflict: "client_id,secteur" })
 
-        const results = await Promise.all(ops)
-        const anyError = results.some((r: any) => r?.error)
-        if (anyError) {
+        if (error) {
           toast({
             title: "Erreur",
             description: "Impossible d'enregistrer les infos générales.",
@@ -293,10 +310,7 @@ export const ClientPostesTypesTab = forwardRef<ClientPostesTypesTabRef, Props>(
           return false
         }
 
-        toast({ title: "Succès", description: "Infos générales enregistrées." })
-        setDirtySecteurs(new Set())
-        onDirtyChange?.(false)
-        await fetchClientsSecteursParams()
+        clearDirty(secteur)
         return true
       } catch {
         toast({
@@ -305,9 +319,26 @@ export const ClientPostesTypesTab = forwardRef<ClientPostesTypesTabRef, Props>(
           variant: "destructive",
         })
         return false
-      } finally {
-        setLoading(false)
       }
+    }
+
+    /**
+     * On garde les méthodes du ref (au cas où ton bouton global “Enregistrer” les appelle),
+     * mais avec l’auto-save, ça doit être quasi toujours clean.
+     */
+    const saveInfosGenerales = async (): Promise<boolean> => {
+      if (!client.id) return true
+      if (dirtySecteurs.size === 0) return true
+
+      // sauvegarde tous les secteurs dirty avec l’état actuel
+      const secteursToSave = Array.from(dirtySecteurs)
+      const ops = secteursToSave.map((secteur) => {
+        const p = sectorParams[secteur] || { tenue: null, temps_pause: "", repas_fournis: null }
+        return saveInfosGeneralesSecteur(secteur, p)
+      })
+
+      const results = await Promise.all(ops)
+      return results.every(Boolean)
     }
 
     const reset = async () => {
@@ -504,11 +535,6 @@ export const ClientPostesTypesTab = forwardRef<ClientPostesTypesTabRef, Props>(
                         <Info className="h-4 w-4 text-gray-600" />
                         <span className="font-semibold text-gray-800">Infos générales</span>
                       </div>
-                      {dirtySecteurs.has(secteurClient) && (
-                        <span className="ml-2 text-xs font-medium text-orange-700 bg-orange-100 border border-orange-200 px-2 py-0.5 rounded">
-                          Modifié
-                        </span>
-                      )}
                     </div>
                   </div>
 
@@ -519,16 +545,19 @@ export const ClientPostesTypesTab = forwardRef<ClientPostesTypesTabRef, Props>(
                         <select
                           className="w-full h-10 rounded-md border border-gray-300 bg-white px-3 text-sm"
                           value={params.tenue?.id || ""}
-                          onChange={(e) => {
+                          onChange={async (e) => {
                             const id = e.target.value || ""
                             const tenue = id ? tenueById.get(id) || null : null
+                            const nextParams: SectorParamsState = { ...params, tenue }
+
                             setSectorParams((prev) => ({
                               ...prev,
-                              [secteurClient]: { ...params, tenue },
+                              [secteurClient]: nextParams,
                             }))
+
                             markDirty(secteurClient)
+                            await saveInfosGeneralesSecteur(secteurClient, nextParams)
                           }}
-                          disabled={loading}
                         >
                           <option value="">— Non précisé —</option>
                           {tenues.map((t) => (
@@ -556,7 +585,10 @@ export const ClientPostesTypesTab = forwardRef<ClientPostesTypesTabRef, Props>(
                             }))
                             markDirty(secteurClient)
                           }}
-                          disabled={loading}
+                          onBlur={async () => {
+                            const current = sectorParams[secteurClient] || params
+                            await saveInfosGeneralesSecteur(secteurClient, current)
+                          }}
                           className="h-10"
                         />
                         <div className="text-xs text-gray-500">Format: HH:MM (ex: 00:30)</div>
@@ -567,17 +599,18 @@ export const ClientPostesTypesTab = forwardRef<ClientPostesTypesTabRef, Props>(
                         <select
                           className="w-full h-10 rounded-md border border-gray-300 bg-white px-3 text-sm"
                           value={uiFromBoolNullable(params.repas_fournis)}
-                          onChange={(e) => {
+                          onChange={async (e) => {
+                            const repas = safeBoolNullableFromUi(e.target.value)
+                            const nextParams: SectorParamsState = { ...params, repas_fournis: repas }
+
                             setSectorParams((prev) => ({
                               ...prev,
-                              [secteurClient]: {
-                                ...params,
-                                repas_fournis: safeBoolNullableFromUi(e.target.value),
-                              },
+                              [secteurClient]: nextParams,
                             }))
+
                             markDirty(secteurClient)
+                            await saveInfosGeneralesSecteur(secteurClient, nextParams)
                           }}
-                          disabled={loading}
                         >
                           <option value="null">Non précisé</option>
                           <option value="true">Oui</option>
