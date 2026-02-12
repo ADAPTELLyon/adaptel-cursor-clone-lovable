@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2, Send, Check, ChevronDown } from "lucide-react"
 import { supabase } from "@/lib/supabase"
-import { buildPlanningCandidatEmail, buildPlanningCandidatText, type PlanningCandidatItem } from "@/lib/email/buildPlanningCandidatEmail"
+import { buildPlanningCandidatEmail, type PlanningCandidatItem } from "@/lib/email/buildPlanningCandidatEmail"
 import EmailPreviewDialog from "@/components/Planning/EmailPreviewDialog"
 
 type EnvoyerPlanningCandidatDialogProps = {
@@ -60,6 +60,17 @@ async function safeReadJson(res: Response) {
   }
 }
 
+function intervalToHHMM(interval: any): string | null {
+  // ex Supabase: "00:30:00"
+  if (!interval) return null
+  const s = String(interval)
+  const parts = s.split(":")
+  if (parts.length < 2) return null
+  const hh = String(parts[0]).padStart(2, "0")
+  const mm = String(parts[1]).padStart(2, "0")
+  return `${hh}:${mm}`
+}
+
 export default function EnvoyerPlanningCandidatDialog({ open, onOpenChange }: EnvoyerPlanningCandidatDialogProps) {
   const [secteur, setSecteur] = useState<string>("")
   const [semaineKey, setSemaineKey] = useState<string>("")
@@ -75,7 +86,6 @@ export default function EnvoyerPlanningCandidatDialog({ open, onOpenChange }: En
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewTo, setPreviewTo] = useState("")
   const [previewSubject, setPreviewSubject] = useState("")
-  const [previewHtml, setPreviewHtml] = useState("")
   const [candidatNom, setCandidatNom] = useState("")
   const [weekNumber, setWeekNumber] = useState(0)
   const [previewItems, setPreviewItems] = useState<PlanningCandidatItem[]>([])
@@ -99,14 +109,12 @@ export default function EnvoyerPlanningCandidatDialog({ open, onOpenChange }: En
     setPreviewOpen(false)
     setPreviewTo("")
     setPreviewSubject("")
-    setPreviewHtml("")
     setCandidatNom("")
     setWeekNumber(0)
     setPreviewItems([])
     setPreviewMondayISO("")
     setPreviewPrenom("")
 
-    // par défaut : semaine actuelle
     const monday = startOfWeek(new Date(), { weekStartsOn: 1 })
     setSemaineKey(getIsoYearWeekKey(monday))
   }, [open])
@@ -285,87 +293,127 @@ export default function EnvoyerPlanningCandidatDialog({ open, onOpenChange }: En
     const sun = addDays(mon, 6)
     const sunISO = format(sun, "yyyy-MM-dd")
 
-    try {
-      const { data, error } = await supabase
-        .from("planification")
-        .select(
-          `
-          date,
-          secteur,
-          heure_debut_matin, heure_fin_matin,
-          heure_debut_soir, heure_fin_soir,
-          heure_debut_nuit, heure_fin_nuit,
-          commandes:commande_id (
-            service,
-            client:client_id ( nom, adresse, code_postal, ville )
-          )
-        `
-        )
-        .eq("candidat_id", cId)
-        .gte("date", mondayISO)
-        .lte("date", sunISO)
-
-      if (!error && Array.isArray(data)) {
-        return (data as any[]).map((r) => {
-          const client = r?.commandes?.client
-          return {
-            dateISO: r.date,
-            clientNom: client?.nom ?? null,
-            secteur: r.secteur ?? null,
-            service: r?.commandes?.service ?? null,
-            heure_debut_matin: r.heure_debut_matin ?? null,
-            heure_fin_matin: r.heure_fin_matin ?? null,
-            heure_debut_soir: r.heure_debut_soir ?? null,
-            heure_fin_soir: r.heure_fin_soir ?? null,
-            heure_debut_nuit: r.heure_debut_nuit ?? null,
-            heure_fin_nuit: r.heure_fin_nuit ?? null,
-            adresse: client?.adresse ?? null,
-            code_postal: client?.code_postal ?? null,
-            ville: client?.ville ?? null,
-          }
-        })
-      }
-    } catch {
-      // fallback
-    }
-
-    const { data: data2 } = await supabase
-      .from("commandes")
+    // 1) Base : planification + commandes + clients (avec telephone)
+    const { data, error } = await supabase
+      .from("planification")
       .select(
         `
         date,
         secteur,
-        service,
         heure_debut_matin, heure_fin_matin,
         heure_debut_soir, heure_fin_soir,
         heure_debut_nuit, heure_fin_nuit,
-        clients:client_id ( nom, adresse, code_postal, ville )
+        commandes:commande_id (
+          id,
+          service,
+          client_id,
+          client:client_id ( nom, adresse, code_postal, ville, telephone )
+        )
       `
       )
       .eq("candidat_id", cId)
       .gte("date", mondayISO)
       .lte("date", sunISO)
 
-    if (!Array.isArray(data2)) return []
+    const baseRows = !error && Array.isArray(data) ? (data as any[]) : []
 
-    return (data2 as any[]).map((r) => {
-      const client = r?.clients
+    // 2) Récup params (pause/repas/tenue_id) depuis clients_secteurs_params (par client_id + secteur)
+    const wantedPairs = new Map<string, { clientId: string; secteur: string }>()
+    for (const r of baseRows) {
+      const clientId = r?.commandes?.client_id as string | undefined
+      const sec = String(r?.secteur || "").trim()
+      if (!clientId || !sec) continue
+      const k = `${clientId}__${norm(sec)}`
+      if (!wantedPairs.has(k)) wantedPairs.set(k, { clientId, secteur: sec })
+    }
+
+    let paramsRows: any[] = []
+    if (wantedPairs.size > 0) {
+      const clientIds = Array.from(new Set(Array.from(wantedPairs.values()).map((x) => x.clientId)))
+      const { data: pData } = await supabase
+        .from("clients_secteurs_params")
+        .select("client_id, secteur, tenue_id, temps_pause, repas_fournis")
+        .in("client_id", clientIds)
+
+      paramsRows = Array.isArray(pData) ? (pData as any[]) : []
+    }
+
+    const paramsByKey = new Map<string, any>()
+    for (const p of paramsRows) {
+      const clientId = p?.client_id
+      const sec = String(p?.secteur || "").trim()
+      if (!clientId || !sec) continue
+      paramsByKey.set(`${clientId}__${norm(sec)}`, p)
+    }
+
+    // 3) Récup tenue description depuis parametrages (tenue_id)
+    const tenueIds = Array.from(
+      new Set(
+        paramsRows
+          .map((p) => p?.tenue_id)
+          .filter((x) => x && String(x).trim().length > 0)
+          .map((x) => String(x))
+      )
+    )
+
+    const tenueDescById = new Map<string, string>()
+    if (tenueIds.length > 0) {
+      const { data: tData } = await supabase
+        .from("parametrages")
+        .select("id, description, categorie")
+        .in("id", tenueIds)
+
+      const arr = Array.isArray(tData) ? (tData as any[]) : []
+      for (const t of arr) {
+        if (t?.id && t?.categorie === "tenue") {
+          tenueDescById.set(String(t.id), String(t.description || "").trim())
+        }
+      }
+    }
+
+    // 4) Mapping final
+    const items: PlanningCandidatItem[] = baseRows.map((r) => {
+      const client = r?.commandes?.client
+      const clientId = r?.commandes?.client_id as string | null
+
+      const sec = String(r?.secteur || "").trim()
+      const p = clientId && sec ? paramsByKey.get(`${clientId}__${norm(sec)}`) : null
+
+      const pauseHHMM = intervalToHHMM(p?.temps_pause) // "00:30"
+      const repas = typeof p?.repas_fournis === "boolean" ? p.repas_fournis : null
+      const tenueId = p?.tenue_id ? String(p.tenue_id) : null
+      const tenueDesc = tenueId ? (tenueDescById.get(tenueId) || "") : ""
+
       return {
         dateISO: r.date,
         clientNom: client?.nom ?? null,
+        client_id: clientId ?? null,
+
         secteur: r.secteur ?? null,
-        service: r.service ?? null,
+        service: r?.commandes?.service ?? null,
+
         heure_debut_matin: r.heure_debut_matin ?? null,
         heure_fin_matin: r.heure_fin_matin ?? null,
         heure_debut_soir: r.heure_debut_soir ?? null,
         heure_fin_soir: r.heure_fin_soir ?? null,
         heure_debut_nuit: r.heure_debut_nuit ?? null,
         heure_fin_nuit: r.heure_fin_nuit ?? null,
+
         adresse: client?.adresse ?? null,
         code_postal: client?.code_postal ?? null,
         ville: client?.ville ?? null,
-      }
+
+        telephone: client?.telephone ?? null,
+
+        // nouveaux champs (prévisualisation + mail ensuite)
+        pause: pauseHHMM ?? null, // "HH:MM"
+        repas_fournis: repas,
+        tenue_description: tenueDesc || null,
+        itineraire: null, // placeholder (API plus tard)
+      } as any
     })
+
+    return items
   }
 
   const sendEmailHtml = async (to: string, subject: string, html: string) => {
@@ -377,12 +425,14 @@ export default function EnvoyerPlanningCandidatDialog({ open, onOpenChange }: En
 
     if (!res.ok) {
       const data = await safeReadJson(res)
-      const msg = (data && (data.error || data.message)) ? String(data.error || data.message) : `Erreur envoi mail (${res.status})`
+      const msg =
+        data && (data.error || data.message)
+          ? String(data.error || data.message)
+          : `Erreur envoi mail (${res.status})`
       throw new Error(msg)
     }
   }
 
-  // ✅ ENVOI DIRECT : envoie le HTML PRO (buildPlanningCandidatEmail)
   const handleEnvoyer = async () => {
     if (!secteur || !semaineKey || !candidatId) return
 
@@ -403,8 +453,9 @@ export default function EnvoyerPlanningCandidatDialog({ open, onOpenChange }: En
       const mondayISO = format(monday, "yyyy-MM-dd")
 
       const weekNum = Number(semaineKey.split("-")[1])
+
       const items = await fetchPlanningItems(candidatId, mondayISO)
-      const itemsFiltered = items.filter((x) => (x.secteur || "") === secteur)
+      const itemsFiltered = items.filter((x) => norm(x.secteur || "") === norm(secteur))
 
       const { subject, body: html } = buildPlanningCandidatEmail({
         prenom: prenom || "Bonjour",
@@ -414,15 +465,12 @@ export default function EnvoyerPlanningCandidatDialog({ open, onOpenChange }: En
       })
 
       await sendEmailHtml(to, subject, html)
-
-      // fermeture propre
       onOpenChange(false)
     } finally {
       setBuildingMail(false)
     }
   }
 
-  // ✅ MODE MESSAGE : ouvre la fenêtre formulaire structurée
   const handleMessage = async () => {
     if (!secteur || !semaineKey || !candidatId) return
 
@@ -444,7 +492,7 @@ export default function EnvoyerPlanningCandidatDialog({ open, onOpenChange }: En
 
       const weekNum = Number(semaineKey.split("-")[1])
       const items = await fetchPlanningItems(candidatId, mondayISO)
-      const itemsFiltered = items.filter((x) => (x.secteur || "") === secteur)
+      const itemsFiltered = items.filter((x) => norm(x.secteur || "") === norm(secteur))
 
       const { subject } = buildPlanningCandidatEmail({
         prenom: prenom || "Bonjour",
@@ -453,7 +501,6 @@ export default function EnvoyerPlanningCandidatDialog({ open, onOpenChange }: En
         items: itemsFiltered,
       })
 
-      // On ne génère PAS le HTML ici, on passe les données brutes
       setPreviewTo(to)
       setPreviewSubject(subject)
       setCandidatNom(`${nom} ${prenom}`.trim())

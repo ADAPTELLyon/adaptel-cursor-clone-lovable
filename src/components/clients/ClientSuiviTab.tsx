@@ -2,14 +2,52 @@ import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Badge } from "@/components/ui/badge"
+import { Separator } from "@/components/ui/separator"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
-import { Plus, Trash2, UserCheck, UserX, Pencil } from "lucide-react"
+import { Plus, Trash2, Pencil, UserCheck, UserX } from "lucide-react"
+import { AjoutSuiviCandidatDialog } from "./AjoutSuiviCandidatDialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
-import { AjoutSuiviCandidatDialog } from "./AjoutSuiviCandidatDialog"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Separator } from "@/components/ui/separator"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+
+type SuiviItem = {
+  id: string
+  candidat_id: string
+  type: "priorite" | "interdiction"
+  commentaire: string | null
+  secteur: string | null
+  service: string | null
+  created_at: string | null
+  created_by: string | null
+  actif: boolean
+  candidat?: { nom?: string | null; prenom?: string | null } | null
+  user?: { prenom?: string | null } | null
+}
 
 type Props = {
   clientId: string
@@ -17,171 +55,224 @@ type Props = {
   services: string[]
 }
 
-type SuiviRow = {
-  id: string
-  client_id: string
-  candidat_id: string
-  type: "priorite" | "interdiction"
-  secteur: string | null
-  service: string | null
-  commentaire: string | null
-  actif: boolean | null
-  created_at: string | null
-  created_by: string | null
-  candidat?: { nom?: string | null; prenom?: string | null } | null
-  user?: { prenom?: string | null } | null
+const SERVICE_NONE = "__NONE__"
+
+const prettyLabel = (v: string) => {
+  const s = (v || "").trim()
+  if (!s) return s
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-function fullName(item: SuiviRow) {
-  const p = (item.candidat?.prenom || "").trim()
-  const n = (item.candidat?.nom || "").trim()
-  return `${p} ${n}`.trim()
-}
+const cleanList = (list: string[]) =>
+  (list || []).map((x) => (x || "").trim()).filter((x) => x.length > 0)
 
 export function ClientSuiviTab({ clientId, secteurs, services }: Props) {
-  const [prioritaires, setPrioritaires] = useState<SuiviRow[]>([])
-  const [interdits, setInterdits] = useState<SuiviRow[]>([])
+  const [items, setItems] = useState<SuiviItem[]>([])
+  const [loading, setLoading] = useState(false)
+
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogType, setDialogType] = useState<"priorite" | "interdiction">("priorite")
+
   const [search, setSearch] = useState("")
 
-  // --- Edition (sans toucher au popup Ajout) ---
+  // Edition
   const [editOpen, setEditOpen] = useState(false)
-  const [editing, setEditing] = useState<SuiviRow | null>(null)
-  const [editSecteur, setEditSecteur] = useState<string>("")
-  const [editService, setEditService] = useState<string>("")
-  const [editCommentaire, setEditCommentaire] = useState<string>("")
-  const [savingEdit, setSavingEdit] = useState(false)
+  const [editing, setEditing] = useState<SuiviItem | null>(null)
+  const [editSecteur, setEditSecteur] = useState("")
+  const [editService, setEditService] = useState<string>(SERVICE_NONE)
+  const [editCommentaire, setEditCommentaire] = useState("")
 
-  const fetchSuivis = async () => {
+  // ✅ Confirm suppression (popup app)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<SuiviItem | null>(null)
+
+  const secteursClean = useMemo(() => cleanList(secteurs), [secteurs])
+  const servicesClean = useMemo(() => cleanList(services), [services])
+
+  const loadData = async () => {
     if (!clientId) return
+    setLoading(true)
 
     const { data, error } = await supabase
       .from("interdictions_priorites")
-      .select(
-        `
-        id, client_id, candidat_id, type, secteur, service, commentaire, actif, created_at, created_by,
+      .select(`
+        id, candidat_id, type, commentaire, secteur, service, created_at, created_by, actif,
         candidat:candidat_id(nom, prenom),
         user:created_by(prenom)
-      `
-      )
+      `)
       .eq("client_id", clientId)
       .eq("actif", true)
+      .order("created_at", { ascending: false })
+
+    setLoading(false)
 
     if (error) {
-      console.error("Erreur fetchSuivis (client):", error)
       toast({
         title: "Erreur",
         description: "Impossible de charger le suivi candidats.",
         variant: "destructive",
       })
-      setPrioritaires([])
-      setInterdits([])
       return
     }
 
-    const rows = (data || []) as unknown as SuiviRow[]
-    setPrioritaires(rows.filter((r) => r.type === "priorite"))
-    setInterdits(rows.filter((r) => r.type === "interdiction"))
+    setItems((data || []) as unknown as SuiviItem[])
   }
 
   useEffect(() => {
-    fetchSuivis()
+    if (clientId) loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId])
 
-  const filteredPrioritaires = useMemo(() => {
-    const q = (search || "").toLowerCase().trim()
-    if (!q) return prioritaires
-    return prioritaires.filter((it) => fullName(it).toLowerCase().includes(q))
-  }, [prioritaires, search])
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return items
 
-  const filteredInterdits = useMemo(() => {
-    const q = (search || "").toLowerCase().trim()
-    if (!q) return interdits
-    return interdits.filter((it) => fullName(it).toLowerCase().includes(q))
-  }, [interdits, search])
+    return items.filter((it) => {
+      const nom = `${it.candidat?.prenom || ""} ${it.candidat?.nom || ""}`.toLowerCase()
+      const sec = (it.secteur || "").toLowerCase()
+      const srv = (it.service || "").toLowerCase()
+      const com = (it.commentaire || "").toLowerCase()
+      return nom.includes(q) || sec.includes(q) || srv.includes(q) || com.includes(q)
+    })
+  }, [items, search])
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Supprimer cet élément de suivi ?")) return
+  const prioritaires = filtered.filter((d) => d.type === "priorite")
+  const interdits = filtered.filter((d) => d.type === "interdiction")
+
+  const openCreate = (type: "priorite" | "interdiction") => {
+    setDialogType(type)
+    setDialogOpen(true)
+  }
+
+  const openEdit = (it: SuiviItem) => {
+    setEditing(it)
+    setEditSecteur(it.secteur || "")
+    setEditService(it.service ? it.service : SERVICE_NONE) // ✅ plus de ""
+    setEditCommentaire(it.commentaire || "")
+    setEditOpen(true)
+  }
+
+  // ✅ Pop-up suppression interne
+  const askDelete = (it: SuiviItem) => {
+    setDeleteTarget(it)
+    setDeleteOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteTarget?.id) return
 
     const { error } = await supabase
       .from("interdictions_priorites")
       .update({ actif: false, updated_at: new Date().toISOString() } as never)
-      .eq("id", id)
+      .eq("id", deleteTarget.id)
 
     if (error) {
-      console.error("Erreur delete suivi:", error)
       toast({ title: "Erreur", description: "Suppression échouée", variant: "destructive" })
       return
     }
 
     toast({ title: "Supprimé" })
-    fetchSuivis()
+    setDeleteOpen(false)
+    setDeleteTarget(null)
+    loadData()
   }
 
-  const openEdit = (item: SuiviRow) => {
-    setEditing(item)
-    setEditSecteur(item.secteur || "")
-    setEditService(item.service || "")
-    setEditCommentaire(item.commentaire || "")
-    setEditOpen(true)
-  }
-
-  const saveEdit = async () => {
+  const handleSaveEdit = async () => {
     if (!editing?.id) return
-    setSavingEdit(true)
-    try {
-      const payload = {
-        secteur: editSecteur || null,
-        service: editService || null,
+
+    if (!editSecteur) {
+      toast({
+        title: "Erreur",
+        description: "Le secteur est obligatoire.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const serviceToSave = editService === SERVICE_NONE ? null : editService
+
+    const { error } = await supabase
+      .from("interdictions_priorites")
+      .update({
+        secteur: editSecteur,
+        service: serviceToSave,
         commentaire: editCommentaire || null,
         updated_at: new Date().toISOString(),
-      }
+      })
+      .eq("id", editing.id)
 
-      const { error } = await supabase
-        .from("interdictions_priorites")
-        .update(payload as never)
-        .eq("id", editing.id)
-
-      if (error) {
-        console.error("Erreur update suivi:", error)
-        toast({ title: "Erreur", description: "Mise à jour échouée", variant: "destructive" })
-        return
-      }
-
-      toast({ title: "Modifié" })
-      setEditOpen(false)
-      setEditing(null)
-      await fetchSuivis()
-    } finally {
-      setSavingEdit(false)
+    if (error) {
+      toast({ title: "Erreur", description: "Mise à jour échouée", variant: "destructive" })
+      return
     }
+
+    toast({ title: "Modifié" })
+    setEditOpen(false)
+    setEditing(null)
+    loadData()
   }
 
-  const renderItem = (item: SuiviRow, tone: "green" | "red") => {
-    const name = fullName(item) || "Candidat"
-    const dateLabel =
-      item.created_at ? format(new Date(item.created_at), "dd MMMM yyyy", { locale: fr }) : "—"
+  const renderCard = (it: SuiviItem, tone: "green" | "red") => {
+    const nom = `${it.candidat?.prenom || ""} ${it.candidat?.nom || ""}`.trim() || "Candidat"
+    const dateTxt = it.created_at
+      ? format(new Date(it.created_at), "dd MMM yyyy", { locale: fr })
+      : null
 
     return (
-      <li key={item.id} className="rounded-xl border border-gray-200 bg-white shadow-sm p-3 space-y-2">
+      <div
+        key={it.id}
+        className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm hover:border-gray-300 transition-colors"
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="font-semibold text-gray-900 truncate">{name}</div>
+            <div className="font-semibold text-gray-900 truncate">{nom}</div>
 
-            <div className="text-xs text-gray-600 mt-0.5">
-              {(item.secteur || "").trim()}
-              {item.service ? ` • ${item.service}` : ""}
+            <div className="mt-1 flex flex-wrap gap-2">
+              {it.secteur ? (
+                <Badge
+                  variant="outline"
+                  className={
+                    tone === "green"
+                      ? "rounded-md bg-green-50 text-green-800 border-green-200"
+                      : "rounded-md bg-red-50 text-red-800 border-red-200"
+                  }
+                >
+                  {prettyLabel(it.secteur)}
+                </Badge>
+              ) : null}
+
+              {it.service ? (
+                <Badge variant="outline" className="rounded-md bg-gray-50 text-gray-700 border-gray-200">
+                  {prettyLabel(it.service)}
+                </Badge>
+              ) : null}
+            </div>
+
+            <div className="mt-2 text-sm">
+              {it.commentaire ? (
+                <div className="italic text-gray-800 break-words">{it.commentaire}</div>
+              ) : (
+                <div className="italic text-gray-400">Aucun commentaire</div>
+              )}
+            </div>
+
+            <div className="mt-2 text-xs text-gray-500">
+              {dateTxt ? (
+                <>
+                  Créé le {dateTxt}{" "}
+                  {it.user?.prenom ? <>par {it.user.prenom}</> : null}
+                </>
+              ) : null}
             </div>
           </div>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex gap-1 shrink-0">
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => openEdit(item)}
-              className="h-8 w-8 p-0 text-gray-500 hover:text-gray-900"
+              className="h-8 w-8 text-gray-600 hover:text-gray-900"
+              onClick={() => openEdit(it)}
+              disabled={loading}
               title="Modifier"
             >
               <Pencil className="h-4 w-4" />
@@ -190,130 +281,104 @@ export function ClientSuiviTab({ clientId, secteurs, services }: Props) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => handleDelete(item.id)}
-              className="h-8 w-8 p-0 text-gray-500 hover:text-red-600"
+              className="h-8 w-8 text-gray-600 hover:text-red-600"
+              onClick={() => askDelete(it)} // ✅ plus confirm()
+              disabled={loading}
               title="Supprimer"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         </div>
-
-        {item.commentaire ? (
-          <div className="text-sm italic text-gray-800">{item.commentaire}</div>
-        ) : (
-          <div className="text-sm text-gray-400 italic">Aucun commentaire</div>
-        )}
-
-        <div className="text-xs text-gray-500 pt-1">
-          Créé le {dateLabel} par {item.user?.prenom || "Inconnu"}
-        </div>
-
-        <div className="pt-1">
-          <span
-            className={[
-              "inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium",
-              tone === "green"
-                ? "bg-green-50 text-green-700 border-green-200"
-                : "bg-red-50 text-red-700 border-red-200",
-            ].join(" ")}
-          >
-            {tone === "green" ? "Prioritaire" : "Interdiction"}
-          </span>
-        </div>
-      </li>
+      </div>
     )
   }
 
   return (
-    <div className="p-6 h-full flex flex-col gap-4">
-      {/* BARRE FIXE (plus de scroll global qui la fait disparaître) */}
-      <div className="sticky top-0 z-10 bg-white/95 backdrop-blur border-b border-gray-200 pb-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="w-full max-w-sm">
-            <Input
-              placeholder="Rechercher un candidat..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-        </div>
+    <div className="p-6 space-y-4">
+      {/* Recherche */}
+      <div className="sticky top-0 z-10 bg-white pb-3">
+        <Input
+          placeholder="Rechercher un candidat, un secteur, un service, un commentaire..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-10"
+        />
       </div>
 
-      {/* 2 COLONNES avec scroll interne uniquement */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0">
+      <div className="flex gap-4 max-h-[560px] overflow-auto">
         {/* PRIORITAIRES */}
-        <div className="rounded-xl border border-gray-200 bg-gray-50 flex flex-col min-h-0">
-          <div className="px-4 py-3 border-b bg-white rounded-t-xl">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-base font-semibold flex items-center gap-2 text-gray-900">
-                <UserCheck className="h-5 w-5 text-green-600" />
-                Candidats prioritaires
-              </h3>
-
-              <Button
-                size="sm"
-                onClick={() => {
-                  setDialogType("priorite")
-                  setDialogOpen(true)
-                }}
-                className="bg-green-600 hover:bg-green-700 gap-2"
-              >
-                <Plus className="h-4 w-4" />
-                Ajouter
-              </Button>
+        <div className="flex-1 rounded-xl border border-gray-200 bg-gray-50 p-4 min-w-[320px]">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-green-600" />
+              <div className="font-semibold text-gray-900">Candidats prioritaires</div>
+              <Badge className="ml-1 rounded-md bg-white border border-gray-200 text-gray-700">
+                {prioritaires.length}
+              </Badge>
             </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openCreate("priorite")}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Ajouter
+            </Button>
           </div>
 
-          <div className="p-4 flex-1 min-h-0">
-            <ul className="space-y-3 overflow-y-auto h-full pr-2">
-              {filteredPrioritaires.map((it) => renderItem(it, "green"))}
-              {filteredPrioritaires.length === 0 ? (
-                <li className="text-sm text-gray-500 italic text-center py-6">
-                  Aucun candidat prioritaire
-                </li>
-              ) : null}
-            </ul>
+          <Separator className="mb-3" />
+
+          <div className="space-y-3 overflow-y-auto max-h-[470px] pr-1">
+            {prioritaires.length === 0 ? (
+              <div className="text-sm text-gray-500 italic text-center py-6">
+                Aucun candidat prioritaire.
+              </div>
+            ) : (
+              prioritaires.map((it) => renderCard(it, "green"))
+            )}
           </div>
         </div>
 
         {/* INTERDITS */}
-        <div className="rounded-xl border border-gray-200 bg-gray-50 flex flex-col min-h-0">
-          <div className="px-4 py-3 border-b bg-white rounded-t-xl">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-base font-semibold flex items-center gap-2 text-gray-900">
-                <UserX className="h-5 w-5 text-red-600" />
-                Candidats interdits
-              </h3>
-
-              <Button
-                size="sm"
-                onClick={() => {
-                  setDialogType("interdiction")
-                  setDialogOpen(true)
-                }}
-                className="bg-red-600 hover:bg-red-700 gap-2"
-              >
-                <Plus className="h-4 w-4" />
-                Ajouter
-              </Button>
+        <div className="flex-1 rounded-xl border border-gray-200 bg-gray-50 p-4 min-w-[320px]">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <UserX className="h-5 w-5 text-red-600" />
+              <div className="font-semibold text-gray-900">Candidats interdits</div>
+              <Badge className="ml-1 rounded-md bg-white border border-gray-200 text-gray-700">
+                {interdits.length}
+              </Badge>
             </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openCreate("interdiction")}
+              className="gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Ajouter
+            </Button>
           </div>
 
-          <div className="p-4 flex-1 min-h-0">
-            <ul className="space-y-3 overflow-y-auto h-full pr-2">
-              {filteredInterdits.map((it) => renderItem(it, "red"))}
-              {filteredInterdits.length === 0 ? (
-                <li className="text-sm text-gray-500 italic text-center py-6">
-                  Aucun candidat interdit
-                </li>
-              ) : null}
-            </ul>
+          <Separator className="mb-3" />
+
+          <div className="space-y-3 overflow-y-auto max-h-[470px] pr-1">
+            {interdits.length === 0 ? (
+              <div className="text-sm text-gray-500 italic text-center py-6">
+                Aucun candidat interdit.
+              </div>
+            ) : (
+              interdits.map((it) => renderCard(it, "red"))
+            )}
           </div>
         </div>
       </div>
 
-      {/* DIALOG AJOUT (inchangé) */}
+      {/* POPUP CREATION */}
       <AjoutSuiviCandidatDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
@@ -321,99 +386,112 @@ export function ClientSuiviTab({ clientId, secteurs, services }: Props) {
         secteurs={secteurs}
         services={services}
         type={dialogType}
-        onSaved={fetchSuivis}
+        onSaved={loadData}
       />
 
-      {/* DIALOG EDIT (simple, fiable) */}
+      {/* POPUP MODIFICATION */}
       <Dialog
         open={editOpen}
-        onOpenChange={(o) => {
-          if (!o) {
+        onOpenChange={(v) => {
+          if (!v) {
             setEditOpen(false)
             setEditing(null)
           }
         }}
       >
-        <DialogContent className="sm:max-w-[640px]">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Modifier suivi — {editing ? fullName(editing) : ""}</DialogTitle>
+            <DialogTitle>Modifier le suivi</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="text-sm text-gray-600">
-              Tu modifies uniquement les infos utiles (secteur / service / commentaire).
-            </div>
-
-            <Separator />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Secteur</Label>
-                <select
-                  className="w-full h-10 rounded-md border border-gray-300 bg-white px-3 text-sm"
-                  value={editSecteur}
-                  onChange={(e) => setEditSecteur(e.target.value)}
-                >
-                  <option value="">— Non précisé —</option>
-                  {(secteurs || []).map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Service</Label>
-                <select
-                  className="w-full h-10 rounded-md border border-gray-300 bg-white px-3 text-sm"
-                  value={editService}
-                  onChange={(e) => setEditService(e.target.value)}
-                >
-                  <option value="">— Non précisé —</option>
-                  {(services || []).map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <div className="space-y-4 pt-2">
+            <div className="text-sm text-gray-700">
+              <span className="font-semibold">
+                {(editing?.candidat?.prenom || "")} {(editing?.candidat?.nom || "")}
+              </span>
+              {editing?.type ? (
+                <span className="ml-2 text-xs text-gray-500">
+                  ({editing.type === "priorite" ? "Prioritaire" : "Interdit"})
+                </span>
+              ) : null}
             </div>
 
             <div className="space-y-2">
-              <Label>Commentaire</Label>
-              <textarea
-                value={editCommentaire}
-                onChange={(e) => setEditCommentaire(e.target.value)}
-                placeholder="Ajouter un commentaire…"
-                className="w-full rounded-md border border-gray-300 p-3 text-sm resize-none h-24 bg-white focus:outline-none"
-              />
+              <Label>Secteur *</Label>
+              <Select value={editSecteur} onValueChange={setEditSecteur}>
+                <SelectTrigger className="h-10">
+                  <SelectValue placeholder="Sélectionner un secteur" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(secteursClean || []).map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {prettyLabel(s)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {servicesClean?.length ? (
+              <div className="space-y-2">
+                <Label>Service (facultatif)</Label>
+                <Select value={editService} onValueChange={setEditService}>
+                  <SelectTrigger className="h-10">
+                    <SelectValue placeholder="Sélectionner un service" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {/* ✅ Radix: pas de value="" */}
+                    <SelectItem value={SERVICE_NONE}>— Aucun —</SelectItem>
+                    {servicesClean.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {prettyLabel(s)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <Label>Commentaire (facultatif)</Label>
+              <Textarea value={editCommentaire} onChange={(e) => setEditCommentaire(e.target.value)} />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setEditOpen(false)}>
+                Annuler
+              </Button>
+              <Button onClick={handleSaveEdit} className="bg-[#840404] hover:bg-[#6a0303]">
+                Enregistrer
+              </Button>
             </div>
           </div>
-
-          <DialogFooter className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setEditOpen(false)
-                setEditing(null)
-              }}
-              disabled={savingEdit}
-            >
-              Annuler
-            </Button>
-            <Button
-              type="button"
-              onClick={saveEdit}
-              disabled={savingEdit}
-              className="bg-[#840404] hover:bg-[#6a0303]"
-            >
-              {savingEdit ? "Enregistrement..." : "Enregistrer"}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ✅ CONFIRM SUPPRESSION (popup app) */}
+      <AlertDialog
+        open={deleteOpen}
+        onOpenChange={(v) => {
+          setDeleteOpen(v)
+          if (!v) setDeleteTarget(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmer la suppression ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cet élément sera désactivé (historique conservé).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
