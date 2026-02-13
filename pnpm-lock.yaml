@@ -241,7 +241,7 @@ importers:
         specifier: ^2.0.7
         version: 2.0.7
       '@types/node':
-        specifier: ^22.5.5
+        specifier: ^22.19.7
         version: 22.19.7
       '@types/nodemailer':
         specifier: ^7.0.5
@@ -261,6 +261,12 @@ importers:
       autoprefixer:
         specifier: ^10.4.20
         version: 10.4.23(postcss@8.5.6)
+      csv-parse:
+        specifier: ^6.1.0
+        version: 6.1.0
+      dotenv:
+        specifier: ^17.2.4
+        version: 17.2.4
       eslint:
         specifier: ^9.9.0
         version: 9.39.2(jiti@1.21.7)
@@ -285,6 +291,9 @@ importers:
       tailwindcss:
         specifier: ^3.4.11
         version: 3.4.19(tsx@4.21.0)
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
       typescript:
         specifier: ^5.5.3
         version: 5.9.3
@@ -3170,6 +3179,9 @@ packages:
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
+  csv-parse@6.1.0:
+    resolution: {integrity: sha512-CEE+jwpgLn+MmtCpVcPtiCZpVtB6Z2OKPTr34pycYYoL7sxdOkXDdQ4lRiw6ioC0q6BLqhc6cKweCVvral8yhw==}
+
   d3-array@3.2.4:
     resolution: {integrity: sha512-tdQAmyA18i4J7wprpYq8ClcxZy3SC31QMeByyCFyRt7BVHdREQZ5lpzoe5mFEYZUWe+oq8HBvk9JjpibyEV4Jg==}
     engines: {node: '>=12'}
@@ -3304,6 +3316,10 @@ packages:
 
   dompurify@3.3.1:
     resolution: {integrity: sha512-qkdCKzLNtrgPFP1Vo+98FRzJnBRGe4ffyCea9IwHB1fyxPOeNTHpLKYGd4Uk9xvNoH0ZoOjwZxNptyMwqrId1Q==}
+
+  dotenv@17.2.4:
+    resolution: {integrity: sha512-mudtfb4zRB4bVvdj0xRo+e6duH1csJRM8IukBqfTRvHotn9+LBXB8ynAidP9zHqoRC/fsllXgk4kCKlR21fIhw==}
+    engines: {node: '>=12'}
 
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
@@ -8436,6 +8452,8 @@ snapshots:
 
   csstype@3.2.3: {}
 
+  csv-parse@6.1.0: {}
+
   d3-array@3.2.4:
     dependencies:
       internmap: 2.0.3
@@ -8533,6 +8551,8 @@ snapshots:
     optionalDependencies:
       '@types/trusted-types': 2.0.7
     optional: true
+
+  dotenv@17.2.4: {}
 
   dunder-proto@1.0.1:
     dependencies:

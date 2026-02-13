@@ -6,18 +6,31 @@ export type PlanningCandidatItem = {
   clientNom?: string | null
   secteur?: string | null
   service?: string | null
+
   heure_debut_matin?: string | null
   heure_fin_matin?: string | null
   heure_debut_soir?: string | null
   heure_fin_soir?: string | null
   heure_debut_nuit?: string | null
   heure_fin_nuit?: string | null
-  pause?: string | null // attendu "HH:MM"
+
+  pause?: string | null
   adresse?: string | null
   code_postal?: string | null
   ville?: string | null
   telephone?: string | null
+
   commentaire?: string | null
+
+  repas_fournis?: boolean | null
+  tenue_description?: string | null
+
+  // ✅ TCL
+  acces_tc?: string | null
+  itinerary_url?: string | null
+
+  // (si encore utilisé côté back)
+  itineraire?: string | null
 }
 
 function escapeHtml(text: string | null | undefined): string {
@@ -59,7 +72,6 @@ function fmtTimeRange(a?: string | null, b?: string | null) {
 }
 
 function fmtPause(pause?: string | null) {
-  // pause stockée "HH:MM" (ex: "00:30")
   if (!pause) return ""
   const parts = String(pause).split(":")
   if (parts.length < 2) return ""
@@ -88,21 +100,12 @@ function buildCreneaux(it: PlanningCandidatItem) {
   return { matin, soir, nuit }
 }
 
-function buildSectorServiceBadges(it: PlanningCandidatItem) {
-  const sec = (it.secteur || "").trim()
-  const svc = (it.service || "").trim()
-  const out: string[] = []
-  if (sec) out.push(`<span class="badge badge-white">${escapeHtml(sec.toUpperCase())}</span>`)
-  if (svc) out.push(`<span class="badge badge-white">${escapeHtml(svc.toUpperCase())}</span>`)
-  return out.join("")
-}
-
-function buildFullAddress(it: PlanningCandidatItem) {
+function buildFullAddressParts(it: PlanningCandidatItem) {
   const adr1 = (it.adresse || "").trim()
   const cp = (it.code_postal || "").trim()
   const ville = (it.ville || "").trim()
-  const part2 = `${cp}${cp && ville ? " " : ""}${ville}`.trim()
-  return [adr1, part2].filter(Boolean).join(", ")
+  const line2 = `${cp}${cp && ville ? " " : ""}${ville}`.trim()
+  return { adr1, line2, has: !!(adr1 || line2) }
 }
 
 function parseDateTimeLocalToGoogle(dateISO: string, hhmm: string) {
@@ -136,9 +139,56 @@ function buildGoogleCalendarUrl(opts: {
   return `https://calendar.google.com/calendar/render?${params.toString()}`
 }
 
+function buildICSDataUrl(opts: {
+  title: string
+  dateISO: string
+  startHHMM: string
+  endHHMM: string
+  location?: string
+  description?: string
+}) {
+  const dt = (d: string, t: string) => {
+    const ymd = d.replace(/-/g, "")
+    const [hh, mm] = t.split(":")
+    return `${ymd}T${String(hh || "00").padStart(2, "0")}${String(mm || "00").padStart(2, "0")}00`
+  }
+
+  const uid = `${Date.now()}-${Math.random().toString(16).slice(2)}@adaptel-lyon`
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, "0")
+  const dtstamp = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}T${pad(
+    now.getUTCHours()
+  )}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`
+
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//ADAPTEL LYON//Planning Candidat//FR",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${uid}`,
+    `DTSTAMP:${dtstamp}`,
+    `DTSTART:${dt(opts.dateISO, opts.startHHMM)}`,
+    `DTEND:${dt(opts.dateISO, opts.endHHMM)}`,
+    `SUMMARY:${(opts.title || "").replace(/\n/g, " ")}`,
+    opts.location ? `LOCATION:${(opts.location || "").replace(/\n/g, " ")}` : "",
+    opts.description ? `DESCRIPTION:${(opts.description || "").replace(/\n/g, "\\n")}` : "",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].filter(Boolean)
+
+  const ics = lines.join("\r\n")
+  const encoded = encodeURIComponent(ics)
+  return `data:text/calendar;charset=utf-8,${encoded}`
+}
+
 function buildAgendaButtons(it: PlanningCandidatItem) {
   const etab = (it.clientNom || "").trim() || "Établissement"
-  const address = buildFullAddress(it)
+
+  const { adr1, line2 } = buildFullAddressParts(it)
+  const address = [adr1, line2].filter(Boolean).join(", ").trim()
+
   const tel = (it.telephone || "").trim()
   const sec = (it.secteur || "").trim()
   const svc = (it.service || "").trim()
@@ -146,35 +196,72 @@ function buildAgendaButtons(it: PlanningCandidatItem) {
   const detailsLines: string[] = []
   if (sec || svc) detailsLines.push(`${sec}${sec && svc ? " • " : ""}${svc}`.trim())
   if (tel) detailsLines.push(`Contact : ${tel}`)
+  if (it.repas_fournis === true) detailsLines.push(`Repas : Oui`)
+  if (it.repas_fournis === false) detailsLines.push(`Repas : Non`)
+  if ((it.tenue_description || "").trim()) detailsLines.push(`Tenue : ${(it.tenue_description || "").trim()}`)
+  if ((it.acces_tc || "").trim()) detailsLines.push(`Accès TCL : ${(it.acces_tc || "").trim()}`)
+
   const details = detailsLines.join("\n")
 
-  const mk = (label: string, start: string, end: string) => {
-    const url = buildGoogleCalendarUrl({
-      title: `Mission ADAPTEL — ${etab}`,
+  const mkPair = (start: string, end: string, indexLabel?: string) => {
+    const title = `Mission ADAPTEL — ${etab}`
+    const googleUrl = buildGoogleCalendarUrl({
+      title,
       dateISO: it.dateISO,
       startHHMM: start,
       endHHMM: end,
       location: address || undefined,
       details: details || undefined,
     })
-    return `<a class="agenda-btn" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`
+
+    const icsUrl = buildICSDataUrl({
+      title,
+      dateISO: it.dateISO,
+      startHHMM: start,
+      endHHMM: end,
+      location: address || undefined,
+      description: details || undefined,
+    })
+
+    const suffix = indexLabel ? ` ${indexLabel}` : ""
+    return `
+      <div class="agenda-pair">
+        <a class="agenda-btn" href="${escapeHtml(googleUrl)}" target="_blank" rel="noopener noreferrer">Google Agenda${escapeHtml(suffix)}</a>
+        <a class="agenda-btn agenda-btn-ios" href="${escapeHtml(icsUrl)}" target="_blank" rel="noopener noreferrer">Agenda iPhone${escapeHtml(suffix)}</a>
+      </div>
+    `
   }
 
-  // Pas de "(matin)" : on reste clean.
   const btns: string[] = []
+  let idx = 1
+
   if (it.heure_debut_matin && it.heure_fin_matin) {
-    btns.push(mk("Ajouter à mon agenda", fmtTime(it.heure_debut_matin), fmtTime(it.heure_fin_matin)))
+    btns.push(mkPair(fmtTime(it.heure_debut_matin), fmtTime(it.heure_fin_matin), btns.length ? `(${++idx})` : ""))
   }
   if (it.heure_debut_soir && it.heure_fin_soir) {
-    btns.push(mk(btns.length ? "Ajouter à mon agenda (2)" : "Ajouter à mon agenda", fmtTime(it.heure_debut_soir), fmtTime(it.heure_fin_soir)))
+    btns.push(mkPair(fmtTime(it.heure_debut_soir), fmtTime(it.heure_fin_soir), btns.length ? `(${++idx})` : ""))
   }
   if (it.heure_debut_nuit && it.heure_fin_nuit) {
-    btns.push(mk(btns.length ? "Ajouter à mon agenda (2)" : "Ajouter à mon agenda", fmtTime(it.heure_debut_nuit), fmtTime(it.heure_fin_nuit)))
+    btns.push(mkPair(fmtTime(it.heure_debut_nuit), fmtTime(it.heure_fin_nuit), btns.length ? `(${++idx})` : ""))
   }
 
   if (!btns.length) return ""
-
   return `<div class="agenda-wrap">${btns.join("")}</div>`
+}
+
+function buildSectorServiceBadges(it: PlanningCandidatItem) {
+  const sec = (it.secteur || "").trim()
+  const svc = (it.service || "").trim()
+  const out: string[] = []
+  if (sec) out.push(`<span class="badge badge-white">${escapeHtml(sec.toUpperCase())}</span>`)
+  if (svc) out.push(`<span class="badge badge-white">${escapeHtml(svc.toUpperCase())}</span>`)
+  return out.join("")
+}
+
+function fmtRepas(v: boolean | null | undefined) {
+  if (v === true) return "Oui"
+  if (v === false) return "Non"
+  return ""
 }
 
 export function buildPlanningCandidatEmail(params: {
@@ -333,23 +420,16 @@ export function buildPlanningCandidatEmail(params: {
     }
     .mission:first-child{ margin-top:0; }
 
-    .etab{
-      font-size:15px;
-      font-weight:900;
-      color:#0f0f0f;
-      margin-bottom:10px;
-    }
-
     .row{
       display:block;
-      margin-top:10px;
+      margin-top:12px;
     }
 
     .row-head{
       display:flex;
       align-items:center;
       gap:8px;
-      margin-bottom:6px;
+      margin-bottom:8px;
     }
 
     .icon{
@@ -379,6 +459,33 @@ export function buildPlanningCandidatEmail(params: {
       mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z'/%3E%3C/svg%3E");
       -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z'/%3E%3C/svg%3E");
     }
+
+    .icon-building {
+      mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 21V7a2 2 0 0 1 2-2h6v16'/%3E%3Cpath d='M13 21V3h6a2 2 0 0 1 2 2v16'/%3E%3Cpath d='M7 9h.01'/%3E%3Cpath d='M7 13h.01'/%3E%3Cpath d='M17 9h.01'/%3E%3Cpath d='M17 13h.01'/%3E%3C/svg%3E");
+      -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 21V7a2 2 0 0 1 2-2h6v16'/%3E%3Cpath d='M13 21V3h6a2 2 0 0 1 2 2v16'/%3E%3Cpath d='M7 9h.01'/%3E%3Cpath d='M7 13h.01'/%3E%3Cpath d='M17 9h.01'/%3E%3Cpath d='M17 13h.01'/%3E%3C/svg%3E");
+    }
+
+    .icon-tag {
+      mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.59 13.41 11 3H4v7l9.59 9.59a2 2 0 0 0 2.82 0l4.18-4.18a2 2 0 0 0 0-2.82Z'/%3E%3Cpath d='M7 7h.01'/%3E%3C/svg%3E");
+      -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.59 13.41 11 3H4v7l9.59 9.59a2 2 0 0 0 2.82 0l4.18-4.18a2 2 0 0 0 0-2.82Z'/%3E%3Cpath d='M7 7h.01'/%3E%3C/svg%3E");
+    }
+
+    .icon-meal {
+      mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 2v20'/%3E%3Cpath d='M7 2a4 4 0 0 0 0 8'/%3E%3Cpath d='M11 2v8'/%3E%3Cpath d='M16 2v20'/%3E%3Cpath d='M16 2a4 4 0 0 1 0 8'/%3E%3C/svg%3E");
+      -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 2v20'/%3E%3Cpath d='M7 2a4 4 0 0 0 0 8'/%3E%3Cpath d='M11 2v8'/%3E%3Cpath d='M16 2v20'/%3E%3Cpath d='M16 2a4 4 0 0 1 0 8'/%3E%3C/svg%3E");
+    }
+
+    .icon-shirt {
+      mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.38 3.46 16 2l-4 2-4-2-4.38 1.46a2 2 0 0 0-1.28 2.53l2 6A2 2 0 0 0 6.2 13H7v9h10v-9h.8a2 2 0 0 0 1.86-1.48l2-6a2 2 0 0 0-1.28-2.53Z'/%3E%3C/svg%3E");
+      -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20.38 3.46 16 2l-4 2-4-2-4.38 1.46a2 2 0 0 0-1.28 2.53l2 6A2 2 0 0 0 6.2 13H7v9h10v-9h.8a2 2 0 0 0 1.86-1.48l2-6a2 2 0 0 0-1.28-2.53Z'/%3E%3C/svg%3E");
+    }
+
+    /* ✅ TCL */
+    .icon-tcl {
+      mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='19' r='3'/%3E%3Ccircle cx='18' cy='5' r='3'/%3E%3Cpath d='M8.6 17.3l6.8-6.6'/%3E%3Cpath d='M15.4 7.3L8.6 14'/%3E%3C/svg%3E");
+      -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='19' r='3'/%3E%3Ccircle cx='18' cy='5' r='3'/%3E%3Cpath d='M8.6 17.3l6.8-6.6'/%3E%3Cpath d='M15.4 7.3L8.6 14'/%3E%3C/svg%3E");
+    }
+
     .icon-comment {
       mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'/%3E%3C/svg%3E");
       -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'/%3E%3C/svg%3E");
@@ -388,6 +495,15 @@ export function buildPlanningCandidatEmail(params: {
       font-size:13px;
       font-weight:900;
       color:${BRAND};
+    }
+
+    .etab-name{
+      font-size:16px;
+      font-weight:900;
+      color:#0f0f0f;
+      margin-top:2px;
+      margin-bottom:2px;
+      line-height:1.2;
     }
 
     .badge{
@@ -401,6 +517,8 @@ export function buildPlanningCandidatEmail(params: {
       font-size:13px;
       margin-right:8px;
       margin-bottom:8px;
+      line-height:1.25;
+      white-space:normal;
     }
     .badge-muted{
       background:#f1f2f4;
@@ -417,12 +535,33 @@ export function buildPlanningCandidatEmail(params: {
     .agenda-wrap{
       margin-top:10px;
     }
+    .agenda-pair{
+      margin-top:8px;
+    }
     .agenda-btn{
       display:inline-block;
       margin-top:6px;
       padding:10px 12px;
       border-radius:12px;
       background:#eef0f2;
+      color:#333 !important;
+      text-decoration:none;
+      font-weight:900;
+      font-size:13px;
+      border:1px solid #e1e3e6;
+      margin-right:8px;
+    }
+    .agenda-btn-ios{
+      background:#ffffff;
+    }
+
+    /* bouton “Itinéraire” TCL */
+    .link-btn{
+      display:inline-block;
+      margin-top:6px;
+      padding:10px 12px;
+      border-radius:12px;
+      background:#ffffff;
       color:#333 !important;
       text-decoration:none;
       font-weight:900;
@@ -454,7 +593,8 @@ export function buildPlanningCandidatEmail(params: {
       .info-box{ margin:10px 16px 0; }
       .content{ padding:12px 16px 18px; }
       .footer{ padding:16px 16px; }
-      .agenda-btn{ width:100%; text-align:center; }
+      .agenda-btn{ width:100%; text-align:center; margin-right:0; }
+      .link-btn{ width:100%; text-align:center; }
     }
   </style>
 </head>
@@ -507,37 +647,56 @@ export function buildPlanningCandidatEmail(params: {
                         const { matin, soir, nuit } = buildCreneaux(it)
 
                         const pauseTxt = fmtPause(it.pause)
+                        const repasTxt = fmtRepas(it.repas_fournis ?? null)
+
                         const tel = escapeHtml(it.telephone || "").trim()
+                        const sectorServiceBadges = buildSectorServiceBadges(it)
 
-                        const adr1 = escapeHtml(it.adresse || "").trim()
-                        const cp = escapeHtml(it.code_postal || "").trim()
-                        const ville = escapeHtml(it.ville || "").trim()
-                        const hasAddress = !!(adr1 || cp || ville)
+                        const { adr1, line2, has } = buildFullAddressParts(it)
+                        const addressBadge =
+                          has
+                            ? `<span class="badge">${escapeHtml(adr1 || "")}${adr1 && line2 ? "<br>" : ""}${escapeHtml(
+                                line2 || ""
+                              )}</span>`
+                            : ""
 
-                        const comment = escapeHtml(it.commentaire || "").trim()
+                        const tenue = escapeHtml((it.tenue_description || "").trim())
+                        const comment = escapeHtml((it.commentaire || "").trim())
+
+                        const accesTc = escapeHtml((it.acces_tc || "").trim())
+                        const itineraryUrl = escapeHtml((it.itinerary_url || "").trim())
 
                         const horaireBadges: string[] = []
                         if (matin) horaireBadges.push(`<span class="badge">${escapeHtml(matin)}</span>`)
                         if (soir) horaireBadges.push(`<span class="badge">${escapeHtml(soir)}</span>`)
                         if (nuit) horaireBadges.push(`<span class="badge">${escapeHtml(nuit)}</span>`)
 
-                        const sectorServiceBadges = buildSectorServiceBadges(it)
-
-                        const addressBadges: string[] = []
-                        if (adr1) addressBadges.push(`<span class="badge">${escapeHtml(adr1)}</span>`)
-                        if (cp || ville) addressBadges.push(`<span class="badge">${escapeHtml(`${cp}${cp && ville ? " " : ""}${ville}`)}</span>`)
-
                         const agendaButtons = buildAgendaButtons(it)
+
+                        const sec = (it.secteur || "").trim()
+                        const svc = (it.service || "").trim()
+                        const ssLabel = sec && svc ? "Secteur / Service" : "Secteur"
 
                         return `
                   <div class="mission">
-                    <div class="etab">${etab}</div>
 
-                    ${
-                      sectorServiceBadges
-                        ? `<div style="margin-bottom:10px;">${sectorServiceBadges}</div>`
-                        : ""
-                    }
+                    <div class="row" style="margin-top:0;">
+                      <div class="row-head">
+                        <div class="icon icon-building"></div>
+                        <div class="row-title">Établissement</div>
+                      </div>
+                      <div class="etab-name">${etab}</div>
+                    </div>
+
+                    <div class="row">
+                      <div class="row-head">
+                        <div class="icon icon-tag"></div>
+                        <div class="row-title">${escapeHtml(ssLabel)}</div>
+                      </div>
+                      <div>
+                        ${sectorServiceBadges || `<span class="badge badge-muted">Non communiqué</span>`}
+                      </div>
+                    </div>
 
                     <div class="row">
                       <div class="row-head">
@@ -567,25 +726,29 @@ export function buildPlanningCandidatEmail(params: {
                       </div>
                     </div>
 
-                    ${
-                      hasAddress
-                        ? `
-                      <div class="row">
-                        <div class="row-head">
-                          <div class="icon icon-location"></div>
-                          <div class="row-title">Adresse</div>
-                        </div>
-                        <div>
-                          ${
-                            addressBadges.length
-                              ? addressBadges.join("")
-                              : `<span class="badge badge-muted">Non communiquée</span>`
-                          }
-                        </div>
+                    <div class="row">
+                      <div class="row-head">
+                        <div class="icon icon-meal"></div>
+                        <div class="row-title">Repas</div>
                       </div>
-                    `
-                        : ""
-                    }
+                      <div>
+                        ${
+                          repasTxt
+                            ? `<span class="badge">${escapeHtml(repasTxt)}</span>`
+                            : `<span class="badge badge-muted">Non précisé</span>`
+                        }
+                      </div>
+                    </div>
+
+                    <div class="row">
+                      <div class="row-head">
+                        <div class="icon icon-location"></div>
+                        <div class="row-title">Adresse</div>
+                      </div>
+                      <div>
+                        ${addressBadge ? addressBadge : `<span class="badge badge-muted">Non communiquée</span>`}
+                      </div>
+                    </div>
 
                     <div class="row">
                       <div class="row-head">
@@ -601,27 +764,60 @@ export function buildPlanningCandidatEmail(params: {
                       </div>
                     </div>
 
+                    <div class="row">
+                      <div class="row-head">
+                        <div class="icon icon-shirt"></div>
+                        <div class="row-title">Tenue</div>
+                      </div>
+                      <div>
+                        ${
+                          tenue
+                            ? `<span class="badge">${tenue.replace(/\n/g, "<br>")}</span>`
+                            : `<span class="badge badge-muted">Non précisée</span>`
+                        }
+                      </div>
+                    </div>
+
+                    <!-- ✅ Accès TCL + bouton itinéraire -->
+                    <div class="row">
+                      <div class="row-head">
+                        <div class="icon icon-tcl"></div>
+                        <div class="row-title">Accès TCL</div>
+                      </div>
+                      <div>
+                        ${
+                          accesTc
+                            ? `<span class="badge">${accesTc.replace(/\n/g, "<br>")}</span>`
+                            : `<span class="badge badge-muted">Non précisé</span>`
+                        }
+                      </div>
+                      ${
+                        itineraryUrl
+                          ? `<div style="margin-top:6px;">
+                               <a class="link-btn" href="${itineraryUrl}" target="_blank" rel="noopener noreferrer">Itinéraire (transports en commun)</a>
+                             </div>`
+                          : ""
+                      }
+                    </div>
+
                     ${
                       comment
                         ? `
-                      <div class="row" style="margin-top:12px;">
+                      <div class="row">
                         <div class="row-head">
                           <div class="icon icon-comment"></div>
                           <div class="row-title">Commentaire</div>
                         </div>
                         <div>
-                          <span class="badge">${escapeHtml(comment).replace(/\n/g, "<br>")}</span>
+                          <span class="badge">${comment.replace(/\n/g, "<br>")}</span>
                         </div>
                       </div>
                     `
                         : ""
                     }
 
-                    ${
-                      agendaButtons
-                        ? `<div class="row">${agendaButtons}</div>`
-                        : ""
-                    }
+                    ${agendaButtons ? `<div class="row">${agendaButtons}</div>` : ""}
+
                   </div>
                 `
                       })
@@ -699,10 +895,22 @@ export function buildPlanningCandidatText(params: {
       const pauseTxt = fmtPause(it.pause)
       lines.push(`  Pause : ${pauseTxt || "Non communiquée"}`)
 
-      const adr = [it.adresse, it.code_postal, it.ville].filter(Boolean).join(" ")
+      const repas = it.repas_fournis === true ? "Oui" : it.repas_fournis === false ? "Non" : "Non précisé"
+      lines.push(`  Repas : ${repas}`)
+
+      const adr1 = (it.adresse || "").trim()
+      const cp = (it.code_postal || "").trim()
+      const ville = (it.ville || "").trim()
+      const line2 = `${cp}${cp && ville ? " " : ""}${ville}`.trim()
+      const adr = [adr1, line2].filter(Boolean).join(" / ")
       if (adr) lines.push(`  Adresse : ${adr}`)
 
       lines.push(`  Contact : ${it.telephone || "Non communiqué"}`)
+
+      if ((it.tenue_description || "").trim()) lines.push(`  Tenue : ${it.tenue_description}`)
+
+      if ((it.acces_tc || "").trim()) lines.push(`  Accès TCL : ${it.acces_tc}`)
+      if ((it.itinerary_url || "").trim()) lines.push(`  Itinéraire : ${it.itinerary_url}`)
 
       if (it.commentaire) lines.push(`  Commentaire : ${it.commentaire}`)
       lines.push(``)
