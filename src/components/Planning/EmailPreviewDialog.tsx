@@ -43,6 +43,16 @@ type EditableItem = PlanningCandidatItem & {
   repas_fournis?: boolean | null
   tenue_description?: string | null
   itineraire?: string | null
+
+  // ✅ TCL
+  client_id?: string | null
+  itinerary_url?: string | null
+}
+
+type ClientAccesTCRow = {
+  client_id: string
+  stops: any
+  itinerary_url: string | null
 }
 
 function cap(s: string) {
@@ -68,6 +78,43 @@ function normalizePauseToHHMM(raw: any): string {
   return `${hh}:${mm}`
 }
 
+/** 0700 -> 07:00 ; 7:0 -> 07:00 ; 07:00 ok */
+function normalizeHHMMLoose(input: string): string {
+  const s = (input || "").trim()
+  if (!s) return ""
+
+  const only = s.replace(/[^\d:]/g, "")
+  const digits = only.replace(/:/g, "")
+
+  // si déjà au format HH:MM propre
+  if (/^\d{2}:\d{2}$/.test(only)) return only
+
+  // 3-4 digits => HHMM
+  if (/^\d{3,4}$/.test(digits)) {
+    const d = digits.padStart(4, "0")
+    const hh = d.slice(0, 2)
+    const mm = d.slice(2, 4)
+    return `${hh}:${mm}`
+  }
+
+  // formats type H:M ou HH:M ou H:MM
+  const m = only.match(/^(\d{1,2}):(\d{1,2})$/)
+  if (m) {
+    const hh = String(m[1]).padStart(2, "0")
+    const mm = String(m[2]).padStart(2, "0")
+    return `${hh}:${mm}`
+  }
+
+  // sinon on garde "soft" mais propre (max 5)
+  return only.slice(0, 5)
+}
+
+/** Filtre de saisie temps : chiffres + ":" uniquement, longueur 5 max */
+function sanitizeTimeKeystroke(v: string): string {
+  const out = (v || "").replace(/[^\d:]/g, "")
+  return out.slice(0, 5)
+}
+
 async function getSenderPrenom(): Promise<string> {
   try {
     const { data } = await supabase.auth.getUser()
@@ -89,7 +136,61 @@ async function getSenderPrenom(): Promise<string> {
   }
 }
 
-/** Champ “propre” : si vide => on affiche “Non précisé” en overlay, sans polluer la valeur */
+/** ✅ Construit un texte "Accès TCL" simple à partir de stops */
+function buildAccesTcText(stops: any): string {
+  if (!Array.isArray(stops) || stops.length === 0) return ""
+
+  const s0 = stops[0] || {}
+  const stopName = String(s0.stop_name || "").trim()
+  const routes = Array.isArray(s0.routes) ? s0.routes : []
+
+  const rank = (t: any) => {
+    const type = Number(t)
+    if (type === 1) return 0 // Métro
+    if (type === 0) return 1 // Tram
+    if (type === 3 || type === 11) return 2 // Bus
+    return 9
+  }
+
+  const picked = [...routes]
+    .sort((a, b) => rank(a?.type) - rank(b?.type))
+    .slice(0, 3)
+    .map((r) => {
+      const type = Number(r?.type)
+      const short = String(r?.short || "").trim()
+      if (!short) return ""
+      if (type === 1) return `Métro ${short}`
+      if (type === 0) return `Tram ${short}`
+      if (type === 3 || type === 11) return `Bus ${short}`
+      return short
+    })
+    .filter(Boolean)
+
+  if (!stopName && !picked.length) return ""
+  if (!picked.length) return stopName
+  return `${stopName} — ${picked.join(" • ")}`
+}
+
+/** Tag secteur/service plus gros */
+function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-[13px] font-semibold text-gray-900">
+      {children}
+    </span>
+  )
+}
+
+/** Titre de bloc : pro, pas “bourrin” */
+function FieldTitle({ icon: Icon, title }: { icon: any; title: string }) {
+  return (
+    <div className="flex items-center gap-2 text-[13px] font-semibold text-gray-700">
+      <Icon className="h-4 w-4 text-[#8a0000]" />
+      <span>{title}</span>
+    </div>
+  )
+}
+
+/** Input “valeur” : si vide => affichage Non précisé en overlay (sans polluer la valeur) */
 function InlineInputSmart({
   value,
   onChange,
@@ -97,6 +198,8 @@ function InlineInputSmart({
   className = "",
   maxLength,
   inputMode,
+  textCenter = false,
+  onBlur,
 }: {
   value: string
   onChange: (v: string) => void
@@ -104,6 +207,8 @@ function InlineInputSmart({
   className?: string
   maxLength?: number
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]
+  textCenter?: boolean
+  onBlur?: () => void
 }) {
   const showEmpty = !value?.trim()
   return (
@@ -111,14 +216,16 @@ function InlineInputSmart({
       <Input
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
         maxLength={maxLength}
         inputMode={inputMode}
         className={[
-          "h-9 px-3 text-[14px]",
+          "h-10 px-3 text-[14px]",
           "bg-gray-50 border border-gray-200",
           "hover:bg-white hover:border-gray-300",
           "focus-visible:bg-white focus-visible:border-gray-400 focus-visible:ring-0 focus-visible:ring-offset-0",
-          "rounded-lg",
+          "rounded-xl",
+          textCenter ? "text-center tabular-nums" : "",
         ].join(" ")}
       />
       {showEmpty && (
@@ -134,7 +241,7 @@ function InlineTextareaSmart({
   value,
   onChange,
   emptyLabel = "Non précisé",
-  minH = "min-h-[46px]",
+  minH = "min-h-[60px]",
   className = "",
 }: {
   value: string
@@ -154,7 +261,7 @@ function InlineTextareaSmart({
           "bg-gray-50 border border-gray-200",
           "hover:bg-white hover:border-gray-300",
           "focus-visible:bg-white focus-visible:border-gray-400 focus-visible:ring-0 focus-visible:ring-offset-0",
-          "rounded-lg resize-none",
+          "rounded-xl resize-none",
           minH,
           "py-2 px-3",
         ].join(" ")}
@@ -168,35 +275,7 @@ function InlineTextareaSmart({
   )
 }
 
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center px-2.5 py-1 rounded-md border border-gray-200 bg-white text-[12px] font-semibold text-gray-800">
-      {children}
-    </span>
-  )
-}
-
-function FieldBlock({
-  icon: Icon,
-  title,
-  children,
-}: {
-  icon: any
-  title: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-2 text-[12px] font-extrabold text-[#8a0000] uppercase tracking-wide">
-        <Icon className="h-4 w-4" />
-        {title}
-      </div>
-      {children}
-    </div>
-  )
-}
-
-/** Repas : 3 boutons blanc + contour + texte marque ; sélection = fond marque + texte blanc */
+/** Repas : 3 boutons blancs + contour ; sélection = fond marque + texte blanc */
 function SegmentedTriStateBrand({
   value,
   onChange,
@@ -204,14 +283,12 @@ function SegmentedTriStateBrand({
   value: boolean | null
   onChange: (v: boolean | null) => void
 }) {
-  const base =
-    "h-9 flex-1 rounded-lg text-[13px] font-extrabold border transition-colors"
+  const base = "h-10 flex-1 rounded-xl text-[13px] font-semibold border transition-colors px-3 text-center"
 
   const mk = (label: string, active: boolean, onClick: () => void) => {
     const cls = active
       ? "bg-[#8a0000] text-white border-[#8a0000]"
       : "bg-white text-[#8a0000] border-[#8a0000]/25 hover:border-[#8a0000]/45 hover:bg-[#8a0000]/5"
-
     return (
       <button type="button" className={`${base} ${cls}`} onClick={onClick}>
         {label}
@@ -220,7 +297,7 @@ function SegmentedTriStateBrand({
   }
 
   return (
-    <div className="flex items-center gap-2 w-full max-w-[360px]">
+    <div className="flex items-center gap-2 w-full">
       {mk("Oui", value === true, () => onChange(true))}
       {mk("Non", value === false, () => onChange(false))}
       {mk("Non précisé", value === null, () => onChange(null))}
@@ -247,20 +324,17 @@ export default function EmailPreviewDialog({
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
-
   const [senderPrenom, setSenderPrenom] = useState("")
 
   const canSend = useMemo(() => !!to.trim() && !!subject.trim(), [to, subject])
 
   const itemsByDate = useMemo(() => {
     const map = new Map<string, EditableItem[]>()
-
     editableItems.forEach((item) => {
       const date = item.dateISO
       if (!map.has(date)) map.set(date, [])
       map.get(date)!.push(item)
     })
-
     map.forEach((arr) => {
       arr.sort((a, b) => {
         const timeA = a.heure_debut_matin || a.heure_debut_soir || a.heure_debut_nuit || "99:99"
@@ -268,7 +342,6 @@ export default function EmailPreviewDialog({
         return String(timeA).localeCompare(String(timeB))
       })
     })
-
     return map
   }, [editableItems])
 
@@ -301,10 +374,9 @@ export default function EmailPreviewDialog({
     })()
 
     if (items && mondayISO) {
-      const initialEditableItems: EditableItem[] = (items as any[]).map((item: any) => ({
+      let initialEditableItems: EditableItem[] = (items as any[]).map((item: any) => ({
         ...item,
         commentaire: item.commentaire || "",
-
         heure_debut_matin: formatTimeInput(item.heure_debut_matin),
         heure_fin_matin: formatTimeInput(item.heure_fin_matin),
         heure_debut_soir: formatTimeInput(item.heure_debut_soir),
@@ -316,8 +388,67 @@ export default function EmailPreviewDialog({
         repas_fournis: typeof item.repas_fournis === "boolean" ? item.repas_fournis : null,
         tenue_description: (item.tenue_description || "").trim(),
         itineraire: (item.itineraire || "").trim(),
+
+        // ✅ pour cache TCL
+        client_id: (item.client_id || item.clientId || item.clientID || null) as any,
+        itinerary_url: (item.itinerary_url || item.itineraryUrl || null) as any,
       }))
+
       setEditableItems(initialEditableItems)
+
+      // ✅ Ajout TCL : enrichit itineraire + itinerary_url depuis clients_acces_tc
+      ;(async () => {
+        try {
+          const clientIds = Array.from(
+            new Set(
+              initialEditableItems
+                .map((it: any) => it?.client_id)
+                .filter((v: any) => !!v)
+                .map((v: any) => String(v))
+            )
+          )
+
+          if (!clientIds.length) return
+
+          // ✅ cast any pour bypass types TS (table non dans Database types)
+          const sb: any = supabase as any
+
+          const { data } = await sb
+            .from("clients_acces_tc")
+            .select("client_id, stops, itinerary_url")
+            .in("client_id", clientIds)
+
+          if (!Array.isArray(data)) return
+
+          const map = new Map<string, ClientAccesTCRow>()
+          data.forEach((row: ClientAccesTCRow) => {
+            if (!row?.client_id) return
+            map.set(String(row.client_id), row)
+          })
+
+          setEditableItems((prev) =>
+            prev.map((it) => {
+              const cid = it?.client_id ? String(it.client_id) : ""
+              if (!cid) return it
+
+              const row = map.get(cid)
+              if (!row) return it
+
+              const tclText = buildAccesTcText(row.stops)
+              const current = String((it as any).itineraire || "").trim()
+
+              return {
+                ...it,
+                // si l'user a déjà rempli un texte => on ne l'écrase pas
+                itineraire: current ? current : tclText,
+                itinerary_url: (it as any).itinerary_url ?? row.itinerary_url ?? null,
+              }
+            })
+          )
+        } catch {
+          // silent: non bloquant
+        }
+      })()
     } else {
       setEditableItems([])
     }
@@ -359,7 +490,6 @@ export default function EmailPreviewDialog({
         heure_fin_soir: item.heure_fin_soir,
         heure_debut_nuit: item.heure_debut_nuit,
         heure_fin_nuit: item.heure_fin_nuit,
-
         pause: item.pause,
         adresse: item.adresse,
         code_postal: item.code_postal,
@@ -370,6 +500,7 @@ export default function EmailPreviewDialog({
         repas_fournis: (item as any).repas_fournis,
         tenue_description: (item as any).tenue_description,
         itineraire: (item as any).itineraire,
+        itinerary_url: (item as any).itinerary_url,
       } as any))
 
       const { body: html } = buildPlanningCandidatEmail({
@@ -412,14 +543,12 @@ export default function EmailPreviewDialog({
             <div className="p-6">
               {/* Header */}
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-[#8a0000] flex items-center justify-center shadow-sm">
+                <div className="h-10 w-10 rounded-2xl bg-[#8a0000] flex items-center justify-center shadow-sm">
                   <MessageSquare className="h-5 w-5 text-white" />
                 </div>
                 <div className="min-w-0">
-                  <DialogTitle className="text-lg font-extrabold text-gray-900">
-                    Envoi planning candidat
-                  </DialogTitle>
-                  <div className="text-[#8a0000] font-bold truncate">{candidatNom}</div>
+                  <DialogTitle className="text-lg font-extrabold text-gray-900">Envoi planning candidat</DialogTitle>
+                  <div className="text-[#8a0000] font-semibold truncate">{candidatNom}</div>
                 </div>
               </div>
 
@@ -429,17 +558,21 @@ export default function EmailPreviewDialog({
               <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <div className="text-[12px] font-bold text-gray-600 uppercase tracking-wide">Destinataire</div>
+                    <div className="text-[12px] font-semibold text-gray-600">Destinataire</div>
                     <Input value={to} onChange={(e) => setTo(e.target.value)} className="h-10 text-sm rounded-xl" />
                   </div>
                   <div className="space-y-1">
-                    <div className="text-[12px] font-bold text-gray-600 uppercase tracking-wide">Objet</div>
-                    <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="h-10 text-sm rounded-xl" />
+                    <div className="text-[12px] font-semibold text-gray-600">Objet</div>
+                    <Input
+                      value={subject}
+                      onChange={(e) => setSubject(e.target.value)}
+                      className="h-10 text-sm rounded-xl"
+                    />
                   </div>
                 </div>
 
                 <div className="mt-4 space-y-1">
-                  <div className="text-[12px] font-bold text-gray-600 uppercase tracking-wide">Message</div>
+                  <div className="text-[12px] font-semibold text-gray-600">Message</div>
                   <Textarea
                     value={generalComment}
                     onChange={(e) => setGeneralComment(e.target.value)}
@@ -451,9 +584,7 @@ export default function EmailPreviewDialog({
               {/* Contenu */}
               <div className="mt-4 rounded-2xl border border-gray-200 bg-gray-50/50 overflow-hidden">
                 <div className="px-5 py-4 border-b border-gray-200 bg-white">
-                  <div className="text-[14px] font-extrabold text-gray-900">
-                    Prévisualisation — Semaine {weekNumber}
-                  </div>
+                  <div className="text-[14px] font-extrabold text-gray-900">Contrôle avant envoi — Semaine {weekNumber}</div>
                 </div>
 
                 <div className="p-5 space-y-4">
@@ -466,7 +597,7 @@ export default function EmailPreviewDialog({
                         {/* Bandeau jour */}
                         <div className="px-5 py-3 bg-[#8a0000] text-white flex items-center justify-between">
                           <div className="font-extrabold text-[14px]">{day.dayTitle}</div>
-                          <div className="text-[12px] font-bold opacity-90">
+                          <div className="text-[12px] font-semibold opacity-90">
                             {hasMissions ? `${dayItems.length} mission${dayItems.length > 1 ? "s" : ""}` : "Aucune mission"}
                           </div>
                         </div>
@@ -496,52 +627,73 @@ export default function EmailPreviewDialog({
                                 const hasSoir = !!(item.heure_debut_soir || item.heure_fin_soir)
                                 const hasNuit = !!(item.heure_debut_nuit || item.heure_fin_nuit)
 
-                                return (
-                                  <div key={`${day.dateISO}-${itemIndex}-${etab}-${secteur}-${service}`} className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-                                    {/* Header mission */}
-                                    <div className="px-5 py-4 bg-gray-50 border-b border-gray-200">
-                                      <div className="flex items-start justify-between gap-4">
-                                        <div className="min-w-0">
-                                          <div className="flex items-center gap-2 text-[12px] font-extrabold text-[#8a0000] uppercase tracking-wide">
-                                            <Building2 className="h-4 w-4" />
-                                            Établissement
-                                          </div>
-                                          <div className="mt-1 text-[16px] font-extrabold text-gray-900 truncate">
-                                            {etab}
-                                          </div>
-                                        </div>
+                                const onBlurTime = (field: keyof EditableItem) => {
+                                  const raw = String((editableItems[globalIndex] as any)?.[field] || "")
+                                  const norm = normalizeHHMMLoose(raw)
+                                  updateItem(globalIndex, { [field]: norm } as any)
+                                }
 
-                                        <div className="flex items-center gap-2 flex-shrink-0">
-                                          {secteur ? <Badge>{secteur}</Badge> : <Badge>Non précisé</Badge>}
-                                          {/* ✅ service uniquement si présent */}
-                                          {service ? <Badge>{service}</Badge> : null}
+                                const onChangeTime = (field: keyof EditableItem, v: string) => {
+                                  const s = sanitizeTimeKeystroke(v)
+                                  // si 4 digits => on format direct
+                                  const digits = s.replace(/:/g, "")
+                                  if (/^\d{4}$/.test(digits)) {
+                                    updateItem(globalIndex, { [field]: normalizeHHMMLoose(digits) } as any)
+                                  } else {
+                                    updateItem(globalIndex, { [field]: s } as any)
+                                  }
+                                }
+
+                                return (
+                                  <div
+                                    key={`${day.dateISO}-${itemIndex}-${etab}-${secteur}-${service}`}
+                                    className="rounded-2xl border border-gray-200 bg-white p-5"
+                                  >
+                                    {/* Ligne établissement + tags */}
+                                    <div className="flex items-start justify-between gap-4">
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-2 text-[13px] font-semibold text-gray-700">
+                                          <Building2 className="h-4 w-4 text-[#8a0000]" />
+                                          <span className="text-gray-700">Établissement</span>
                                         </div>
+                                        <div className="mt-1 text-[16px] font-extrabold text-gray-900 truncate">{etab}</div>
+                                      </div>
+
+                                      <div className="flex items-center gap-2 flex-shrink-0">
+                                        {secteur ? <Tag>{secteur}</Tag> : <Tag>Non précisé</Tag>}
+                                        {/* service uniquement si présent */}
+                                        {service ? <Tag>{service}</Tag> : null}
                                       </div>
                                     </div>
 
-                                    <div className="p-5 space-y-5">
-                                      {/* ✅ Horaires + Pause + Repas sur une seule ligne */}
-                                      <div className="grid grid-cols-[1.1fr_0.55fr_1fr] gap-4 items-start">
-                                        <FieldBlock icon={Clock} title="Horaires">
+                                    <div className="mt-5 space-y-5">
+                                      {/* Horaires / Pause / Repas : harmonieux */}
+                                      <div className="grid grid-cols-[1.15fr_0.55fr_1fr] gap-4 items-start">
+                                        <div className="space-y-2">
+                                          <FieldTitle icon={Clock} title="Horaires" />
                                           <div className="flex flex-wrap items-center gap-2">
                                             {hasMatin && (
                                               <div className="flex items-center gap-2">
                                                 <InlineInputSmart
-                                                  value={item.heure_debut_matin || ""}
-                                                  onChange={(v) => updateItem(globalIndex, { heure_debut_matin: v })}
+                                                  value={String(item.heure_debut_matin || "")}
+                                                  onChange={(v) => onChangeTime("heure_debut_matin", v)}
+                                                  onBlur={() => onBlurTime("heure_debut_matin")}
                                                   emptyLabel="--:--"
-                                                  className="w-[72px]"
+                                                  className="w-[86px]"
                                                   maxLength={5}
                                                   inputMode="numeric"
+                                                  textCenter
                                                 />
                                                 <span className="text-gray-400 font-bold">-</span>
                                                 <InlineInputSmart
-                                                  value={item.heure_fin_matin || ""}
-                                                  onChange={(v) => updateItem(globalIndex, { heure_fin_matin: v })}
+                                                  value={String(item.heure_fin_matin || "")}
+                                                  onChange={(v) => onChangeTime("heure_fin_matin", v)}
+                                                  onBlur={() => onBlurTime("heure_fin_matin")}
                                                   emptyLabel="--:--"
-                                                  className="w-[72px]"
+                                                  className="w-[86px]"
                                                   maxLength={5}
                                                   inputMode="numeric"
+                                                  textCenter
                                                 />
                                               </div>
                                             )}
@@ -550,21 +702,25 @@ export default function EmailPreviewDialog({
                                               <div className="flex items-center gap-2">
                                                 <span className="text-gray-300 font-extrabold">/</span>
                                                 <InlineInputSmart
-                                                  value={item.heure_debut_soir || ""}
-                                                  onChange={(v) => updateItem(globalIndex, { heure_debut_soir: v })}
+                                                  value={String(item.heure_debut_soir || "")}
+                                                  onChange={(v) => onChangeTime("heure_debut_soir", v)}
+                                                  onBlur={() => onBlurTime("heure_debut_soir")}
                                                   emptyLabel="--:--"
-                                                  className="w-[72px]"
+                                                  className="w-[86px]"
                                                   maxLength={5}
                                                   inputMode="numeric"
+                                                  textCenter
                                                 />
                                                 <span className="text-gray-400 font-bold">-</span>
                                                 <InlineInputSmart
-                                                  value={item.heure_fin_soir || ""}
-                                                  onChange={(v) => updateItem(globalIndex, { heure_fin_soir: v })}
+                                                  value={String(item.heure_fin_soir || "")}
+                                                  onChange={(v) => onChangeTime("heure_fin_soir", v)}
+                                                  onBlur={() => onBlurTime("heure_fin_soir")}
                                                   emptyLabel="--:--"
-                                                  className="w-[72px]"
+                                                  className="w-[86px]"
                                                   maxLength={5}
                                                   inputMode="numeric"
+                                                  textCenter
                                                 />
                                               </div>
                                             )}
@@ -573,21 +729,25 @@ export default function EmailPreviewDialog({
                                               <div className="flex items-center gap-2">
                                                 <span className="text-gray-300 font-extrabold">/</span>
                                                 <InlineInputSmart
-                                                  value={item.heure_debut_nuit || ""}
-                                                  onChange={(v) => updateItem(globalIndex, { heure_debut_nuit: v })}
+                                                  value={String(item.heure_debut_nuit || "")}
+                                                  onChange={(v) => onChangeTime("heure_debut_nuit", v)}
+                                                  onBlur={() => onBlurTime("heure_debut_nuit")}
                                                   emptyLabel="--:--"
-                                                  className="w-[72px]"
+                                                  className="w-[86px]"
                                                   maxLength={5}
                                                   inputMode="numeric"
+                                                  textCenter
                                                 />
                                                 <span className="text-gray-400 font-bold">-</span>
                                                 <InlineInputSmart
-                                                  value={item.heure_fin_nuit || ""}
-                                                  onChange={(v) => updateItem(globalIndex, { heure_fin_nuit: v })}
+                                                  value={String(item.heure_fin_nuit || "")}
+                                                  onChange={(v) => onChangeTime("heure_fin_nuit", v)}
+                                                  onBlur={() => onBlurTime("heure_fin_nuit")}
                                                   emptyLabel="--:--"
-                                                  className="w-[72px]"
+                                                  className="w-[86px]"
                                                   maxLength={5}
                                                   inputMode="numeric"
+                                                  textCenter
                                                 />
                                               </div>
                                             )}
@@ -596,90 +756,101 @@ export default function EmailPreviewDialog({
                                               <div className="text-sm text-gray-500 italic">Non précisé</div>
                                             )}
                                           </div>
-                                        </FieldBlock>
+                                        </div>
 
-                                        <FieldBlock icon={Coffee} title="Pause">
+                                        <div className="space-y-2">
+                                          <FieldTitle icon={Coffee} title="Pause" />
                                           <InlineInputSmart
                                             value={String(item.pause || "")}
-                                            onChange={(v) => updateItem(globalIndex, { pause: v })}
-                                            emptyLabel="Non précisé"
+                                            onChange={(v) => onChangeTime("pause" as any, v)}
+                                            onBlur={() => onBlurTime("pause" as any)}
+                                            emptyLabel="--:--"
                                             className="w-[110px]"
                                             maxLength={5}
                                             inputMode="numeric"
+                                            textCenter
                                           />
-                                        </FieldBlock>
+                                        </div>
 
-                                        <FieldBlock icon={UtensilsCrossed} title="Repas">
+                                        <div className="space-y-2">
+                                          <FieldTitle icon={UtensilsCrossed} title="Repas" />
                                           <SegmentedTriStateBrand
                                             value={(item as any).repas_fournis ?? null}
                                             onChange={(v) => updateItem(globalIndex, { repas_fournis: v })}
                                           />
-                                        </FieldBlock>
+                                        </div>
                                       </div>
 
                                       {/* Adresse */}
-                                      <FieldBlock icon={MapPin} title="Adresse">
-                                        <div className="grid grid-cols-[1fr_100px_220px] gap-3">
+                                      <div className="space-y-2">
+                                        <FieldTitle icon={MapPin} title="Adresse" />
+                                        <div className="grid grid-cols-[1fr_110px_220px] gap-3">
                                           <InlineInputSmart
-                                            value={item.adresse || ""}
+                                            value={String(item.adresse || "")}
                                             onChange={(v) => updateItem(globalIndex, { adresse: v })}
                                             emptyLabel="Non précisé"
                                           />
                                           <InlineInputSmart
-                                            value={item.code_postal || ""}
+                                            value={String(item.code_postal || "")}
                                             onChange={(v) => updateItem(globalIndex, { code_postal: v })}
                                             emptyLabel="CP"
                                             maxLength={5}
                                             inputMode="numeric"
+                                            textCenter
                                           />
                                           <InlineInputSmart
-                                            value={item.ville || ""}
+                                            value={String(item.ville || "")}
                                             onChange={(v) => updateItem(globalIndex, { ville: v })}
                                             emptyLabel="Ville"
                                           />
                                         </div>
-                                      </FieldBlock>
+                                      </div>
 
-                                      {/* ✅ Itinéraire seul */}
-                                      <FieldBlock icon={Route} title="Itinéraire">
+                                      {/* Itinéraire / Accès TCL */}
+                                      <div className="space-y-2">
+                                        <FieldTitle icon={Route} title="Itinéraire / Accès TCL" />
                                         <InlineTextareaSmart
                                           value={String((item as any).itineraire || "")}
                                           onChange={(v) => updateItem(globalIndex, { itineraire: v })}
-                                          emptyLabel="Non précisé (API transport plus tard)"
-                                          minH="min-h-[56px]"
+                                          emptyLabel="Non précisé (Accès TCL si disponible)"
+                                          minH="min-h-[60px]"
                                         />
-                                      </FieldBlock>
+                                      </div>
 
-                                      {/* ✅ Tenue + Contact sur la même ligne */}
+                                      {/* Tenue + Contact mêmes hauteurs */}
                                       <div className="grid grid-cols-2 gap-4">
-                                        <FieldBlock icon={Shirt} title="Tenue">
+                                        <div className="space-y-2">
+                                          <FieldTitle icon={Shirt} title="Tenue" />
                                           <InlineTextareaSmart
                                             value={String((item as any).tenue_description || "")}
                                             onChange={(v) => updateItem(globalIndex, { tenue_description: v })}
-                                            emptyLabel="Non précisée"
-                                            minH="min-h-[56px]"
+                                            emptyLabel="Non précisé"
+                                            minH="min-h-[60px]"
                                           />
-                                        </FieldBlock>
+                                        </div>
 
-                                        <FieldBlock icon={PhoneCall} title="Contact">
-                                          <InlineInputSmart
-                                            value={item.telephone || ""}
+                                        <div className="space-y-2">
+                                          <FieldTitle icon={PhoneCall} title="Contact" />
+                                          {/* textarea pour égaliser la hauteur */}
+                                          <InlineTextareaSmart
+                                            value={String(item.telephone || "")}
                                             onChange={(v) => updateItem(globalIndex, { telephone: v })}
                                             emptyLabel="Non précisé"
-                                            className="max-w-[320px]"
+                                            minH="min-h-[60px]"
                                           />
-                                        </FieldBlock>
+                                        </div>
                                       </div>
 
-                                      {/* ✅ Commentaire seul */}
-                                      <FieldBlock icon={MessageCircle} title="Commentaire">
+                                      {/* Commentaire */}
+                                      <div className="space-y-2">
+                                        <FieldTitle icon={MessageCircle} title="Commentaire" />
                                         <InlineTextareaSmart
-                                          value={item.commentaire || ""}
+                                          value={String(item.commentaire || "")}
                                           onChange={(v) => updateItem(globalIndex, { commentaire: v })}
                                           emptyLabel="Non précisé"
-                                          minH="min-h-[70px]"
+                                          minH="min-h-[76px]"
                                         />
-                                      </FieldBlock>
+                                      </div>
                                     </div>
                                   </div>
                                 )
